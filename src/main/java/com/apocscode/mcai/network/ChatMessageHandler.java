@@ -2,8 +2,12 @@ package com.apocscode.mcai.network;
 
 import com.apocscode.mcai.MCAi;
 import com.apocscode.mcai.ai.AIService;
+import com.apocscode.mcai.ai.AiLogger;
 import com.apocscode.mcai.ai.ConversationManager;
+import com.apocscode.mcai.config.AiConfig;
+import com.apocscode.mcai.entity.CompanionEntity;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.Entity;
 import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
@@ -26,8 +30,16 @@ public class ChatMessageHandler {
 
         MCAi.LOGGER.info("Chat from {}: {}", serverPlayer.getName().getString(), message);
 
+        // Look up companion entity to get its name
+        String companionName = AiConfig.DEFAULT_COMPANION_NAME.get();
+        Entity entity = serverPlayer.level().getEntity(packet.entityId());
+        if (entity instanceof CompanionEntity companion) {
+            companionName = companion.getCompanionName();
+        }
+
         // Call AI asynchronously — NEVER block the server thread
-        AIService.chat(message, serverPlayer, ConversationManager.getHistoryForAI())
+        final String finalName = companionName;
+        AIService.chat(message, serverPlayer, ConversationManager.getHistoryForAI(), finalName)
                 .thenAccept(response -> {
                     // Send response back to client
                     serverPlayer.getServer().execute(() -> {

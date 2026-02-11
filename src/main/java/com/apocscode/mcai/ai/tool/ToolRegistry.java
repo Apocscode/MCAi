@@ -1,6 +1,7 @@
 package com.apocscode.mcai.ai.tool;
 
 import com.apocscode.mcai.MCAi;
+import com.apocscode.mcai.config.AiConfig;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 
@@ -28,6 +29,7 @@ public class ToolRegistry {
         register(new FindAndFetchItemTool());
         register(new SetBlockTool());
         register(new CraftItemTool());
+        register(new RenameCompanionTool());
         MCAi.LOGGER.info("Registered {} AI tools: {}", tools.size(), tools.keySet());
     }
 
@@ -41,11 +43,15 @@ public class ToolRegistry {
 
     /**
      * Build the "tools" JSON array for Ollama's /api/chat request.
+     * Only includes tools that are currently enabled in config.
      * Format: [{type: "function", function: {name, description, parameters}}]
      */
     public static JsonArray toOllamaToolsArray() {
         JsonArray arr = new JsonArray();
         for (AiTool tool : tools.values()) {
+            // Skip disabled tools so the AI doesn't even try to call them
+            if (!AiConfig.isToolEnabled(tool.name())) continue;
+
             JsonObject func = new JsonObject();
             func.addProperty("name", tool.name());
             func.addProperty("description", tool.description());

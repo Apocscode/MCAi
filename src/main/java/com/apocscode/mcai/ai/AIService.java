@@ -4,6 +4,7 @@ import com.apocscode.mcai.MCAi;
 import com.apocscode.mcai.ai.tool.AiTool;
 import com.apocscode.mcai.ai.tool.ToolContext;
 import com.apocscode.mcai.ai.tool.ToolRegistry;
+import com.apocscode.mcai.config.AiConfig;
 import com.google.gson.*;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Inventory;
@@ -28,10 +29,6 @@ import java.util.concurrent.Executors;
  * All calls are async — never blocks the server tick thread.
  */
 public class AIService {
-    private static final String OLLAMA_URL = "http://localhost:11434/api/chat";
-    private static final String MODEL = "llama3.1"; // Change to your preferred model
-    private static final int TIMEOUT_MS = 60000;
-    private static final int MAX_TOOL_ITERATIONS = 5; // Prevent runaway tool loops
     private static final Gson GSON = new GsonBuilder().create();
 
     private static ExecutorService executor;
@@ -46,8 +43,12 @@ public class AIService {
         // Initialize tool registry
         ToolRegistry.init();
 
-        MCAi.LOGGER.info("AI Service initialized (Ollama endpoint: {}, tools: {})",
-                OLLAMA_URL, ToolRegistry.getAll().keySet());
+        MCAi.LOGGER.info("AI Service initialized (Ollama: {}, model: {}, tools: {})",
+                AiConfig.OLLAMA_URL.get(), AiConfig.OLLAMA_MODEL.get(),
+                ToolRegistry.getAll().keySet());
+        AiLogger.log(AiLogger.Category.SYSTEM, "INFO",
+                "AIService initialized — model=" + AiConfig.OLLAMA_MODEL.get() +
+                ", tools=" + ToolRegistry.getAll().size());
     }
 
     /**
@@ -60,13 +61,22 @@ public class AIService {
      * @return Future containing the AI's response text
      */
     public static CompletableFuture<String> chat(String userMessage, ServerPlayer player,
-                                                  List<ConversationManager.ChatMessage> history) {
+                                                  List<ConversationManager.ChatMessage> history,
+                                                  String companionName) {
         return CompletableFuture.supplyAsync(() -> {
+            long startMs = System.currentTimeMillis();
             try {
+                AiLogger.chat(player.getName().getString(), userMessage);
                 String context = buildPlayerContext(player);
                 ToolContext toolCtx = new ToolContext(player, player.getServer());
-                return agentLoop(userMessage, context, history, toolCtx);
+                String response = agentLoop(userMessage, context, history, toolCtx, companionName);
+                long elapsed = System.currentTimeMillis() - startMs;
+                AiLogger.aiResponse(response, elapsed);
+                AiLogger.performance("Full chat cycle", elapsed);
+                return response;
             } catch (Exception e) {
+                long elapsed = System.currentTimeMillis() - startMs;
+                AiLogger.error("AI chat error after " + elapsed + "ms", e);
                 MCAi.LOGGER.error("AI chat error: {}", e.getMessage(), e);
                 return "I'm having trouble connecting to my brain. Make sure Ollama is running on localhost:11434. Error: " + e.getMessage();
             }
@@ -80,7 +90,7 @@ public class AIService {
      */
     private static String agentLoop(String userMessage, String playerContext,
                                      List<ConversationManager.ChatMessage> history,
-                                     ToolContext toolCtx) throws IOException {
+                                     ToolContext toolCtx, String companionName) throws IOException {
 
         // Build initial messages array
         JsonArray messages = new JsonArray();
@@ -88,7 +98,7 @@ public class AIService {
         // System prompt
         JsonObject systemMsg = new JsonObject();
         systemMsg.addProperty("role", "system");
-        systemMsg.addProperty("content", buildSystemPrompt(playerContext));
+        systemMsg.addProperty("content", buildSystemPrompt(playerContext, companionName));
         messages.add(systemMsg);
 
         // Conversation history (last 20 messages to manage context window)
@@ -110,7 +120,8 @@ public class AIService {
         messages.add(userMsg);
 
         // Agent loop — keep going until AI gives a text response or limit reached
-        for (int iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration++) {
+        int maxIterations = AiConfig.MAX_TOOL_ITERATIONS.get();
+        for (int iteration = 0; iteration < maxIterations; iteration++) {
             JsonObject response = callOllama(messages);
             JsonObject assistantMessage = response.getAsJsonObject("message");
 
@@ -120,6 +131,7 @@ public class AIService {
                 if (toolCalls.size() > 0) {
                     MCAi.LOGGER.info("AI requesting {} tool call(s) (iteration {})",
                             toolCalls.size(), iteration + 1);
+                    AiLogger.agentIteration(iteration, toolCalls.size());
 
                     // Add the assistant's tool-calling message to the conversation
                     messages.add(assistantMessage);
@@ -148,7 +160,9 @@ public class AIService {
                         }
 
                         // Execute the tool
+                        long toolStartMs = System.currentTimeMillis();
                         String result = executeTool(toolName, toolArgs, toolCtx);
+                        long toolElapsed = System.currentTimeMillis() - toolStartMs;
 
                         // Add tool result as a "tool" role message
                         JsonObject toolResultMsg = new JsonObject();
@@ -156,8 +170,8 @@ public class AIService {
                         toolResultMsg.addProperty("content", result);
                         messages.add(toolResultMsg);
 
-                        MCAi.LOGGER.info("Tool '{}' executed, result length: {} chars",
-                                toolName, result.length());
+                        MCAi.LOGGER.info("Tool '{}' executed in {}ms, result length: {} chars",
+                                toolName, toolElapsed, result.length());
                     }
 
                     // Continue loop — Ollama will process tool results and either
@@ -180,7 +194,9 @@ public class AIService {
         }
 
         // Exceeded iteration limit
-        MCAi.LOGGER.warn("Agent loop hit max iterations ({})", MAX_TOOL_ITERATIONS);
+        MCAi.LOGGER.warn("Agent loop hit max iterations ({})", maxIterations);
+        AiLogger.log(AiLogger.Category.AI_RESPONSE, "WARN",
+                "Agent loop exceeded max iterations (" + maxIterations + ")");
         return "I used several tools trying to answer your question but ran out of steps. Here's what I know so far — try asking a more specific question.";
     }
 
@@ -190,15 +206,30 @@ public class AIService {
     private static String executeTool(String toolName, JsonObject args, ToolContext context) {
         AiTool tool = ToolRegistry.get(toolName);
         if (tool == null) {
+            AiLogger.error("AI tried to call unknown tool: " + toolName);
             MCAi.LOGGER.warn("AI tried to call unknown tool: {}", toolName);
             return "Error: tool '" + toolName + "' does not exist. Available tools: " +
                     String.join(", ", ToolRegistry.getAll().keySet());
         }
 
+        // Check if tool is enabled in config
+        if (!AiConfig.isToolEnabled(toolName)) {
+            AiLogger.toolDisabled(toolName);
+            return "Error: tool '" + toolName + "' is disabled in the server configuration.";
+        }
+
+        AiLogger.toolCall(toolName, args.toString());
+        long startMs = System.currentTimeMillis();
+
         try {
-            return tool.execute(args, context);
+            String result = tool.execute(args, context);
+            long elapsed = System.currentTimeMillis() - startMs;
+            AiLogger.toolResult(toolName, result, elapsed);
+            return result;
         } catch (Exception e) {
-            MCAi.LOGGER.error("Tool '{}' execution failed: {}", toolName, e.getMessage(), e);
+            long elapsed = System.currentTimeMillis() - startMs;
+            AiLogger.toolError(toolName, e.getMessage(), e);
+            MCAi.LOGGER.error("Tool '{}' execution failed in {}ms: {}", toolName, elapsed, e.getMessage(), e);
             return "Error executing " + toolName + ": " + e.getMessage();
         }
     }
@@ -275,7 +306,7 @@ public class AIService {
     private static JsonObject callOllama(JsonArray messages) throws IOException {
         // Build request
         JsonObject request = new JsonObject();
-        request.addProperty("model", MODEL);
+        request.addProperty("model", AiConfig.OLLAMA_MODEL.get());
         request.add("messages", messages);
         request.addProperty("stream", false);
 
@@ -287,17 +318,20 @@ public class AIService {
 
         // Options for response quality
         JsonObject options = new JsonObject();
-        options.addProperty("temperature", 0.7);
-        options.addProperty("num_predict", 500); // Max tokens in response
+        options.addProperty("temperature", AiConfig.AI_TEMPERATURE.get());
+        options.addProperty("num_predict", AiConfig.AI_MAX_TOKENS.get());
         request.add("options", options);
 
+        AiLogger.aiRequest(messages.size(), tools.size(), AiConfig.OLLAMA_MODEL.get());
+
         // Send HTTP request
-        HttpURLConnection conn = (HttpURLConnection) URI.create(OLLAMA_URL).toURL().openConnection();
+        int timeoutMs = AiConfig.AI_TIMEOUT_MS.get();
+        HttpURLConnection conn = (HttpURLConnection) URI.create(AiConfig.OLLAMA_URL.get()).toURL().openConnection();
         conn.setRequestMethod("POST");
         conn.setRequestProperty("Content-Type", "application/json");
         conn.setDoOutput(true);
-        conn.setConnectTimeout(TIMEOUT_MS);
-        conn.setReadTimeout(TIMEOUT_MS);
+        conn.setConnectTimeout(timeoutMs);
+        conn.setReadTimeout(timeoutMs);
 
         String requestBody = GSON.toJson(request);
         MCAi.LOGGER.debug("Ollama request: {} chars", requestBody.length());
@@ -319,21 +353,25 @@ public class AIService {
         return JsonParser.parseString(responseBody).getAsJsonObject();
     }
 
-    private static String buildSystemPrompt(String playerContext) {
+    private static String buildSystemPrompt(String playerContext, String companionName) {
         // Build tool descriptions for the system prompt
         StringBuilder toolDesc = new StringBuilder();
         for (AiTool tool : ToolRegistry.getAll().values()) {
-            toolDesc.append("- ").append(tool.name()).append(": ").append(tool.description()).append("\n");
+            if (AiConfig.isToolEnabled(tool.name())) {
+                toolDesc.append("- ").append(tool.name()).append(": ").append(tool.description()).append("\n");
+            }
         }
 
         return """
-                You are MCAi, an AI companion living inside Minecraft. You exist as an entity in the game world next to the player.
+                You are %s, an AI companion living inside Minecraft. You exist as an entity in the game world next to the player.
                 
                 Your personality:
                 - Helpful, knowledgeable, and friendly
                 - You speak concisely — this is an in-game chat, not an essay
                 - Keep responses under 3-4 sentences unless the player asks for detail
                 - Use Minecraft terminology naturally
+                - Your name is %s — if the player asks your name, tell them
+                - If the player asks to change your name, use the rename_companion tool
                 
                 Your knowledge:
                 - You know everything about Minecraft 1.21.1 (vanilla mechanics, crafting, mobs, biomes, redstone, commands)
@@ -341,7 +379,7 @@ public class AIService {
                 - If you're not sure about something, USE YOUR TOOLS to look it up
                 
                 Available tools:
-                """ + toolDesc + """
+                """.formatted(companionName, companionName) + toolDesc + """
                 
                 Tool usage guidelines:
                 - Use web_search when the player asks about something you're not confident about
@@ -354,9 +392,10 @@ public class AIService {
                 - Use interact_container to take items from or put items into a specific container by coordinates — chain with scan_containers or get_looked_at_block to get the coordinates first
                 - Use bookmark_location to save/recall named places — when the player says 'remember this as X' or 'where is X'
                 - Use execute_command for game commands — when the player says 'make it day', 'clear the weather', 'give me diamonds', 'teleport me', etc. Run commands WITHOUT the leading slash.
-                - Use find_and_fetch_item as a one-step smart fetch — scans ALL containers in a 32-block radius and automatically pulls items. Best for 'get me 10 iron' type requests. Prefer this over manually chaining scan_containers + interact_container.
+                - Use find_and_fetch_item as a one-step smart fetch — scans ALL containers in range and automatically pulls items. Best for 'get me 10 iron' type requests.
                 - Use set_block to place/break blocks or set up command blocks with commands
-                - Use craft_item to craft items using materials in the player's inventory. Automatically finds the recipe and consumes ingredients.
+                - Use craft_item to craft items using materials in the player's inventory
+                - Use rename_companion when the player wants to change your name
                 - You can chain tools: scan_containers → interact_container, or get_recipe → craft_item
                 - For simple 'get me X' requests, use find_and_fetch_item directly — it's the fastest path
                 - Only use tools when they'd genuinely help. Don't use tools for simple greetings or basic Minecraft facts you already know.
@@ -390,5 +429,6 @@ public class AIService {
         if (executor != null) {
             executor.shutdown();
         }
+        AiLogger.shutdown();
     }
 }

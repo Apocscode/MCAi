@@ -32,6 +32,7 @@ public class CompanionChatScreen extends Screen {
     private int scrollOffset = 0;
     private boolean isRecordingVoice = false;
     private long recordingStartTime = 0;
+    private String companionName = "MCAi";
 
     public CompanionChatScreen(int entityId) {
         super(Component.literal("MCAi Chat"));
@@ -40,6 +41,15 @@ public class CompanionChatScreen extends Screen {
 
     @Override
     protected void init() {
+        // Resolve companion name from entity
+        if (Minecraft.getInstance().level != null) {
+            net.minecraft.world.entity.Entity entity =
+                    Minecraft.getInstance().level.getEntity(entityId);
+            if (entity != null && entity.getCustomName() != null) {
+                companionName = entity.getCustomName().getString();
+            }
+        }
+
         // Initialize Whisper on first open
         if (!WhisperService.isAvailable()) {
             WhisperService.init();
@@ -111,7 +121,7 @@ public class CompanionChatScreen extends Screen {
         super.render(graphics, mouseX, mouseY, partialTick);
 
         // Title bar
-        graphics.drawCenteredString(this.font, "§b§lMCAi Companion", this.width / 2, 6, 0xFFFFFF);
+        graphics.drawCenteredString(this.font, "§b§l" + companionName, this.width / 2, 6, 0xFFFFFF);
         graphics.fill(PADDING, 18, this.width - PADDING, 19, 0xFF3498DB);
 
         // Recording indicator
@@ -168,7 +178,7 @@ public class CompanionChatScreen extends Screen {
                         color = 0xFFFFAA00;
                         prefix = "";
                     } else {
-                        prefix = "§b[MCAi]§r ";
+                        prefix = "§b[" + companionName + "]§r ";
                         color = 0xFFAADDFF;
                     }
                 } else {

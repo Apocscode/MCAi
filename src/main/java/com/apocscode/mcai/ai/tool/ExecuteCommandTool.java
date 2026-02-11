@@ -1,6 +1,8 @@
 package com.apocscode.mcai.ai.tool;
 
 import com.apocscode.mcai.MCAi;
+import com.apocscode.mcai.ai.AiLogger;
+import com.apocscode.mcai.config.AiConfig;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import net.minecraft.commands.CommandSourceStack;
@@ -17,18 +19,6 @@ import java.util.Set;
  * most gameplay commands but not server administration.
  */
 public class ExecuteCommandTool implements AiTool {
-
-    // Commands that are NEVER allowed (server admin / destructive)
-    private static final Set<String> BLOCKED_COMMANDS = Set.of(
-            "stop", "op", "deop", "ban", "ban-ip", "pardon", "pardon-ip",
-            "whitelist", "save-all", "save-off", "save-on", "kick",
-            "publish", "debug", "reload", "forceload", "jfr",
-            "perf", "transfer"
-    );
-
-    // Permission level for command execution
-    // 0 = normal player, 1 = moderator, 2 = game master, 3 = admin, 4 = owner
-    private static final int PERMISSION_LEVEL = 2;
 
     @Override
     public String name() {
@@ -84,7 +74,9 @@ public class ExecuteCommandTool implements AiTool {
 
         // Security check — block dangerous commands
         String rootCommand = command.split("\\s+")[0].toLowerCase();
-        if (BLOCKED_COMMANDS.contains(rootCommand)) {
+        Set<String> blocked = AiConfig.getBlockedCommands();
+        if (blocked.contains(rootCommand)) {
+            AiLogger.commandBlocked(command, "in blocked commands list");
             return "Error: command '" + rootCommand + "' is blocked for security reasons.";
         }
 
@@ -92,14 +84,16 @@ public class ExecuteCommandTool implements AiTool {
         final String cmd = command;
         return context.runOnServer(() -> {
             try {
-                // Create a command source with elevated permissions
+                int permLevel = AiConfig.COMMAND_PERMISSION_LEVEL.get();
                 CommandSourceStack source = context.player().createCommandSourceStack()
-                        .withPermission(PERMISSION_LEVEL)
+                        .withPermission(permLevel)
                         .withSuppressedOutput(); // Don't spam chat
 
                 // Use Brigadier dispatcher which returns an int result
                 int result = context.server().getCommands()
                         .getDispatcher().execute(cmd, source);
+
+                AiLogger.command(cmd, true, "result=" + result);
 
                 if (result > 0) {
                     return "Command executed successfully: /" + cmd + " (result: " + result + ")";
@@ -107,6 +101,7 @@ public class ExecuteCommandTool implements AiTool {
                     return "Command completed: /" + cmd;
                 }
             } catch (Exception e) {
+                AiLogger.command(cmd, false, e.getMessage());
                 MCAi.LOGGER.error("Command execution failed: /{} - {}", cmd, e.getMessage());
                 return "Error executing '/" + cmd + "': " + e.getMessage();
             }

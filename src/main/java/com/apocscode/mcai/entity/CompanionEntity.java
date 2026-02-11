@@ -1,6 +1,7 @@
 package com.apocscode.mcai.entity;
 
 import com.apocscode.mcai.MCAi;
+import com.apocscode.mcai.config.AiConfig;
 import com.apocscode.mcai.entity.goal.CompanionFollowGoal;
 import com.apocscode.mcai.entity.goal.CompanionLookAtPlayerGoal;
 import com.apocscode.mcai.network.OpenChatScreenPacket;
@@ -39,6 +40,12 @@ public class CompanionEntity extends PathfinderMob {
     public CompanionEntity(EntityType<? extends CompanionEntity> type, Level level) {
         super(type, level);
         this.setPersistenceRequired();
+        // Use config default name if available
+        try {
+            this.companionName = AiConfig.DEFAULT_COMPANION_NAME.get();
+        } catch (Exception ignored) {
+            // Config may not be loaded yet during entity type registration
+        }
     }
 
     public static AttributeSupplier.Builder createAttributes() {
