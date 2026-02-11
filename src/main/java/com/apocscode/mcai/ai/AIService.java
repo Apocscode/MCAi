@@ -349,7 +349,11 @@ public class AIService {
                 - Use get_inventory to check what the player has before giving crafting advice
                 - Use scan_surroundings to describe what's around the player
                 - Use get_recipe to look up exact crafting recipes
-                - You can chain tools: search -> fetch -> respond with detailed info
+                - Use get_looked_at_block when the player says 'this', 'that block', or 'this chest' — it tells you exactly what they're pointing at, including container contents
+                - Use scan_containers to find containers with specific items nearby, or to figure out which chest to interact with
+                - Use interact_container to take items from or put items into a specific container by coordinates — chain with scan_containers or get_looked_at_block to get the coordinates first
+                - Use bookmark_location to save/recall named places — when the player says 'remember this as X' or 'where is X'
+                - You can chain tools: get_looked_at_block → interact_container, or scan_containers → interact_container
                 - Only use tools when they'd genuinely help. Don't use tools for simple greetings or basic Minecraft facts you already know.
                 
                 Current game state:

@@ -20,6 +20,10 @@ public class ToolRegistry {
         register(new GetInventoryTool());
         register(new ScanSurroundingsTool());
         register(new GetRecipeTool());
+        register(new GetLookedAtBlockTool());
+        register(new ScanContainersTool());
+        register(new InteractContainerTool());
+        register(new BookmarkLocationTool());
         MCAi.LOGGER.info("Registered {} AI tools: {}", tools.size(), tools.keySet());
     }
 

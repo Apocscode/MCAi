@@ -16,17 +16,22 @@ import java.util.List;
 /**
  * Chat screen for interacting with the AI companion.
  * Shows conversation history with a text input at the bottom.
+ * Includes mic button for Whisper voice input.
  */
 public class CompanionChatScreen extends Screen {
     private static final int PADDING = 10;
     private static final int INPUT_HEIGHT = 20;
     private static final int BUTTON_WIDTH = 50;
+    private static final int MIC_BUTTON_WIDTH = 24;
     private static final int MESSAGE_LINE_HEIGHT = 12;
 
     private final int entityId;
     private EditBox inputBox;
     private Button sendButton;
+    private Button micButton;
     private int scrollOffset = 0;
+    private boolean isRecordingVoice = false;
+    private long recordingStartTime = 0;
 
     public CompanionChatScreen(int entityId) {
         super(Component.literal("MCAi Chat"));
@@ -35,8 +40,15 @@ public class CompanionChatScreen extends Screen {
 
     @Override
     protected void init() {
+        // Initialize Whisper on first open
+        if (!WhisperService.isAvailable()) {
+            WhisperService.init();
+        }
+
         int inputY = this.height - PADDING - INPUT_HEIGHT;
-        int inputWidth = this.width - PADDING * 3 - BUTTON_WIDTH;
+        boolean hasMic = WhisperService.isAvailable();
+        int micSpace = hasMic ? MIC_BUTTON_WIDTH + 4 : 0;
+        int inputWidth = this.width - PADDING * 3 - BUTTON_WIDTH - micSpace;
 
         // Input field
         inputBox = new EditBox(this.font, PADDING, inputY, inputWidth, INPUT_HEIGHT,
@@ -46,11 +58,46 @@ public class CompanionChatScreen extends Screen {
         inputBox.setCanLoseFocus(false);
         this.addRenderableWidget(inputBox);
 
+        // Mic button (only if mic available)
+        if (hasMic) {
+            micButton = Button.builder(Component.literal("\uD83C\uDF99"), button -> toggleVoiceRecording())
+                    .bounds(PADDING + inputWidth + 4, inputY, MIC_BUTTON_WIDTH, INPUT_HEIGHT)
+                    .build();
+            this.addRenderableWidget(micButton);
+        }
+
         // Send button
+        int sendX = hasMic ? PADDING + inputWidth + 4 + MIC_BUTTON_WIDTH + 4 : PADDING * 2 + inputWidth;
         sendButton = Button.builder(Component.literal("Send"), button -> sendMessage())
-                .bounds(PADDING * 2 + inputWidth, inputY, BUTTON_WIDTH, INPUT_HEIGHT)
+                .bounds(sendX, inputY, BUTTON_WIDTH, INPUT_HEIGHT)
                 .build();
         this.addRenderableWidget(sendButton);
+    }
+
+    private void toggleVoiceRecording() {
+        if (isRecordingVoice) {
+            // Stop recording → transcribe → insert into input
+            isRecordingVoice = false;
+            if (micButton != null) micButton.setMessage(Component.literal("\uD83C\uDF99"));
+
+            WhisperService.stopRecordingAndTranscribe().thenAccept(text -> {
+                if (text != null && !text.isBlank()) {
+                    // Must run on render thread to modify UI
+                    Minecraft.getInstance().execute(() -> {
+                        String current = inputBox.getValue();
+                        String newText = current.isEmpty() ? text : current + " " + text;
+                        inputBox.setValue(newText);
+                        inputBox.moveCursorToEnd(false);
+                    });
+                }
+            });
+        } else {
+            // Start recording
+            WhisperService.startRecording();
+            isRecordingVoice = true;
+            recordingStartTime = System.currentTimeMillis();
+            if (micButton != null) micButton.setMessage(Component.literal("\u23F9")); // Stop icon
+        }
     }
 
     @Override
@@ -67,9 +114,31 @@ public class CompanionChatScreen extends Screen {
         graphics.drawCenteredString(this.font, "§b§lMCAi Companion", this.width / 2, 6, 0xFFFFFF);
         graphics.fill(PADDING, 18, this.width - PADDING, 19, 0xFF3498DB);
 
+        // Recording indicator
+        if (isRecordingVoice) {
+            long elapsed = (System.currentTimeMillis() - recordingStartTime) / 1000;
+            boolean blink = (System.currentTimeMillis() / 500) % 2 == 0;
+            String recText = (blink ? "§c\u25CF " : "§4\u25CF ") + "§cRecording... " + elapsed + "s";
+            graphics.drawCenteredString(this.font, recText, this.width / 2, this.height - PADDING - INPUT_HEIGHT - 16, 0xFF5555);
+
+            // Red glow on mic button
+            if (micButton != null) {
+                int bx = micButton.getX() - 1;
+                int by = micButton.getY() - 1;
+                int bw = micButton.getWidth() + 2;
+                int bh = micButton.getHeight() + 2;
+                graphics.fill(bx, by, bx + bw, by + bh, blink ? 0x44FF0000 : 0x22FF0000);
+            }
+        }
+
+        // Whisper status hint (bottom-left, subtle)
+        if (WhisperService.isAvailable()) {
+            graphics.drawString(this.font, "§8[V = push-to-talk]", PADDING, this.height - PADDING - INPUT_HEIGHT - 14, 0x444444, false);
+        }
+
         // Chat area
         int chatTop = 24;
-        int chatBottom = this.height - PADDING - INPUT_HEIGHT - 8;
+        int chatBottom = this.height - PADDING - INPUT_HEIGHT - (isRecordingVoice ? 24 : 8);
         int chatWidth = this.width - PADDING * 2;
 
         // Draw message history
@@ -134,6 +203,14 @@ public class CompanionChatScreen extends Screen {
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        // V key = push-to-talk (start recording)
+        if (keyCode == 86 && !inputBox.isFocused()) { // 86 = V
+            if (!isRecordingVoice && WhisperService.isAvailable()) {
+                toggleVoiceRecording();
+                return true;
+            }
+        }
+
         // Enter key sends message
         if (keyCode == 257 || keyCode == 335) { // Enter or numpad enter
             sendMessage();
@@ -141,10 +218,25 @@ public class CompanionChatScreen extends Screen {
         }
         // Escape closes
         if (keyCode == 256) {
+            if (isRecordingVoice) {
+                WhisperService.cancelRecording();
+                isRecordingVoice = false;
+                if (micButton != null) micButton.setMessage(Component.literal("\uD83C\uDF99"));
+            }
             this.onClose();
             return true;
         }
         return super.keyPressed(keyCode, scanCode, modifiers);
+    }
+
+    @Override
+    public boolean keyReleased(int keyCode, int scanCode, int modifiers) {
+        // V key released = stop recording and transcribe
+        if (keyCode == 86 && isRecordingVoice) { // 86 = V
+            toggleVoiceRecording(); // Stops and transcribes
+            return true;
+        }
+        return super.keyReleased(keyCode, scanCode, modifiers);
     }
 
     private void sendMessage() {
@@ -163,6 +255,16 @@ public class CompanionChatScreen extends Screen {
 
         // Show thinking indicator
         ConversationManager.addSystemMessage("Thinking...");
+    }
+
+    @Override
+    public void onClose() {
+        // Cancel any active recording
+        if (isRecordingVoice) {
+            WhisperService.cancelRecording();
+            isRecordingVoice = false;
+        }
+        super.onClose();
     }
 
     @Override

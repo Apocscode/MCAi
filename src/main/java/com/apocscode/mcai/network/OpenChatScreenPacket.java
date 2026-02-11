@@ -1,6 +1,7 @@
 package com.apocscode.mcai.network;
 
 import com.apocscode.mcai.MCAi;
+import com.apocscode.mcai.client.ClientTickHandler;
 import com.apocscode.mcai.client.CompanionChatScreen;
 import io.netty.buffer.ByteBuf;
 import net.minecraft.client.Minecraft;
@@ -29,6 +30,8 @@ public record OpenChatScreenPacket(int entityId) implements CustomPacketPayload 
 
     public static void handle(OpenChatScreenPacket packet, IPayloadContext context) {
         context.enqueueWork(() -> {
+            // Track entity ID for push-to-talk outside chat screen
+            ClientTickHandler.setCompanionEntityId(packet.entityId());
             Minecraft.getInstance().setScreen(new CompanionChatScreen(packet.entityId()));
         });
     }
