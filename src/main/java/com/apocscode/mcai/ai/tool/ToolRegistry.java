@@ -1,0 +1,57 @@
+package com.apocscode.mcai.ai.tool;
+
+import com.apocscode.mcai.MCAi;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
+
+import java.util.LinkedHashMap;
+import java.util.Map;
+
+/**
+ * Registry of all available AI tools.
+ * Builds the tools array for Ollama's tool-calling API.
+ */
+public class ToolRegistry {
+    private static final Map<String, AiTool> tools = new LinkedHashMap<>();
+
+    public static void init() {
+        register(new WebSearchTool());
+        register(new WebFetchTool());
+        register(new GetInventoryTool());
+        register(new ScanSurroundingsTool());
+        register(new GetRecipeTool());
+        MCAi.LOGGER.info("Registered {} AI tools: {}", tools.size(), tools.keySet());
+    }
+
+    public static void register(AiTool tool) {
+        tools.put(tool.name(), tool);
+    }
+
+    public static AiTool get(String name) {
+        return tools.get(name);
+    }
+
+    /**
+     * Build the "tools" JSON array for Ollama's /api/chat request.
+     * Format: [{type: "function", function: {name, description, parameters}}]
+     */
+    public static JsonArray toOllamaToolsArray() {
+        JsonArray arr = new JsonArray();
+        for (AiTool tool : tools.values()) {
+            JsonObject func = new JsonObject();
+            func.addProperty("name", tool.name());
+            func.addProperty("description", tool.description());
+            func.add("parameters", tool.parameterSchema());
+
+            JsonObject wrapper = new JsonObject();
+            wrapper.addProperty("type", "function");
+            wrapper.add("function", func);
+            arr.add(wrapper);
+        }
+        return arr;
+    }
+
+    public static Map<String, AiTool> getAll() {
+        return tools;
+    }
+}
