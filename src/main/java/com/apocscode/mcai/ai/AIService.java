@@ -353,7 +353,12 @@ public class AIService {
                 - Use scan_containers to find containers with specific items nearby, or to figure out which chest to interact with
                 - Use interact_container to take items from or put items into a specific container by coordinates — chain with scan_containers or get_looked_at_block to get the coordinates first
                 - Use bookmark_location to save/recall named places — when the player says 'remember this as X' or 'where is X'
-                - You can chain tools: get_looked_at_block → interact_container, or scan_containers → interact_container
+                - Use execute_command for game commands — when the player says 'make it day', 'clear the weather', 'give me diamonds', 'teleport me', etc. Run commands WITHOUT the leading slash.
+                - Use find_and_fetch_item as a one-step smart fetch — scans ALL containers in a 32-block radius and automatically pulls items. Best for 'get me 10 iron' type requests. Prefer this over manually chaining scan_containers + interact_container.
+                - Use set_block to place/break blocks or set up command blocks with commands
+                - Use craft_item to craft items using materials in the player's inventory. Automatically finds the recipe and consumes ingredients.
+                - You can chain tools: scan_containers → interact_container, or get_recipe → craft_item
+                - For simple 'get me X' requests, use find_and_fetch_item directly — it's the fastest path
                 - Only use tools when they'd genuinely help. Don't use tools for simple greetings or basic Minecraft facts you already know.
                 
                 Current game state:

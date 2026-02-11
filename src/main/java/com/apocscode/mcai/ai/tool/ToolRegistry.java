@@ -24,6 +24,10 @@ public class ToolRegistry {
         register(new ScanContainersTool());
         register(new InteractContainerTool());
         register(new BookmarkLocationTool());
+        register(new ExecuteCommandTool());
+        register(new FindAndFetchItemTool());
+        register(new SetBlockTool());
+        register(new CraftItemTool());
         MCAi.LOGGER.info("Registered {} AI tools: {}", tools.size(), tools.keySet());
     }
 

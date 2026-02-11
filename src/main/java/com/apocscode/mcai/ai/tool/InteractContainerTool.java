@@ -19,7 +19,7 @@ import net.minecraft.world.level.block.entity.BlockEntity;
  */
 public class InteractContainerTool implements AiTool {
 
-    private static final double MAX_DISTANCE = 6.0;
+    private static final double MAX_DISTANCE = 32.0;
 
     @Override
     public String name() {
@@ -133,10 +133,13 @@ public class InteractContainerTool implements AiTool {
                     " is '" + blockName + "', not a container.";
         }
 
+        // Run item transfers on the server thread (thread safety)
+        final String query = itemQuery;
+        final int count = requestedCount;
         if (action.equals("take")) {
-            return takeFromContainer(context, container, itemQuery, requestedCount, targetPos);
+            return context.runOnServer(() -> takeFromContainer(context, container, query, count, targetPos));
         } else {
-            return putInContainer(context, container, itemQuery, requestedCount, targetPos);
+            return context.runOnServer(() -> putInContainer(context, container, query, count, targetPos));
         }
     }
 

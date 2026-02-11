@@ -39,7 +39,7 @@ public class ScanContainersTool implements AiTool {
 
         JsonObject radius = new JsonObject();
         radius.addProperty("type", "integer");
-        radius.addProperty("description", "Scan radius in blocks (1-16, default 8)");
+        radius.addProperty("description", "Scan radius in blocks (1-32, default 16)");
         props.add("radius", radius);
 
         JsonObject itemFilter = new JsonObject();
@@ -57,9 +57,9 @@ public class ScanContainersTool implements AiTool {
     public String execute(JsonObject args, ToolContext context) {
         if (context.player() == null) return "Error: no player context";
 
-        int radius = 8;
+        int radius = 16;
         if (args.has("radius")) {
-            radius = Math.max(1, Math.min(16, args.get("radius").getAsInt()));
+            radius = Math.max(1, Math.min(32, args.get("radius").getAsInt()));
         }
 
         String filter = null;
