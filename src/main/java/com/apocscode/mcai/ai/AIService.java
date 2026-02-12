@@ -789,6 +789,17 @@ public class AIService {
                 - For smelting, use smelt_items (requires real furnace + fuel in companion inventory).
                 - ACT first, explain briefly after. Be fully autonomous — complete the entire task.
                 
+                TOOL ROUTING — read the user's intent and pick the RIGHT tool:
+                  "dig down N" / "shaft" / "go underground" → dig_down(depth=N) — vertical shaft only
+                  "mine area" / "clear area" / "flatten" → mine_area — rectangular volume
+                  "mine iron" / "get ore" / "mine diamonds" → mine_ores — auto-finds ore blocks nearby
+                  "chop trees" / "get wood" / "get logs" → chop_trees
+                  "get me X from chest" / "bring X" / "fetch X" → find_and_fetch_item
+                  "gather sand/dirt/cobble" → gather_blocks(block="sand")
+                  "smelt X" / "cook X" → smelt_items
+                  "what's nearby" / "scan" / "look around" → scan_surroundings
+                  NEVER use mine_area for "dig down" — mine_area is horizontal. dig_down is vertical.
+                
                 MINECRAFT GAME KNOWLEDGE:
                 
                 Tool Tiers (weakest → strongest):
