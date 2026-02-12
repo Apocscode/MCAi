@@ -1,5 +1,6 @@
 package com.apocscode.mcai.task;
 
+import com.apocscode.mcai.MCAi;
 import com.apocscode.mcai.entity.CompanionEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.sounds.SoundEvents;
@@ -11,6 +12,7 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.*;
 import net.minecraft.world.level.block.entity.AbstractFurnaceBlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.state.BlockState;
 
 /**
  * Task: Companion pathfinds to a nearby furnace, loads items + fuel,
@@ -29,6 +31,8 @@ public class SmeltItemsTask extends CompanionTask {
     private final int count;
     private Phase phase;
     private BlockPos furnacePos;
+    /** True if we auto-placed this furnace and should pick it up when done. */
+    private boolean shouldPickUpFurnace = false;
     private int stuckTimer = 0;
     private int waitTimer = 0;
     private int itemsInserted = 0;
@@ -68,9 +72,14 @@ public class SmeltItemsTask extends CompanionTask {
 
         furnacePos = findNearbyFurnace();
         if (furnacePos == null) {
-            fail("No furnace, blast furnace, or smoker found within " + SCAN_RANGE + " blocks. " +
-                    "Craft and place a furnace first (8 cobblestone).");
-            return;
+            // Try to auto-craft and place a furnace
+            furnacePos = tryAutoPlaceFurnace();
+            if (furnacePos == null) {
+                fail("No furnace found within " + SCAN_RANGE + " blocks " +
+                        "and couldn't auto-craft one (need 8 cobblestone).");
+                return;
+            }
+            shouldPickUpFurnace = true;
         }
 
         Block furnaceBlock = companion.level().getBlockState(furnacePos).getBlock();
@@ -253,6 +262,12 @@ public class SmeltItemsTask extends CompanionTask {
         }
 
         companion.playSound(SoundEvents.ITEM_PICKUP, 0.5F, 1.0F);
+
+        // Pick up the furnace if we placed it
+        if (shouldPickUpFurnace && furnacePos != null) {
+            pickUpAutoPlacedFurnace();
+        }
+
         say("Smelting complete! Collected " + itemsCollected + " smelted items.");
         complete();
     }
@@ -337,8 +352,136 @@ public class SmeltItemsTask extends CompanionTask {
                 || item == Items.LAVA_BUCKET || item == Items.BLAZE_ROD;
     }
 
+    // ========== Auto-place furnace ==========
+
+    /**
+     * Try to auto-craft a furnace from 8 cobblestone in companion inventory,
+     * then place it near the companion.
+     * @return the BlockPos of the placed furnace, or null if failed
+     */
+    private BlockPos tryAutoPlaceFurnace() {
+        SimpleContainer inv = companion.getCompanionInventory();
+
+        // Count cobblestone
+        int cobbleCount = 0;
+        for (int i = 0; i < inv.getContainerSize(); i++) {
+            ItemStack stack = inv.getItem(i);
+            if (!stack.isEmpty() && stack.getItem() == Items.COBBLESTONE) {
+                cobbleCount += stack.getCount();
+            }
+        }
+
+        if (cobbleCount < 8) {
+            MCAi.LOGGER.debug("Cannot auto-craft furnace: only {} cobblestone (need 8)", cobbleCount);
+            return null;
+        }
+
+        // Consume 8 cobblestone
+        int toConsume = 8;
+        for (int i = 0; i < inv.getContainerSize() && toConsume > 0; i++) {
+            ItemStack stack = inv.getItem(i);
+            if (!stack.isEmpty() && stack.getItem() == Items.COBBLESTONE) {
+                int take = Math.min(toConsume, stack.getCount());
+                stack.shrink(take);
+                if (stack.isEmpty()) inv.setItem(i, ItemStack.EMPTY);
+                toConsume -= take;
+            }
+        }
+
+        // Give furnace item and place it
+        inv.addItem(new ItemStack(Items.FURNACE, 1));
+        BlockPos placePos = findPlaceableSpot();
+        if (placePos == null) {
+            // Can't place — return cobblestone
+            inv.addItem(new ItemStack(Items.COBBLESTONE, 8));
+            // Remove the furnace item we just gave
+            for (int i = 0; i < inv.getContainerSize(); i++) {
+                ItemStack stack = inv.getItem(i);
+                if (!stack.isEmpty() && stack.getItem() == Items.FURNACE) {
+                    stack.shrink(1);
+                    if (stack.isEmpty()) inv.setItem(i, ItemStack.EMPTY);
+                    break;
+                }
+            }
+            MCAi.LOGGER.warn("Cannot auto-place furnace: no suitable spot nearby");
+            return null;
+        }
+
+        if (BlockHelper.placeBlock(companion, placePos, Blocks.FURNACE)) {
+            MCAi.LOGGER.info("Auto-crafted and placed furnace at {}", placePos);
+            say("Crafted and placed a furnace!");
+            return placePos;
+        }
+
+        // Failed to place — return materials
+        inv.addItem(new ItemStack(Items.COBBLESTONE, 8));
+        return null;
+    }
+
+    /**
+     * Pick up an auto-placed furnace: break block and recollect the item.
+     */
+    private void pickUpAutoPlacedFurnace() {
+        Level level = companion.level();
+        BlockState state = level.getBlockState(furnacePos);
+
+        if (state.isAir()) return;
+
+        // Make sure it's actually a furnace
+        Block block = state.getBlock();
+        if (!(block instanceof FurnaceBlock || block instanceof BlastFurnaceBlock
+                || block instanceof SmokerBlock)) return;
+
+        // Clear any remaining items in the furnace first
+        BlockEntity be = level.getBlockEntity(furnacePos);
+        if (be instanceof AbstractFurnaceBlockEntity furnace) {
+            SimpleContainer inv = companion.getCompanionInventory();
+            for (int slot = 0; slot < 3; slot++) {
+                ItemStack furnaceStack = furnace.getItem(slot);
+                if (!furnaceStack.isEmpty()) {
+                    ItemStack remainder = inv.addItem(furnaceStack.copy());
+                    furnace.setItem(slot, remainder);
+                }
+            }
+        }
+
+        // Remove the block and return it to inventory
+        level.setBlockAndUpdate(furnacePos, Blocks.AIR.defaultBlockState());
+        companion.getCompanionInventory().addItem(new ItemStack(block.asItem(), 1));
+        MCAi.LOGGER.info("Picked up auto-placed furnace at {}", furnacePos);
+        say("Picked up the furnace.");
+    }
+
+    /**
+     * Find a suitable air block near the companion with solid ground below.
+     */
+    private BlockPos findPlaceableSpot() {
+        BlockPos center = companion.blockPosition();
+        Level level = companion.level();
+
+        for (int radius = 1; radius <= 3; radius++) {
+            for (int x = -radius; x <= radius; x++) {
+                for (int z = -radius; z <= radius; z++) {
+                    if (Math.abs(x) != radius && Math.abs(z) != radius) continue;
+                    for (int y = -1; y <= 1; y++) {
+                        BlockPos candidate = center.offset(x, y, z);
+                        BlockPos below = candidate.below();
+                        if (level.getBlockState(candidate).isAir()
+                                && level.getBlockState(below).isSolidRender(level, below)) {
+                            return candidate;
+                        }
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
     @Override
     protected void cleanup() {
-        // Furnace continues operating independently — nothing to clean up
+        // If we auto-placed a furnace and the task is cancelled/failed, try to pick it up
+        if (shouldPickUpFurnace && furnacePos != null) {
+            pickUpAutoPlacedFurnace();
+        }
     }
 }

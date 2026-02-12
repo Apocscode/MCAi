@@ -46,27 +46,6 @@ public class CraftItemTool implements AiTool {
     private static final int CHEST_SCAN_RADIUS = 16;
     private static final int CRAFTING_TABLE_RADIUS = 8;
 
-    /**
-     * Modded items that grant portable 3x3 crafting.
-     * Checked by registry ID (namespace:path) in player + companion inventories.
-     */
-    private static final Set<String> PORTABLE_CRAFTING_ITEMS = Set.of(
-            "sophisticatedbackpacks:crafting_upgrade",
-            "crafting_on_a_stick:crafting_table",
-            "easy_villagers:auto_crafter",
-            "portable_crafting:portable_crafting_table"
-    );
-
-    /**
-     * Modded items matched by partial ID — if the item's registry path contains any of these.
-     * Catches variants like "iron_crafting_table_on_a_stick" etc.
-     */
-    private static final Set<String> PORTABLE_CRAFTING_PARTIALS = Set.of(
-            "portable_crafting",
-            "crafting_on_a_stick",
-            "crafting_upgrade"
-    );
-
     @Override
     public String name() {
         return "craft_item";
@@ -196,13 +175,20 @@ public class CraftItemTool implements AiTool {
                         targetItem, ingredients, craftsNeeded, craftLog);
             }
 
-            // === PHASE 5.5: Check crafting station requirement ===
+            // === PHASE 5.5: Ensure crafting station if 3x3 recipe ===
             boolean needs3x3 = !recipe.canCraftInDimensions(2, 2);
-            if (needs3x3 && !hasCraftingAccess(context)) {
-                return craftLog.toString() + targetName + " requires a 3x3 crafting grid. " +
-                        "Place a crafting table within " + CRAFTING_TABLE_RADIUS + " blocks, " +
-                        "or have a portable crafting item (e.g. Sophisticated Backpacks crafting upgrade). " +
-                        "2x2 recipes like planks and sticks can still be crafted from inventory.";
+            CraftingBlockHelper.StationResult stationResult = null;
+            if (needs3x3) {
+                stationResult = CraftingBlockHelper.ensureStation(
+                        CraftingBlockHelper.StationType.CRAFTING_TABLE, context);
+                if (!stationResult.success) {
+                    return craftLog.toString() + targetName + " requires a 3x3 crafting grid. " +
+                            stationResult.message + " " +
+                            "2x2 recipes like planks and sticks can still be crafted from inventory.";
+                }
+                if (!stationResult.message.isEmpty()) {
+                    craftLog.append(stationResult.message).append(" ");
+                }
             }
 
             // === PHASE 6: Execute the craft ===
@@ -246,6 +232,12 @@ public class CraftItemTool implements AiTool {
                         context.player().drop(excessStack, false);
                     }
                 }
+            }
+
+            // Pick up auto-placed crafting station if we placed one
+            if (stationResult != null && stationResult.shouldPickUp) {
+                CraftingBlockHelper.pickUpStation(stationResult, context);
+                craftLog.append("Picked up crafting table. ");
             }
 
             StringBuilder sb = new StringBuilder();
@@ -373,7 +365,7 @@ public class CraftItemTool implements AiTool {
 
             Recipe<?> sub = subRecipe.value();
 
-            // Skip 3x3 sub-recipes if no crafting table access
+            // Skip 3x3 sub-recipes if no crafting table access (can't auto-place during fetch phase)
             if (!sub.canCraftInDimensions(2, 2) && !hasCraftingAccess(context)) continue;
 
             int outputPerCraft = sub.getResultItem(registryAccess).getCount();
@@ -470,7 +462,7 @@ public class CraftItemTool implements AiTool {
 
             Recipe<?> sub = subRecipe.value();
 
-            // Skip 3x3 sub-recipes if no crafting table access
+            // Skip 3x3 sub-recipes if no crafting table access (can't auto-place during auto-craft phase)
             if (!sub.canCraftInDimensions(2, 2) && !hasCraftingAccess(context)) continue;
 
             int outputPerCraft = sub.getResultItem(registryAccess).getCount();
@@ -761,19 +753,13 @@ public class CraftItemTool implements AiTool {
      * Checks if the player/companion has access to a 3x3 crafting grid:
      * 1. Crafting table block within CRAFTING_TABLE_RADIUS blocks of the player
      * 2. OR a known portable crafting item in player/companion inventory
+     * Used for sub-recipe checks where we don't want to auto-place.
      */
     private boolean hasCraftingAccess(ToolContext context) {
-        return hasCraftingTableNearby(context) || hasPortableCraftingItem(context);
-    }
-
-    /**
-     * Scans for a crafting table block within radius of the player.
-     */
-    private boolean hasCraftingTableNearby(ToolContext context) {
+        // Check for nearby crafting table
         Level level = context.player().level();
         BlockPos center = context.player().blockPosition();
         int r = CRAFTING_TABLE_RADIUS;
-
         for (int x = -r; x <= r; x++) {
             for (int y = -r; y <= r; y++) {
                 for (int z = -r; z <= r; z++) {
@@ -784,53 +770,8 @@ public class CraftItemTool implements AiTool {
                 }
             }
         }
-        return false;
-    }
-
-    /**
-     * Checks if the player or companion has a modded portable crafting item.
-     * Supports Sophisticated Backpacks crafting upgrade, Crafting on a Stick, etc.
-     * Uses registry ID matching (exact + partial) to be mod-agnostic.
-     */
-    private boolean hasPortableCraftingItem(ToolContext context) {
-        // Check player inventory
-        var playerInv = context.player().getInventory();
-        for (int i = 0; i < playerInv.getContainerSize(); i++) {
-            ItemStack stack = playerInv.getItem(i);
-            if (!stack.isEmpty() && isPortableCraftingItem(stack)) return true;
-        }
-
-        // Check companion inventory
-        SimpleContainer companionInv = getCompanionInventory(context);
-        if (companionInv != null) {
-            for (int i = 0; i < companionInv.getContainerSize(); i++) {
-                ItemStack stack = companionInv.getItem(i);
-                if (!stack.isEmpty() && isPortableCraftingItem(stack)) return true;
-            }
-        }
-
-        return false;
-    }
-
-    /**
-     * Checks if an ItemStack is a known portable crafting item by its registry ID.
-     */
-    private boolean isPortableCraftingItem(ItemStack stack) {
-        ResourceLocation id = BuiltInRegistries.ITEM.getKey(stack.getItem());
-        if (id == null) return false;
-
-        String fullId = id.toString();
-        String path = id.getPath();
-
-        // Exact match
-        if (PORTABLE_CRAFTING_ITEMS.contains(fullId)) return true;
-
-        // Partial match on path
-        for (String partial : PORTABLE_CRAFTING_PARTIALS) {
-            if (path.contains(partial)) return true;
-        }
-
-        return false;
+        // Check for portable crafting items
+        return CraftingBlockHelper.hasPortableCraftingItem(context);
     }
 
     // ========== Inventory helpers ==========
