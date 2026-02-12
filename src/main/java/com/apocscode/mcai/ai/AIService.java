@@ -789,6 +789,59 @@ public class AIService {
                 - For smelting, use smelt_items (requires real furnace + fuel in companion inventory).
                 - ACT first, explain briefly after. Be fully autonomous — complete the entire task.
                 
+                MINECRAFT GAME KNOWLEDGE:
+                
+                Tool Tiers (weakest → strongest):
+                  Wood(0) < Stone(1) < Iron(2) < Diamond(3) < Netherite(4)
+                  Higher tier = faster + can mine harder blocks. Each tier unlocks new ores.
+                
+                Tool Types & Uses:
+                  Pickaxe — stone, ores, metal blocks, obsidian, nether blocks. REQUIRED for ore drops.
+                  Axe — logs, wood, pumpkins, melons. Faster than hand. Also a weapon.
+                  Shovel — dirt, sand, gravel, clay, snow, soul sand. Needed for path blocks.
+                  Hoe — farmland (right-click dirt/grass). Breaks leaves, hay, sponge faster.
+                  Shears — wool (from sheep alive), leaves, cobwebs, vines, flowers. No shears = no wool drop.
+                  Sword — best melee weapon. Kills mobs. Breaks cobwebs fast.
+                  Bucket — carries water/lava/milk. Essential for obsidian, farms.
+                  Flint & Steel — lights nether portal, fires.
+                  Fishing Rod — catches fish, treasure, junk.
+                
+                Mining Level Requirements (minimum pickaxe tier needed):
+                  Wood pick(0): cobblestone, coal ore, nether quartz, nether gold ore
+                  Stone pick(1): iron ore, copper ore, lapis ore
+                  Iron pick(2): gold ore, diamond ore, emerald ore, redstone ore, obsidian
+                  Diamond pick(3): ancient debris (netherite), crying obsidian
+                  Wrong tier = block breaks but drops NOTHING.
+                
+                Smelting & Fuel:
+                  Furnace smelts raw ores → ingots (raw_iron→iron_ingot, raw_gold→gold_ingot).
+                  Fuel: coal(8 items), charcoal(8), planks(1.5), logs(1.5), blaze_rod(12), lava_bucket(100).
+                  Blast furnace = 2x faster for ores/metal. Smoker = 2x faster for food.
+                
+                Crafting Progression (early game):
+                  1. Punch tree → logs → planks → crafting table + sticks
+                  2. Wooden pickaxe (3 planks + 2 sticks) → mine cobblestone
+                  3. Stone pickaxe (3 cobblestone + 2 sticks) → mine iron ore
+                  4. Furnace (8 cobblestone) + smelt raw_iron → iron_ingot
+                  5. Iron pickaxe (3 iron_ingot + 2 sticks) → mine diamond/gold/redstone
+                
+                Block → Tool Mapping:
+                  Stone/Cobble/Brick/Ore → Pickaxe
+                  Dirt/Sand/Gravel/Clay/Snow → Shovel
+                  Log/Planks/Wood → Axe
+                  Crops/Leaves/Hay → Hoe (or hand)
+                  Wool/Vines/Cobweb → Shears (or sword for cobweb)
+                  Breaking without correct tool = very slow + often no drop.
+                
+                Mob Drops (common):
+                  Zombie→rotten_flesh. Skeleton→bone+arrow. Creeper→gunpowder.
+                  Spider→string+spider_eye. Enderman→ender_pearl. Blaze→blaze_rod.
+                  Cow→leather+beef. Sheep→wool(shears)+mutton. Chicken→feather+chicken+egg.
+                  Pig→porkchop. Iron Golem→iron_ingot. Witch→potions+redstone+glowstone.
+                
+                Dimensions:
+                  Overworld — normal. Nether — fire/lava, needs obsidian portal (4x5 frame + flint&steel). End — endermen+dragon, needs ender_eyes in stronghold portal.
+                
                 Current state:
                 """.formatted(companionName) + playerContext;
     }

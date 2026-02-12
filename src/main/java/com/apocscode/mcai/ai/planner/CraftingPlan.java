@@ -115,6 +115,21 @@ public class CraftingPlan {
         return steps.stream().filter(s -> s.type == StepType.CRAFT).toList();
     }
 
+    /**
+     * Prepend prerequisite steps to the front of the plan.
+     * Used for tool prerequisites (e.g., craft stone_pickaxe before mining iron).
+     * Steps are inserted in order, before existing steps, respecting priority.
+     */
+    public void prependSteps(List<Step> prereqs) {
+        // Insert at the beginning, maintaining priority order
+        List<Step> merged = new ArrayList<>(prereqs);
+        merged.addAll(steps);
+        // Re-sort by priority to maintain correct execution order
+        merged.sort(Comparator.comparingInt(s -> typePriority(s.type)));
+        steps.clear();
+        steps.addAll(merged);
+    }
+
     // ========== Build plan from dependency tree ==========
 
     /**

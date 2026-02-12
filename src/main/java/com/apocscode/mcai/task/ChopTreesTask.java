@@ -90,6 +90,7 @@ public class ChopTreesTask extends CompanionTask {
         }
 
         if (isInReach(currentTarget, 3.5)) {
+            companion.equipBestToolForBlock(companion.level().getBlockState(currentTarget));
             BlockHelper.breakBlock(companion, currentTarget);
             targets.poll();
             currentTarget = null;

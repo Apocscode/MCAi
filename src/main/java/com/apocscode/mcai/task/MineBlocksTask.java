@@ -96,6 +96,7 @@ public class MineBlocksTask extends CompanionTask {
         }
 
         if (isInReach(currentTarget, 3.0)) {
+            companion.equipBestToolForBlock(companion.level().getBlockState(currentTarget));
             BlockHelper.breakBlock(companion, currentTarget);
             blocksMined++;
             targets.poll();

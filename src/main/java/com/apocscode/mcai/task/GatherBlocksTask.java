@@ -73,6 +73,7 @@ public class GatherBlocksTask extends CompanionTask {
         }
 
         if (isInReach(currentTarget, 3.0)) {
+            companion.equipBestToolForBlock(companion.level().getBlockState(currentTarget));
             BlockHelper.breakBlock(companion, currentTarget);
             targets.poll();
             currentTarget = null;

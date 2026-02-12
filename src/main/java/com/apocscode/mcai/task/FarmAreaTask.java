@@ -152,6 +152,7 @@ public class FarmAreaTask extends CompanionTask {
         }
 
         if (isInReach(currentTarget, 2.5)) {
+            companion.equipBestToolForBlock(companion.level().getBlockState(currentTarget));
             BlockHelper.breakBlock(companion, currentTarget);
             workQueue.poll();
             currentTarget = null;

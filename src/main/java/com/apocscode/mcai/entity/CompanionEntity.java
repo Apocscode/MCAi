@@ -803,6 +803,63 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
     }
 
     /**
+     * Equip the best tool from inventory for a specific block.
+     * Checks all inventory slots and picks the tool that mines the given block fastest.
+     * This handles pickaxe/axe/shovel/hoe selection automatically based on the block type.
+     *
+     * @param state The block state to be mined
+     */
+    public void equipBestToolForBlock(net.minecraft.world.level.block.state.BlockState state) {
+        ItemStack current = this.getItemBySlot(EquipmentSlot.MAINHAND);
+        float currentSpeed = current.getDestroySpeed(state);
+
+        ItemStack bestTool = null;
+        int bestSlot = -1;
+        float bestSpeed = currentSpeed;
+
+        for (int i = 0; i < inventory.getContainerSize(); i++) {
+            ItemStack stack = inventory.getItem(i);
+            if (stack.isEmpty()) continue;
+            float speed = stack.getDestroySpeed(state);
+            if (speed > bestSpeed) {
+                bestSpeed = speed;
+                bestTool = stack;
+                bestSlot = i;
+            }
+        }
+
+        if (bestSlot >= 0 && bestTool != null) {
+            // Swap current mainhand with the better tool
+            if (!current.isEmpty()) {
+                inventory.setItem(bestSlot, current);
+            } else {
+                inventory.setItem(bestSlot, ItemStack.EMPTY);
+            }
+            this.setItemSlot(EquipmentSlot.MAINHAND, bestTool);
+        }
+    }
+
+    /**
+     * Check if the companion has a tool that can properly harvest a block (get drops).
+     * For example, iron ore requires at least a stone pickaxe.
+     *
+     * @param state The block state to check
+     * @return true if the companion has a tool that grants drops from this block
+     */
+    public boolean canHarvestBlock(net.minecraft.world.level.block.state.BlockState state) {
+        // Check mainhand first
+        ItemStack mainHand = this.getItemBySlot(EquipmentSlot.MAINHAND);
+        if (mainHand.isCorrectToolForDrops(state)) return true;
+
+        // Check inventory
+        for (int i = 0; i < inventory.getContainerSize(); i++) {
+            ItemStack stack = inventory.getItem(i);
+            if (!stack.isEmpty() && stack.isCorrectToolForDrops(state)) return true;
+        }
+        return false;
+    }
+
+    /**
      * Auto-equip the best armor from the companion's inventory.
      * Scans all inventory slots for armor items and equips the highest-defense piece
      * in each slot (head, chest, legs, feet). Old armor goes back to inventory.

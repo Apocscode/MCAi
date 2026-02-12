@@ -20,6 +20,8 @@ import net.minecraft.world.Container;
 import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.item.PickaxeItem;
 import net.minecraft.world.item.crafting.*;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
@@ -564,6 +566,13 @@ public class CraftItemTool implements AiTool {
 
         // === Convert to ordered plan ===
         CraftingPlan plan = CraftingPlan.fromTree(tree);
+
+        // === Check tool prerequisites for MINE steps ===
+        // If plan includes mining iron ore but companion has no stone+ pickaxe, we need to craft one first.
+        // The plan already handles the chain (chop→craft planks→craft sticks→craft pickaxe→mine),
+        // but only if we detect the need and recursively resolve the pickaxe too.
+        ensureToolPrerequisites(plan, available, companion, recipeManager, registryAccess);
+
         plan.logPlan();
 
         List<CraftingPlan.Step> asyncSteps = plan.getAsyncSteps();
@@ -647,6 +656,171 @@ public class CraftItemTool implements AiTool {
         summary.append(". I'll handle each step automatically!");
 
         return summary.toString();
+    }
+
+    // ========== Tool Prerequisite System ==========
+
+    /**
+     * Check if the plan includes MINE steps that require a pickaxe tier the companion doesn't have.
+     * If so, prepend the necessary tool crafting steps to the plan.
+     *
+     * Mining tiers:
+     *   Tier 0 (Wood/Gold pick): coal ore, nether quartz, nether gold ore
+     *   Tier 1 (Stone pick): iron ore, copper ore, lapis ore
+     *   Tier 2 (Iron pick): gold ore, diamond ore, emerald ore, redstone ore
+     *   Tier 3 (Diamond pick): ancient debris, obsidian
+     */
+    private void ensureToolPrerequisites(CraftingPlan plan, Map<Item, Integer> available,
+                                          CompanionEntity companion,
+                                          RecipeManager recipeManager, RegistryAccess registryAccess) {
+        // Determine the highest mining tier required by MINE steps in the plan
+        int requiredTier = 0;
+        for (CraftingPlan.Step step : plan.getSteps()) {
+            if (step.type == RecipeResolver.StepType.MINE) {
+                int tier = getRequiredMiningTier(step.itemId);
+                if (tier > requiredTier) requiredTier = tier;
+            }
+        }
+
+        if (requiredTier == 0) return; // Wood pick or bare hands suffice
+
+        // Check what pickaxe the companion already has
+        int companionTier = getCompanionPickaxeTier(companion, available);
+        if (companionTier >= requiredTier) return; // Already has sufficient pickaxe
+
+        MCAi.LOGGER.info("Tool prerequisite: need tier {} pick, have tier {}. Adding prerequisite steps.",
+                requiredTier, companionTier);
+
+        // Determine which pickaxe to craft (just need the minimum required tier)
+        // But we might need to bootstrap: to get stone pick we need wood pick + cobble,
+        // to get iron pick we need stone pick + iron ingots, etc.
+        // Add steps bottom-up from current tier to required tier.
+        try {
+            RecipeResolver resolver = new RecipeResolver(recipeManager, registryAccess);
+            List<CraftingPlan.Step> prereqSteps = new ArrayList<>();
+
+            if (companionTier < 1 && requiredTier >= 1) {
+                // Need at least stone pickaxe — requires wooden pickaxe first to mine cobblestone
+                addToolChainSteps(prereqSteps, Items.WOODEN_PICKAXE, available, resolver);
+                addToolChainSteps(prereqSteps, Items.STONE_PICKAXE, available, resolver);
+            }
+            if (companionTier < 2 && requiredTier >= 2) {
+                // Need iron pickaxe — stone pick should exist from above or already owned
+                if (companionTier < 1) {
+                    // Already handled stone pick above
+                } else {
+                    // Have stone but need iron
+                }
+                // Iron pickaxe needs iron ingots (from smelting) — the resolver handles this
+                addToolChainSteps(prereqSteps, Items.IRON_PICKAXE, available, resolver);
+            }
+            if (companionTier < 3 && requiredTier >= 3) {
+                // Need diamond pickaxe — iron pick should exist
+                addToolChainSteps(prereqSteps, Items.DIAMOND_PICKAXE, available, resolver);
+            }
+
+            // Prepend prerequisite steps to the plan
+            if (!prereqSteps.isEmpty()) {
+                plan.prependSteps(prereqSteps);
+                MCAi.LOGGER.info("Added {} tool prerequisite steps to plan", prereqSteps.size());
+            }
+        } catch (Exception e) {
+            MCAi.LOGGER.warn("Failed to resolve tool prerequisites: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Resolve the crafting chain for a tool and add its steps to the list.
+     * Uses the same RecipeResolver tree approach.
+     */
+    private void addToolChainSteps(List<CraftingPlan.Step> steps, Item tool,
+                                    Map<Item, Integer> available, RecipeResolver resolver) {
+        // Check if already available
+        if (available.getOrDefault(tool, 0) > 0) return;
+
+        RecipeResolver.DependencyNode tree = resolver.resolve(tool, 1, new HashMap<>(available));
+        CraftingPlan toolPlan = CraftingPlan.fromTree(tree);
+
+        for (CraftingPlan.Step step : toolPlan.getSteps()) {
+            // Don't add duplicates
+            boolean exists = steps.stream().anyMatch(s ->
+                    s.type == step.type && s.itemId.equals(step.itemId));
+            if (!exists && step.type != RecipeResolver.StepType.AVAILABLE) {
+                steps.add(step);
+            }
+        }
+    }
+
+    /**
+     * Get the mining tier required for a specific ore/item.
+     * Returns 0-3 matching Minecraft mining levels.
+     */
+    private static int getRequiredMiningTier(String itemId) {
+        // Tier 1 (Stone pick required)
+        if (itemId.contains("iron") || itemId.contains("copper") || itemId.contains("lapis")) {
+            return 1;
+        }
+        // Tier 2 (Iron pick required)
+        if (itemId.contains("gold") || itemId.contains("diamond") || itemId.contains("emerald")
+                || itemId.contains("redstone")) {
+            return 2;
+        }
+        // Tier 3 (Diamond pick required)
+        if (itemId.contains("ancient_debris") || itemId.equals("obsidian")
+                || itemId.equals("crying_obsidian")) {
+            return 3;
+        }
+        // Tier 0 (Any pick or hand)
+        return 0;
+    }
+
+    /**
+     * Determine the best pickaxe tier the companion currently has.
+     * Checks mainhand + inventory + available items map.
+     * Returns tier: -1=none, 0=wood/gold, 1=stone, 2=iron, 3=diamond, 4=netherite
+     */
+    private static int getCompanionPickaxeTier(CompanionEntity companion, Map<Item, Integer> available) {
+        int bestTier = -1;
+
+        // Check available map (includes player + companion inventory items)
+        for (Map.Entry<Item, Integer> entry : available.entrySet()) {
+            if (entry.getValue() <= 0) continue;
+            int tier = getPickaxeTier(entry.getKey());
+            if (tier > bestTier) bestTier = tier;
+        }
+
+        // Check companion mainhand
+        ItemStack mainHand = companion.getItemBySlot(net.minecraft.world.entity.EquipmentSlot.MAINHAND);
+        if (!mainHand.isEmpty()) {
+            int tier = getPickaxeTier(mainHand.getItem());
+            if (tier > bestTier) bestTier = tier;
+        }
+
+        // Check companion inventory
+        for (int i = 0; i < companion.getCompanionInventory().getContainerSize(); i++) {
+            ItemStack stack = companion.getCompanionInventory().getItem(i);
+            if (!stack.isEmpty()) {
+                int tier = getPickaxeTier(stack.getItem());
+                if (tier > bestTier) bestTier = tier;
+            }
+        }
+
+        return bestTier;
+    }
+
+    /**
+     * Get the mining tier of a specific item (if it's a pickaxe).
+     * Returns -1 if not a pickaxe.
+     */
+    private static int getPickaxeTier(Item item) {
+        if (!(item instanceof PickaxeItem pick)) return -1;
+        float speed = pick.getTier().getSpeed();
+        // Map speed to tier: wood=2, stone=4, iron=6, diamond=8, netherite=9
+        if (speed >= 9) return 4;  // Netherite
+        if (speed >= 8) return 3;  // Diamond
+        if (speed >= 6) return 2;  // Iron
+        if (speed >= 4) return 1;  // Stone
+        return 0;                   // Wood/Gold
     }
 
     /**
