@@ -5,5 +5,7 @@
     "entity.mcai.companion": "MCAi Companion",
     "itemGroup.mcai_tab": "MCAi",
     "key.mcai.push_to_talk": "Push to Talk",
+    "key.mcai.whistle": "Whistle (Call Companion)",
+    "key.mcai.hud_edit": "Edit HUD Positions",
     "key.categories.mcai": "MCAi"
 }

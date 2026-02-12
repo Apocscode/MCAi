@@ -63,16 +63,16 @@ public class CompanionHudOverlay {
 
     private static void renderCompanionStatus(GuiGraphics graphics, Minecraft mc, CompanionEntity companion) {
 
-        int x = 4;
-        int y = 4;
-
-        // --- Background panel ---
         int panelWidth = 120;
         int panelHeight = 38;
         String taskStatus = companion.getTaskStatus();
         if (!taskStatus.isEmpty()) {
             panelHeight += 10;
         }
+
+        // Position from user-configurable store (drag with H key)
+        int x = HudPositionStore.getX(graphics.guiWidth(), panelWidth);
+        int y = HudPositionStore.getY(graphics.guiHeight(), panelHeight);
         graphics.fill(x, y, x + panelWidth, y + panelHeight, 0x80000000);
 
         // --- Companion name ---
@@ -168,7 +168,7 @@ public class CompanionHudOverlay {
             case STORAGE -> 0xFF55FF55;
         };
 
-        // Position: bottom-center, above hotbar
+        // Position: from user-configurable store (drag with H key)
         int screenW = graphics.guiWidth();
         int screenH = graphics.guiHeight();
 
@@ -180,8 +180,8 @@ public class CompanionHudOverlay {
         int contentW = modeTextW + tagTextW + 16; // 4px padding each side + 8px gap
         int panelW = Math.max(140, contentW);
         int panelH = 22;
-        int px = (screenW - panelW) / 2;
-        int py = screenH - 58;
+        int px = HudPositionStore.getWandX(screenW, panelW);
+        int py = HudPositionStore.getWandY(screenH, panelH);
 
         // Background
         graphics.fill(px, py, px + panelW, py + panelH, 0x90000000);

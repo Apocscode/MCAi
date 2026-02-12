@@ -103,5 +103,12 @@ public class ClientTickHandler {
                     true
             );
         }
+
+        // --- HUD Edit keybind (H) ---
+        if (ModKeybinds.HUD_EDIT.consumeClick()) {
+            if (mc.screen == null) {
+                mc.setScreen(new HudEditScreen());
+            }
+        }
     }
 }

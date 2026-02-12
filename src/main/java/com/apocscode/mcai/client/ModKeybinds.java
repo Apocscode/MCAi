@@ -31,10 +31,18 @@ public class ModKeybinds {
             "key.categories.mcai"
     );
 
+    public static final KeyMapping HUD_EDIT = new KeyMapping(
+            "key.mcai.hud_edit",
+            InputConstants.Type.KEYSYM,
+            GLFW.GLFW_KEY_H,
+            "key.categories.mcai"
+    );
+
     @SubscribeEvent
     public static void registerKeyMappings(RegisterKeyMappingsEvent event) {
         event.register(PUSH_TO_TALK);
         event.register(WHISTLE);
-        MCAi.LOGGER.info("Registered MCAi keybinds (Push-to-Talk: V, Whistle: G)");
+        event.register(HUD_EDIT);
+        MCAi.LOGGER.info("Registered MCAi keybinds (Push-to-Talk: V, Whistle: G, HUD Edit: H)");
     }
 }

@@ -16,6 +16,7 @@ import net.minecraft.world.item.crafting.*;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 
+import javax.annotation.Nullable;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -126,8 +127,8 @@ public class CraftItemTool implements AiTool {
                 craftLog.append("Still need ").append(finalCount - totalNow).append(" more. ");
             }
 
-            // === PHASE 2: Find recipe ===
-            RecipeHolder<?> craftRecipe = findCraftingTableRecipe(recipeManager, registryAccess, targetItem);
+            // === PHASE 2: Find recipe (prefers recipes player has materials for) ===
+            RecipeHolder<?> craftRecipe = findCraftingTableRecipe(recipeManager, registryAccess, targetItem, context);
 
             if (craftRecipe == null) {
                 // Check if a smelting recipe exists → redirect to smelt_items
@@ -301,7 +302,7 @@ public class CraftItemTool implements AiTool {
 
         for (ItemStack variant : ingredient.getItems()) {
             Item targetItem = variant.getItem();
-            RecipeHolder<?> subRecipe = findCraftingTableRecipe(recipeManager, registryAccess, targetItem);
+            RecipeHolder<?> subRecipe = findCraftingTableRecipe(recipeManager, registryAccess, targetItem, context);
             if (subRecipe == null) continue;
 
             Recipe<?> sub = subRecipe.value();
@@ -394,7 +395,7 @@ public class CraftItemTool implements AiTool {
 
         for (ItemStack variant : ingredient.getItems()) {
             Item targetItem = variant.getItem();
-            RecipeHolder<?> subRecipe = findCraftingTableRecipe(recipeManager, registryAccess, targetItem);
+            RecipeHolder<?> subRecipe = findCraftingTableRecipe(recipeManager, registryAccess, targetItem, context);
             if (subRecipe == null) continue;
 
             Recipe<?> sub = subRecipe.value();
@@ -582,14 +583,40 @@ public class CraftItemTool implements AiTool {
      */
     private RecipeHolder<?> findCraftingTableRecipe(RecipeManager recipeManager,
                                                      RegistryAccess registryAccess, Item targetItem) {
+        return findCraftingTableRecipe(recipeManager, registryAccess, targetItem, null);
+    }
+
+    /**
+     * Find a crafting table recipe that produces the target item.
+     * If context is provided, prefers recipes the player has ingredients for.
+     * This prevents matching "Green Bioshroom Planks" when the player has oak logs.
+     */
+    private RecipeHolder<?> findCraftingTableRecipe(RecipeManager recipeManager,
+                                                     RegistryAccess registryAccess, Item targetItem,
+                                                     @Nullable ToolContext context) {
+        RecipeHolder<?> firstMatch = null;
+
         for (RecipeHolder<?> holder : recipeManager.getRecipes()) {
             Recipe<?> r = holder.value();
             if (!(r instanceof ShapedRecipe) && !(r instanceof ShapelessRecipe)) continue;
-            if (r.getResultItem(registryAccess).getItem() == targetItem) {
-                return holder;
+            if (r.getResultItem(registryAccess).getItem() != targetItem) continue;
+
+            if (firstMatch == null) firstMatch = holder;
+
+            // If context available, prefer recipes the player can actually craft
+            if (context != null) {
+                boolean canCraft = true;
+                for (Ingredient ing : r.getIngredients()) {
+                    if (ing.isEmpty()) continue;
+                    if (countInInventory(context, ing) <= 0) {
+                        canCraft = false;
+                        break;
+                    }
+                }
+                if (canCraft) return holder; // Player has all ingredients — use this recipe
             }
         }
-        return null;
+        return firstMatch; // Fallback to first match if no craftable recipe found
     }
 
     /**
@@ -771,14 +798,20 @@ public class CraftItemTool implements AiTool {
             }
         }
 
-        // Fallback to partial match
+        // Fallback to partial match — prefer vanilla (minecraft:) items over modded
+        Item vanillaMatch = null;
+        Item moddedMatch = null;
         for (var entry : BuiltInRegistries.ITEM.entrySet()) {
             ResourceLocation id = entry.getKey().location();
             String name = entry.getValue().getDescription().getString().toLowerCase();
             if (id.getPath().contains(query) || name.contains(query)) {
-                return entry.getValue();
+                if (id.getNamespace().equals("minecraft")) {
+                    if (vanillaMatch == null) vanillaMatch = entry.getValue();
+                } else {
+                    if (moddedMatch == null) moddedMatch = entry.getValue();
+                }
             }
         }
-        return null;
+        return vanillaMatch != null ? vanillaMatch : moddedMatch;
     }
 }
