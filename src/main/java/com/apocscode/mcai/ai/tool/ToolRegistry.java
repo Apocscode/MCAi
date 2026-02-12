@@ -31,6 +31,13 @@ public class ToolRegistry {
         register(new CraftItemTool());
         register(new RenameCompanionTool());
         register(new ListInstalledModsTool());
+
+        // Automation task tools
+        register(new FarmAreaTool());
+        register(new ChopTreesTool());
+        register(new MineOresTool());
+        register(new MineAreaTool());
+        register(new TaskStatusTool());
         MCAi.LOGGER.info("Registered {} AI tools: {}", tools.size(), tools.keySet());
     }
 

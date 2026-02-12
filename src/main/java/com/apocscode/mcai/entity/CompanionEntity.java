@@ -104,6 +104,10 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
     // Proactive chat system
     private final CompanionChat chat = new CompanionChat(this);
 
+    // Task manager — handles queued multi-step tasks from chat AI
+    private final com.apocscode.mcai.task.TaskManager taskManager =
+            new com.apocscode.mcai.task.TaskManager(this);
+
     // Stuck detection
     private double lastX, lastY, lastZ;
     private int stuckTicks = 0;
@@ -241,6 +245,9 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
                 return getBehaviorMode() == BehaviorMode.AUTO && super.canUse();
             }
         });
+        // Automation — task queue and logistics (AUTO mode only)
+        this.goalSelector.addGoal(3, new com.apocscode.mcai.entity.goal.CompanionTaskGoal(this));
+        this.goalSelector.addGoal(4, new com.apocscode.mcai.entity.goal.CompanionLogisticsGoal(this));
 
         // Targeting
         this.targetSelector.addGoal(1, new HurtByTargetGoal(this));
@@ -599,6 +606,13 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
      */
     public CompanionChat getChat() {
         return chat;
+    }
+
+    /**
+     * Get the task manager for queued multi-step tasks.
+     */
+    public com.apocscode.mcai.task.TaskManager getTaskManager() {
+        return taskManager;
     }
 
     /**

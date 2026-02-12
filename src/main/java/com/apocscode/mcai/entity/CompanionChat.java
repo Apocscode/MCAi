@@ -35,6 +35,7 @@ public class CompanionChat {
         NO_WEAPON(400),          // 20 sec
         NO_FOOD(600),            // 30 sec
         NO_FUEL(600),            // 30 sec
+        TASK(100),               // 5 sec for task status updates
         GENERAL(200);            // 10 sec for misc
 
         public final int cooldownTicks;
