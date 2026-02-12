@@ -313,7 +313,23 @@ public class RecipeResolver {
 
         // Try crafting recipe first (most common)
         DependencyNode craftNode = tryCraftingRecipe(item, remaining, available, visited, depth);
+
+        // If crafting found a result but has UNKNOWN children, also try heat recipes.
+        // This handles items like iron_ingot: mods add crafting recipes (essence → ingot)
+        // but the correct path is smelting (raw_iron → iron_ingot via furnace).
         if (craftNode != null) {
+            boolean hasUnknown = craftNode.children.stream()
+                    .anyMatch(c -> c.type == StepType.UNKNOWN);
+            if (hasUnknown) {
+                DependencyNode heatNode = tryHeatRecipe(item, remaining, available, visited, depth);
+                if (heatNode != null) {
+                    // Heat recipe is fully resolvable — prefer it over broken crafting
+                    MCAi.LOGGER.info("RecipeResolver: preferring heat recipe over crafting for {} (crafting had UNKNOWN children)",
+                            BuiltInRegistries.ITEM.getKey(item));
+                    visited.remove(item);
+                    return heatNode;
+                }
+            }
             visited.remove(item);
             return craftNode;
         }
@@ -384,25 +400,12 @@ public class RecipeResolver {
             }
         }
 
-        // All candidates had issues — use the best-scored one anyway
-        try {
-            RecipeHolder<?> fallback = candidates.get(0);
-            Recipe<?> recipe = fallback.value();
-            ItemStack resultStack = safeResult(recipe);
-            if (resultStack.isEmpty()) return null;
-            int outputPerCraft = Math.max(1, resultStack.getCount());
-            int craftsNeeded = (int) Math.ceil((double) count / outputPerCraft);
-            DependencyNode node = new DependencyNode(item, count, StepType.CRAFT, fallback);
-            Map<Item, Integer> grouped = groupIngredients(recipe.getIngredients(), craftsNeeded);
-            for (Map.Entry<Item, Integer> entry : grouped.entrySet()) {
-                DependencyNode child = resolveRecursive(entry.getKey(), entry.getValue(),
-                        available, new HashSet<>(visited), depth + 1);
-                node.children.add(child);
-            }
-            return node;
-        } catch (Exception e) {
-            return null;
-        }
+        // All candidates had issues — return null to let heat/stonecut recipes be tried.
+        // If we returned a node with UNKNOWN children, it would block tryHeatRecipe
+        // (e.g., iron_ingot: modded crafting recipe with essence vs. smelting raw_iron)
+        MCAi.LOGGER.debug("RecipeResolver: all {} crafting candidates for {} had UNKNOWN ingredients, falling through to heat/stonecut",
+                candidates.size(), BuiltInRegistries.ITEM.getKey(item));
+        return null;
     }
 
     private DependencyNode tryHeatRecipe(Item item, int count, Map<Item, Integer> available,

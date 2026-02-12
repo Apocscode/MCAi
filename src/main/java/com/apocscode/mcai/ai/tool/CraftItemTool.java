@@ -546,6 +546,7 @@ public class CraftItemTool implements AiTool {
                                  int craftsNeeded, StringBuilder craftLog) {
         CompanionEntity companion = CompanionEntity.getLivingCompanion(context.player().getUUID());
         if (companion == null) {
+            MCAi.LOGGER.warn("autoCraftPlan: companion is null — falling back to manual instructions");
             return buildMissingReport(context, recipeManager, registryAccess,
                     targetItem, ingredients, craftsNeeded, craftLog);
         }
@@ -562,7 +563,7 @@ public class CraftItemTool implements AiTool {
             RecipeResolver resolver = new RecipeResolver(recipeManager, registryAccess);
             tree = resolver.resolve(targetItem, requestedCount, available);
         } catch (Exception e) {
-            MCAi.LOGGER.error("RecipeResolver failed for {}: {}", targetName, e.getMessage(), e);
+            MCAi.LOGGER.error("autoCraftPlan: RecipeResolver failed for {}: {}", targetName, e.getMessage(), e);
             return buildMissingReport(context, recipeManager, registryAccess,
                     targetItem, ingredients, craftsNeeded, craftLog);
         }
@@ -586,6 +587,7 @@ public class CraftItemTool implements AiTool {
         // If no async steps needed, all items should be obtainable through crafting alone
         // This shouldn't normally happen (we'd have crafted it already), but handle gracefully
         if (asyncSteps.isEmpty()) {
+            MCAi.LOGGER.warn("autoCraftPlan: no async steps in plan for {} — falling back", targetName);
             return buildMissingReport(context, recipeManager, registryAccess,
                     targetItem, ingredients, craftsNeeded, craftLog);
         }
@@ -606,6 +608,8 @@ public class CraftItemTool implements AiTool {
         if (firstTask == null) {
             // No async step can be directly tasked (e.g. only SMELT steps remain)
             // Fall back: have the AI handle it via tool calls in the continuation
+            MCAi.LOGGER.warn("autoCraftPlan: no taskable async steps for {} (asyncSteps={})",
+                    targetName, asyncSteps.stream().map(s -> s.type.name()).toList());
             return buildMissingReport(context, recipeManager, registryAccess,
                     targetItem, ingredients, craftsNeeded, craftLog);
         }
