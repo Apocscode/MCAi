@@ -40,36 +40,36 @@ public class CompanionInventoryMenu extends AbstractContainerMenu {
         this.companionInv = companion != null ? companion.getCompanionInventory()
                 : new SimpleContainer(CompanionEntity.INVENTORY_SIZE);
 
-        // === Equipment slots (row 0, y=40) ===
+        // === Equipment slots (row 0, y=56) ===
         // Armor slots — each only accepts the correct armor type
-        addArmorSlot(EquipmentSlot.HEAD, 0, 8, 40);
-        addArmorSlot(EquipmentSlot.CHEST, 1, 26, 40);
-        addArmorSlot(EquipmentSlot.LEGS, 2, 44, 40);
-        addArmorSlot(EquipmentSlot.FEET, 3, 62, 40);
+        addArmorSlot(EquipmentSlot.HEAD, 0, 8, 56);
+        addArmorSlot(EquipmentSlot.CHEST, 1, 26, 56);
+        addArmorSlot(EquipmentSlot.LEGS, 2, 44, 56);
+        addArmorSlot(EquipmentSlot.FEET, 3, 62, 56);
 
         // Main hand slot
-        this.addSlot(new EquipmentEntitySlot(companion, EquipmentSlot.MAINHAND, 4, 98, 40));
+        this.addSlot(new EquipmentEntitySlot(companion, EquipmentSlot.MAINHAND, 4, 98, 56));
         // Off hand slot
-        this.addSlot(new EquipmentEntitySlot(companion, EquipmentSlot.OFFHAND, 5, 116, 40));
+        this.addSlot(new EquipmentEntitySlot(companion, EquipmentSlot.OFFHAND, 5, 116, 56));
 
-        // === Companion general inventory (27 slots, 3 rows starting at y=68) ===
+        // === Companion general inventory (27 slots, 3 rows starting at y=84) ===
         for (int row = 0; row < 3; row++) {
             for (int col = 0; col < 9; col++) {
-                this.addSlot(new Slot(companionInv, col + row * 9, 8 + col * 18, 68 + row * 18));
+                this.addSlot(new Slot(companionInv, col + row * 9, 8 + col * 18, 84 + row * 18));
             }
         }
 
-        // === Player inventory (3 rows, starting at y=132) ===
+        // === Player inventory (3 rows, starting at y=148) ===
         for (int row = 0; row < 3; row++) {
             for (int col = 0; col < 9; col++) {
                 this.addSlot(new Slot(playerInventory, col + row * 9 + 9,
-                        8 + col * 18, 132 + row * 18));
+                        8 + col * 18, 148 + row * 18));
             }
         }
 
-        // === Player hotbar (y=190) ===
+        // === Player hotbar (y=206) ===
         for (int col = 0; col < 9; col++) {
-            this.addSlot(new Slot(playerInventory, col, 8 + col * 18, 190));
+            this.addSlot(new Slot(playerInventory, col, 8 + col * 18, 206));
         }
     }
 

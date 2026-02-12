@@ -41,9 +41,9 @@ public class CompanionInventoryScreen extends AbstractContainerScreen<CompanionI
     public CompanionInventoryScreen(CompanionInventoryMenu menu, Inventory playerInv, Component title) {
         super(menu, playerInv, title);
         this.imageWidth = 186;
-        this.imageHeight = 230;
+        this.imageHeight = 246;
         this.titleLabelY = 6;
-        this.inventoryLabelY = 130; // just above player inventory
+        this.inventoryLabelY = 146; // just above player inventory
     }
 
     @Override
@@ -110,15 +110,15 @@ public class CompanionInventoryScreen extends AbstractContainerScreen<CompanionI
         renderPanel(g, x, y, w, h);
 
         // Equipment section label
-        g.drawString(this.font, "Equipment", x + 8, y + 26, LABEL_COLOR, false);
+        g.drawString(this.font, "Equipment", x + 8, y + 42, LABEL_COLOR, false);
 
         // Separator between equipment and companion inv
-        g.fill(x + 7, y + 60, x + w - 7, y + 61, BORDER_DARK);
-        g.fill(x + 7, y + 61, x + w - 7, y + 62, BORDER_LIGHT);
+        g.fill(x + 7, y + 76, x + w - 7, y + 77, BORDER_DARK);
+        g.fill(x + 7, y + 77, x + w - 7, y + 78, BORDER_LIGHT);
 
         // Separator between companion inv and player inv
-        g.fill(x + 7, y + 124, x + w - 7, y + 125, BORDER_DARK);
-        g.fill(x + 7, y + 125, x + w - 7, y + 126, BORDER_LIGHT);
+        g.fill(x + 7, y + 140, x + w - 7, y + 141, BORDER_DARK);
+        g.fill(x + 7, y + 141, x + w - 7, y + 142, BORDER_LIGHT);
 
         // Slot backgrounds
         for (Slot slot : this.menu.slots) {
@@ -126,7 +126,7 @@ public class CompanionInventoryScreen extends AbstractContainerScreen<CompanionI
         }
 
         // Equipment slot tiny labels (above the equipment slots)
-        int labelY = y + 32;
+        int labelY = y + 48;
         g.drawString(this.font, "H", x + 12, labelY, 0x606060, false);
         g.drawString(this.font, "C", x + 30, labelY, 0x606060, false);
         g.drawString(this.font, "L", x + 48, labelY, 0x606060, false);
@@ -163,7 +163,7 @@ public class CompanionInventoryScreen extends AbstractContainerScreen<CompanionI
         g.drawString(this.font, this.title, this.titleLabelX, this.titleLabelY, LABEL_COLOR, false);
 
         // Draw "Items" label above companion inventory section
-        g.drawString(this.font, "Items", 8, 58, LABEL_COLOR, false);
+        g.drawString(this.font, "Items", 8, 74, LABEL_COLOR, false);
 
         // Player inventory label
         g.drawString(this.font, this.playerInventoryTitle, this.inventoryLabelX, this.inventoryLabelY, LABEL_COLOR, false);
