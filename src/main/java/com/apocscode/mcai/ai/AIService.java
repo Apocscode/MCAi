@@ -22,6 +22,8 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Manages communication with Ollama (local LLM) or compatible API.
@@ -195,6 +197,35 @@ public class AIService {
                 content = assistantMessage.get("content").getAsString().trim();
             }
 
+            // FALLBACK: Small models sometimes write tool calls as text instead of
+            // using the tool_calls format. Detect and execute them.
+            String parsedToolName = tryParseTextToolCall(content);
+            if (parsedToolName != null) {
+                JsonObject parsedArgs = tryParseTextToolArgs(content);
+                MCAi.LOGGER.info("Fallback: parsed text tool call '{}' with args: {}",
+                        parsedToolName, parsedArgs);
+                AiLogger.log(AiLogger.Category.TOOL_CALL, "INFO",
+                        "FALLBACK parsed text tool call: " + parsedToolName);
+
+                // Add the original assistant message
+                messages.add(assistantMessage);
+
+                // Execute the tool
+                long toolStartMs = System.currentTimeMillis();
+                String result = executeTool(parsedToolName, parsedArgs, toolCtx);
+                long toolElapsed = System.currentTimeMillis() - toolStartMs;
+
+                // Add tool result
+                JsonObject toolResultMsg = new JsonObject();
+                toolResultMsg.addProperty("role", "tool");
+                toolResultMsg.addProperty("content", result);
+                messages.add(toolResultMsg);
+
+                MCAi.LOGGER.info("Fallback tool '{}' executed in {}ms, result: {} chars",
+                        parsedToolName, toolElapsed, result.length());
+                continue; // Let the loop continue for the AI to process results
+            }
+
             if (content.isEmpty()) {
                 content = "I processed your request but don't have anything specific to say.";
             }
@@ -207,6 +238,56 @@ public class AIService {
         AiLogger.log(AiLogger.Category.AI_RESPONSE, "WARN",
                 "Agent loop exceeded max iterations (" + maxIterations + ")");
         return "I used several tools trying to answer your question but ran out of steps. Here's what I know so far — try asking a more specific question.";
+    }
+
+    // ========== Text-to-tool-call fallback parser ==========
+    // Small models (8B) sometimes write tool calls as text like:
+    //   gather_blocks({"block":"cobblestone", "maxBlocks":3})
+    // instead of using the structured tool_calls format.
+    // These helpers detect and parse such text so it can be executed.
+
+    /** Pattern: tool_name({...}) or tool_name({"key":"value",...}) */
+    private static final Pattern TEXT_TOOL_PATTERN = Pattern.compile(
+            "\\b([a-z_]+)\\s*\\(\\s*(\\{.*?\\})\\s*\\)", Pattern.DOTALL);
+
+    /**
+     * Try to extract a tool name from text that looks like a tool call.
+     * Returns null if no tool call pattern found or the name isn't a registered tool.
+     */
+    private static String tryParseTextToolCall(String text) {
+        if (text == null || text.isEmpty()) return null;
+        Matcher m = TEXT_TOOL_PATTERN.matcher(text);
+        while (m.find()) {
+            String name = m.group(1);
+            if (ToolRegistry.get(name) != null) {
+                return name;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Try to extract tool arguments JSON from text that looks like a tool call.
+     * Returns empty JsonObject if parsing fails.
+     */
+    private static JsonObject tryParseTextToolArgs(String text) {
+        if (text == null || text.isEmpty()) return new JsonObject();
+        Matcher m = TEXT_TOOL_PATTERN.matcher(text);
+        while (m.find()) {
+            String name = m.group(1);
+            if (ToolRegistry.get(name) != null) {
+                String argsStr = m.group(2);
+                try {
+                    // Fix common issues: single quotes → double quotes
+                    argsStr = argsStr.replace("'", "\"");
+                    return JsonParser.parseString(argsStr).getAsJsonObject();
+                } catch (Exception e) {
+                    MCAi.LOGGER.warn("Fallback: found tool '{}' but couldn't parse args: {}", name, argsStr);
+                    return new JsonObject();
+                }
+            }
+        }
+        return new JsonObject();
     }
 
     /**

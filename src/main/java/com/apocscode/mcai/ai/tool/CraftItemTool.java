@@ -276,23 +276,39 @@ public class CraftItemTool implements AiTool {
             result.append("  - ").append(ingName)
                   .append(": have ").append(have).append(", need ").append(needed);
 
-            // Determine the best gathering action
+            // Determine the best gathering action.
+            // Prefer direct mining/gathering for common materials.
+            // Only suggest smelting for items that truly require it (ingots from raw ores).
+            boolean needsSmelt = false;
             RecipeHolder<?> smeltRecipe = findSmeltingRecipe(recipeManager, registryAccess, ingItem);
-            if (smeltRecipe != null) {
-                String inputName = getSmeltInputName(smeltRecipe);
-                result.append(" (smelt from ").append(inputName).append(")");
-                actionNum++;
-                actions.append("  ").append(actionNum).append(". gather the raw material, then call smelt_items({\"item\":\"")
-                       .append(ingId).append("\", \"count\":").append(shortage).append("})\n");
-            } else if (ingId.contains("log") || ingId.contains("wood")) {
+            // Only suggest smelting for actual ingots/results from raw ores, not weird modpack paths
+            if (smeltRecipe != null && isRealSmeltingNeed(ingId)) {
+                needsSmelt = true;
+            }
+
+            if (ingId.contains("log") || ingId.contains("wood")) {
                 result.append(" (chop trees)");
                 actionNum++;
                 actions.append("  ").append(actionNum).append(". call chop_trees({\"maxLogs\":").append(shortage)
                        .append(", \"plan\":\"craft ").append(targetName).append("\"})\n");
+            } else if (ingId.contains("stick") || ingId.contains("plank")) {
+                // Sticks/planks come from wood — chop trees first
+                result.append(" (chop trees for wood)");
+                actionNum++;
+                actions.append("  ").append(actionNum).append(". call chop_trees({\"maxLogs\":2")
+                       .append(", \"plan\":\"craft ").append(targetName).append("\"})\n");
+            } else if (needsSmelt) {
+                String inputName = getSmeltInputName(smeltRecipe);
+                result.append(" (mine raw ore, then smelt)");
+                actionNum++;
+                actions.append("  ").append(actionNum).append(". call mine_ores({\"count\":").append(shortage)
+                       .append(", \"plan\":\"smelt_items to get ").append(ingId)
+                       .append(", then craft ").append(targetName).append("\"})\n");
             } else if (ingId.contains("cobblestone") || ingId.contains("stone") || ingId.contains("ore")
                     || ingId.contains("deepslate") || ingId.contains("iron") || ingId.contains("gold")
-                    || ingId.contains("copper") || ingId.contains("diamond") || ingId.contains("coal")) {
-                result.append(" (mine/gather)");
+                    || ingId.contains("copper") || ingId.contains("diamond") || ingId.contains("coal")
+                    || ingId.contains("gravel") || ingId.contains("sand")) {
+                result.append(" (mine/gather nearby)");
                 actionNum++;
                 actions.append("  ").append(actionNum).append(". call gather_blocks({\"block\":\"")
                        .append(ingId).append("\", \"maxBlocks\":").append(shortage)
@@ -313,6 +329,20 @@ public class CraftItemTool implements AiTool {
             result.append(actions);
         }
         return result.toString();
+    }
+
+    /**
+     * Determine if an item truly needs smelting (like iron_ingot from raw_iron)
+     * vs items that happen to have obscure modpack smelting recipes (cobblestone from frozen_cobblestone).
+     * We only suggest smelting for actual ingots and processed items.
+     */
+    private boolean isRealSmeltingNeed(String itemId) {
+        // These are items where smelting is the primary/only way to obtain them
+        return itemId.contains("ingot") || itemId.contains("glass")
+                || itemId.contains("brick") || itemId.contains("charcoal")
+                || itemId.contains("sponge") || itemId.contains("smooth_")
+                || itemId.contains("terracotta") || itemId.contains("_dye")
+                || itemId.equals("stone") || itemId.equals("cracked_stone_bricks");
     }
 
     // ========== Recipe lookup ==========
