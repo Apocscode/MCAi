@@ -1,32 +1,43 @@
 package com.apocscode.mcai.ai.tool;
 
+import com.apocscode.mcai.MCAi;
 import com.apocscode.mcai.entity.CompanionEntity;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.Container;
 import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.*;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.entity.BlockEntity;
 
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
- * Crafts items using materials from both the player's AND companion's inventory.
+ * Smart crafting tool that behaves like a real player:
  *
- * Auto-resolves intermediate crafting-table recipes (e.g., logs→planks→sticks).
+ * 1. Check if the player already has the item
+ * 2. Check nearby chests/containers for the finished item
+ * 3. Check nearby chests for crafting materials and auto-pull them
+ * 4. Auto-resolve intermediate crafting-table recipes (logs→planks→sticks)
+ * 5. If still missing materials → return actionable gathering hints
+ * 6. Craft the item
+ *
  * Only uses Shaped and Shapeless recipes — smelting requires the smelt_items tool.
- *
  * Balance: Crafting table recipes are instant (same as vanilla player behavior).
  * Smelting is NOT bypassed — requires a real furnace, fuel, and game time.
  */
 public class CraftItemTool implements AiTool {
 
     private static final int MAX_RESOLVE_PASSES = 3;
+    private static final int CHEST_SCAN_RADIUS = 16;
 
     @Override
     public String name() {
@@ -35,8 +46,9 @@ public class CraftItemTool implements AiTool {
 
     @Override
     public String description() {
-        return "Craft an item from player+companion inventories. Auto-resolves intermediate steps (logs to planks to sticks). " +
-                "Crafting-table recipes only. For smelting, use smelt_items instead.";
+        return "Smart crafting: checks player inventory, nearby chests, auto-pulls materials, " +
+                "resolves intermediates (logs→planks→sticks), then crafts. Like a real player would. " +
+                "Crafting-table recipes only. For smelting, use smelt_items.";
     }
 
     @Override
@@ -85,6 +97,7 @@ public class CraftItemTool implements AiTool {
         return context.runOnServer(() -> {
             RegistryAccess registryAccess = context.server().registryAccess();
             RecipeManager recipeManager = context.server().getRecipeManager();
+            StringBuilder craftLog = new StringBuilder();
 
             // --- Resolve item ---
             Item targetItem = resolveItem(finalQuery);
@@ -92,7 +105,28 @@ public class CraftItemTool implements AiTool {
                 return "No item found matching '" + finalQuery + "'. Check the item name.";
             }
 
-            // --- Find crafting table recipe (Shaped/Shapeless ONLY) — NOT smelting ---
+            String targetName = targetItem.getDescription().getString();
+
+            // === PHASE 0: Check if player already has the item ===
+            int alreadyHave = countItemInInventory(context, targetItem);
+            if (alreadyHave >= finalCount) {
+                return "You already have " + alreadyHave + "x " + targetName + " in your inventory!";
+            }
+
+            // === PHASE 1: Check nearby chests for the finished item ===
+            int fetched = fetchFromNearbyContainers(context, targetItem, finalCount - alreadyHave);
+            if (fetched > 0) {
+                int totalNow = alreadyHave + fetched;
+                craftLog.append("Found ").append(fetched).append("x ").append(targetName)
+                        .append(" in nearby chest. ");
+                if (totalNow >= finalCount) {
+                    return craftLog.append("You now have ").append(totalNow).append("x ")
+                            .append(targetName).append("!").toString();
+                }
+                craftLog.append("Still need ").append(finalCount - totalNow).append(" more. ");
+            }
+
+            // === PHASE 2: Find recipe ===
             RecipeHolder<?> craftRecipe = findCraftingTableRecipe(recipeManager, registryAccess, targetItem);
 
             if (craftRecipe == null) {
@@ -100,11 +134,11 @@ public class CraftItemTool implements AiTool {
                 RecipeHolder<?> smeltRecipe = findSmeltingRecipe(recipeManager, registryAccess, targetItem);
                 if (smeltRecipe != null) {
                     String inputName = getSmeltInputName(smeltRecipe);
-                    return targetItem.getDescription().getString() + " requires smelting, not a crafting table. " +
+                    return craftLog.toString() + targetName + " requires smelting, not a crafting table. " +
                             "Use the smelt_items tool with '" + inputName + "'. " +
                             "The companion needs a furnace nearby and fuel in its inventory.";
                 }
-                return "No crafting recipe found for '" + targetItem.getDescription().getString() + "'. " +
+                return craftLog.toString() + "No crafting recipe found for '" + targetName + "'. " +
                         "It might only be obtainable through mining, trading, or other means.";
             }
 
@@ -112,13 +146,19 @@ public class CraftItemTool implements AiTool {
             ItemStack recipeResult = recipe.getResultItem(registryAccess);
             int outputPerCraft = recipeResult.getCount();
             List<Ingredient> ingredients = recipe.getIngredients();
-            int craftsNeeded = (int) Math.ceil((double) finalCount / outputPerCraft);
+            int stillNeed = finalCount - (alreadyHave + fetched);
+            int craftsNeeded = (int) Math.ceil((double) stillNeed / outputPerCraft);
 
-            // --- Phase 1: Auto-resolve intermediate crafting ingredients ---
-            StringBuilder craftLog = new StringBuilder();
+            // === PHASE 3: Auto-fetch materials from nearby chests ===
+            int materialsFetched = fetchMaterialsFromContainers(context, ingredients, craftsNeeded, craftLog);
+            if (materialsFetched > 0) {
+                MCAi.LOGGER.info("Auto-fetched {} material stacks from nearby containers", materialsFetched);
+            }
+
+            // === PHASE 4: Auto-resolve intermediate crafting ingredients ===
             autoResolveIntermediates(context, recipeManager, registryAccess, ingredients, craftsNeeded, craftLog);
 
-            // --- Phase 2: Check what we can craft now ---
+            // === PHASE 5: Check what we can craft now ===
             int maxCrafts = calculateMaxCrafts(context, ingredients);
 
             if (maxCrafts == 0) {
@@ -126,7 +166,7 @@ public class CraftItemTool implements AiTool {
                         targetItem, ingredients, craftsNeeded, craftLog);
             }
 
-            // --- Phase 3: Execute the craft ---
+            // === PHASE 6: Execute the craft ===
             int actualCrafts = Math.min(craftsNeeded, maxCrafts);
             int totalOutput = actualCrafts * outputPerCraft;
 
@@ -144,15 +184,95 @@ public class CraftItemTool implements AiTool {
 
             StringBuilder sb = new StringBuilder();
             if (craftLog.length() > 0) sb.append(craftLog);
-            sb.append("Crafted ").append(totalOutput).append("x ")
-              .append(targetItem.getDescription().getString());
-            if (totalOutput < finalCount) {
-                sb.append(" (wanted ").append(finalCount)
+            sb.append("Crafted ").append(totalOutput).append("x ").append(targetName);
+            if (totalOutput < stillNeed) {
+                sb.append(" (wanted ").append(stillNeed)
                   .append(" but only had materials for ").append(totalOutput).append(")");
             }
             sb.append(".");
             return sb.toString();
         });
+    }
+
+    // ========== Container scanning (auto-fetch from chests) ==========
+
+    /**
+     * Scans nearby containers for the finished item and pulls it into the player's inventory.
+     * Returns the number of items fetched.
+     */
+    private int fetchFromNearbyContainers(ToolContext context, Item targetItem, int maxToFetch) {
+        Level level = context.player().level();
+        BlockPos center = context.player().blockPosition();
+        int fetched = 0;
+
+        for (int x = -CHEST_SCAN_RADIUS; x <= CHEST_SCAN_RADIUS && fetched < maxToFetch; x++) {
+            for (int y = -CHEST_SCAN_RADIUS; y <= CHEST_SCAN_RADIUS && fetched < maxToFetch; y++) {
+                for (int z = -CHEST_SCAN_RADIUS; z <= CHEST_SCAN_RADIUS && fetched < maxToFetch; z++) {
+                    BlockPos pos = center.offset(x, y, z);
+                    BlockEntity be = level.getBlockEntity(pos);
+                    if (!(be instanceof Container container)) continue;
+
+                    for (int i = 0; i < container.getContainerSize() && fetched < maxToFetch; i++) {
+                        ItemStack stack = container.getItem(i);
+                        if (stack.isEmpty() || stack.getItem() != targetItem) continue;
+
+                        int toTake = Math.min(stack.getCount(), maxToFetch - fetched);
+                        ItemStack toInsert = stack.copyWithCount(toTake);
+
+                        if (context.player().getInventory().add(toInsert)) {
+                            int inserted = toTake - toInsert.getCount();
+                            if (toInsert.isEmpty()) inserted = toTake;
+                            stack.shrink(inserted);
+                            if (stack.isEmpty()) container.setItem(i, ItemStack.EMPTY);
+                            container.setChanged();
+                            fetched += inserted;
+                        }
+                    }
+                }
+            }
+        }
+        return fetched;
+    }
+
+    /**
+     * Scans nearby containers for missing crafting materials and pulls them into the player's inventory.
+     * For each ingredient type, checks how many we need vs have, then fetches the deficit from chests.
+     * Returns the total number of material types successfully fetched.
+     */
+    private int fetchMaterialsFromContainers(ToolContext context, List<Ingredient> ingredients,
+                                              int craftsNeeded, StringBuilder log) {
+        Map<Item, Integer> grouped = getGroupedNeeds(ingredients, craftsNeeded);
+        int typesFetched = 0;
+
+        for (Map.Entry<Item, Integer> entry : grouped.entrySet()) {
+            Item neededItem = entry.getKey();
+            int totalNeeded = entry.getValue();
+
+            Ingredient matchingIng = findIngredientFor(ingredients, neededItem);
+            if (matchingIng == null) continue;
+
+            int have = countInInventory(context, matchingIng);
+            if (have >= totalNeeded) continue;
+
+            int deficit = totalNeeded - have;
+
+            // Try to fetch this ingredient from nearby containers
+            // We need to check all variant items that the ingredient accepts
+            int totalFetchedForIng = 0;
+            for (ItemStack variant : matchingIng.getItems()) {
+                if (totalFetchedForIng >= deficit) break;
+                int got = fetchFromNearbyContainers(context, variant.getItem(), deficit - totalFetchedForIng);
+                totalFetchedForIng += got;
+            }
+
+            if (totalFetchedForIng > 0) {
+                String itemName = neededItem.getDescription().getString();
+                log.append("Pulled ").append(totalFetchedForIng).append("x ").append(itemName)
+                   .append(" from nearby chest. ");
+                typesFetched++;
+            }
+        }
+        return typesFetched;
     }
 
     // ========== Auto-resolve intermediate crafting recipes ==========
@@ -271,8 +391,12 @@ public class CraftItemTool implements AiTool {
 
         // Build actionable hints for each missing item
         StringBuilder actions = new StringBuilder();
-        actions.append("\nACTION NEEDED — gather these materials, then craft again:\n");
+        actions.append("\nACTION NEEDED — try nearby chests FIRST, then gather:\n");
         int actionNum = 0;
+
+        // Step 0: Always suggest checking nearby chests/containers first
+        // Collect all missing item names for a single find_and_fetch_item hint
+        StringBuilder missingItemsList = new StringBuilder();
 
         for (Map.Entry<Item, Integer> entry : grouped.entrySet()) {
             Item ingItem = entry.getKey();
@@ -287,53 +411,73 @@ public class CraftItemTool implements AiTool {
                     .getKey(ingItem).getPath();
 
             result.append("  - ").append(ingName)
-                  .append(": have ").append(have).append(", need ").append(needed);
+                  .append(": have ").append(have).append(", need ").append(needed).append("\n");
 
-            // Determine the best gathering action.
-            // Prefer direct mining/gathering for common materials.
-            // Only suggest smelting for items that truly require it (ingots from raw ores).
+            // Collect for chest-check hint
+            if (missingItemsList.length() > 0) missingItemsList.append(", ");
+            missingItemsList.append(ingId).append(" x").append(shortage);
+        }
+
+        // First action: check nearby chests for ANY of the missing materials
+        if (missingItemsList.length() > 0) {
+            actionNum++;
+            // Pick the first missing ingredient for find_and_fetch_item
+            Item firstMissing = null;
+            int firstShortage = 0;
+            for (Map.Entry<Item, Integer> entry : grouped.entrySet()) {
+                Ingredient ing = findIngredientFor(ingredients, entry.getKey());
+                int have = ing != null ? countInInventory(context, ing) : 0;
+                if (have < entry.getValue()) {
+                    firstMissing = entry.getKey();
+                    firstShortage = entry.getValue() - have;
+                    break;
+                }
+            }
+            if (firstMissing != null) {
+                String firstId = net.minecraft.core.registries.BuiltInRegistries.ITEM
+                        .getKey(firstMissing).getPath();
+                actions.append("  ").append(actionNum)
+                       .append(". FIRST try find_and_fetch_item({\"item\":\"").append(firstId)
+                       .append("\", \"count\":").append(firstShortage)
+                       .append("}) — checks all nearby chests/barrels\n");
+            }
+        }
+
+        // Then add gathering fallbacks per item
+        for (Map.Entry<Item, Integer> entry : grouped.entrySet()) {
+            Item ingItem = entry.getKey();
+            int needed = entry.getValue();
+            Ingredient ing = findIngredientFor(ingredients, ingItem);
+            int have = ing != null ? countInInventory(context, ing) : 0;
+            if (have >= needed) continue;
+
+            int shortage = needed - have;
+            String ingId = net.minecraft.core.registries.BuiltInRegistries.ITEM
+                    .getKey(ingItem).getPath();
+
+            // Determine the best gathering action
             boolean needsSmelt = false;
             RecipeHolder<?> smeltRecipe = findSmeltingRecipe(recipeManager, registryAccess, ingItem);
-            // Only suggest smelting for actual ingots/results from raw ores, not weird modpack paths
             if (smeltRecipe != null && isRealSmeltingNeed(ingId)) {
                 needsSmelt = true;
             }
 
+            actionNum++;
             if (ingId.contains("log") || ingId.contains("wood")) {
-                result.append(" (chop trees)");
-                actionNum++;
-                actions.append("  ").append(actionNum).append(". call chop_trees({\"maxLogs\":").append(shortage)
+                actions.append("  ").append(actionNum).append(". IF chest empty: chop_trees({\"maxLogs\":").append(shortage)
                        .append(", \"plan\":\"craft ").append(targetName).append("\"})\n");
             } else if (ingId.contains("stick") || ingId.contains("plank")) {
-                // Sticks/planks come from wood — chop trees first
-                result.append(" (chop trees for wood)");
-                actionNum++;
-                actions.append("  ").append(actionNum).append(". call chop_trees({\"maxLogs\":2")
+                actions.append("  ").append(actionNum).append(". IF chest empty: chop_trees({\"maxLogs\":2")
                        .append(", \"plan\":\"craft ").append(targetName).append("\"})\n");
             } else if (needsSmelt) {
-                String inputName = getSmeltInputName(smeltRecipe);
-                result.append(" (mine raw ore, then smelt)");
-                actionNum++;
-                actions.append("  ").append(actionNum).append(". call mine_ores({\"count\":").append(shortage)
+                actions.append("  ").append(actionNum).append(". IF chest empty: mine_ores({\"count\":").append(shortage)
                        .append(", \"plan\":\"smelt_items to get ").append(ingId)
                        .append(", then craft ").append(targetName).append("\"})\n");
-            } else if (ingId.contains("cobblestone") || ingId.contains("stone") || ingId.contains("ore")
-                    || ingId.contains("deepslate") || ingId.contains("iron") || ingId.contains("gold")
-                    || ingId.contains("copper") || ingId.contains("diamond") || ingId.contains("coal")
-                    || ingId.contains("gravel") || ingId.contains("sand")) {
-                result.append(" (mine/gather nearby)");
-                actionNum++;
-                actions.append("  ").append(actionNum).append(". call gather_blocks({\"block\":\"")
-                       .append(ingId).append("\", \"maxBlocks\":").append(shortage)
-                       .append(", \"plan\":\"craft ").append(targetName).append("\"})\n");
             } else {
-                result.append(" (gather nearby)");
-                actionNum++;
-                actions.append("  ").append(actionNum).append(". call gather_blocks({\"block\":\"")
+                actions.append("  ").append(actionNum).append(". IF chest empty: gather_blocks({\"block\":\"")
                        .append(ingId).append("\", \"maxBlocks\":").append(shortage)
                        .append(", \"plan\":\"craft ").append(targetName).append("\"})\n");
             }
-            result.append("\n");
         }
 
         if (actionNum > 0) {
@@ -474,6 +618,33 @@ public class CraftItemTool implements AiTool {
             for (int i = 0; i < companionInv.getContainerSize(); i++) {
                 ItemStack stack = companionInv.getItem(i);
                 if (!stack.isEmpty() && ingredient.test(stack)) {
+                    count += stack.getCount();
+                }
+            }
+        }
+
+        return count;
+    }
+
+    /**
+     * Counts a specific item across player and companion inventories (by Item, not Ingredient).
+     */
+    private int countItemInInventory(ToolContext context, Item item) {
+        int count = 0;
+
+        var playerInv = context.player().getInventory();
+        for (int i = 0; i < playerInv.getContainerSize(); i++) {
+            ItemStack stack = playerInv.getItem(i);
+            if (!stack.isEmpty() && stack.getItem() == item) {
+                count += stack.getCount();
+            }
+        }
+
+        SimpleContainer companionInv = getCompanionInventory(context);
+        if (companionInv != null) {
+            for (int i = 0; i < companionInv.getContainerSize(); i++) {
+                ItemStack stack = companionInv.getItem(i);
+                if (!stack.isEmpty() && stack.getItem() == item) {
                     count += stack.getCount();
                 }
             }

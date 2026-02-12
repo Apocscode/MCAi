@@ -614,8 +614,10 @@ public class AIService {
 
     /**
      * Parse Groq's failed_generation field to recover tool calls.
-     * Groq/Llama models sometimes generate: <function=tool_name({"key":"value"})></function>
-     * instead of proper tool_calls. We extract the name+args and build a synthetic response.
+     * Handles two formats:
+     * 1. Llama 70b XML: <function=tool_name({"key":"value"})></function>
+     * 2. Llama 4 Scout JSON array: [{"name":"tool","parameters":{"key":"value"}}]
+     * Also coerces string numbers to actual numbers (Scout sends "1" instead of 1).
      */
     private static JsonObject tryParseGroqFailedGeneration(String errorBody) {
         try {
@@ -630,37 +632,49 @@ public class AIService {
                     ? errorObj.get("failed_generation").getAsString() : "";
             if (failedGen.isEmpty()) return null;
 
-            // Parse: <function=tool_name({"key":"value"})></function>
-            Pattern p = Pattern.compile("<function=(\\w+)\\((.+?)\\)>?</function>", Pattern.DOTALL);
-            Matcher m = p.matcher(failedGen);
-            if (!m.find()) return null;
+            JsonArray toolCalls = new JsonArray();
+            String trimmed = failedGen.trim();
 
-            String toolName = m.group(1);
-            String argsStr = m.group(2).trim();
+            // Format 2: Scout JSON array [{"name":"tool","parameters":{...}}]
+            if (trimmed.startsWith("[")) {
+                JsonArray arr = JsonParser.parseString(trimmed).getAsJsonArray();
+                for (int i = 0; i < arr.size(); i++) {
+                    JsonObject entry = arr.get(i).getAsJsonObject();
+                    String toolName = entry.get("name").getAsString();
+                    if (ToolRegistry.get(toolName) == null) continue;
 
-            // Validate it's a real tool
-            if (ToolRegistry.get(toolName) == null) return null;
+                    JsonObject args = entry.has("parameters")
+                            ? coerceStringNumbers(entry.getAsJsonObject("parameters"))
+                            : new JsonObject();
 
-            // Parse args JSON
-            JsonObject args;
-            try {
-                args = JsonParser.parseString(argsStr).getAsJsonObject();
-            } catch (Exception e) {
-                args = new JsonObject();
+                    toolCalls.add(buildToolCallJson(toolName, args));
+                    MCAi.LOGGER.info("Recovered tool call from Scout JSON: {}({})", toolName, GSON.toJson(args));
+                }
             }
 
-            // Build synthetic OpenAI-format response with tool_calls
-            JsonObject toolCall = new JsonObject();
-            toolCall.addProperty("id", "recovered_" + System.currentTimeMillis());
-            toolCall.addProperty("type", "function");
-            JsonObject function = new JsonObject();
-            function.addProperty("name", toolName);
-            function.addProperty("arguments", GSON.toJson(args));
-            toolCall.add("function", function);
+            // Format 1: 70b XML <function=tool_name({"key":"value"})></function>
+            if (toolCalls.isEmpty()) {
+                Pattern p = Pattern.compile("<function=(\\w+)\\((.+?)\\)>?</function>", Pattern.DOTALL);
+                Matcher m = p.matcher(failedGen);
+                if (m.find()) {
+                    String toolName = m.group(1);
+                    String argsStr = m.group(2).trim();
+                    if (ToolRegistry.get(toolName) != null) {
+                        JsonObject args;
+                        try {
+                            args = coerceStringNumbers(JsonParser.parseString(argsStr).getAsJsonObject());
+                        } catch (Exception e) {
+                            args = new JsonObject();
+                        }
+                        toolCalls.add(buildToolCallJson(toolName, args));
+                        MCAi.LOGGER.info("Recovered tool call from XML: {}({})", toolName, argsStr);
+                    }
+                }
+            }
 
-            JsonArray toolCalls = new JsonArray();
-            toolCalls.add(toolCall);
+            if (toolCalls.isEmpty()) return null;
 
+            // Build synthetic OpenAI-format response
             JsonObject message = new JsonObject();
             message.addProperty("role", "assistant");
             message.add("tool_calls", toolCalls);
@@ -675,8 +689,6 @@ public class AIService {
 
             JsonObject response = new JsonObject();
             response.add("choices", choices);
-
-            MCAi.LOGGER.info("Recovered tool call from failed_generation: {}({})", toolName, argsStr);
             return response;
         } catch (Exception e) {
             MCAi.LOGGER.warn("Failed to parse Groq failed_generation: {}", e.getMessage());
@@ -684,18 +696,58 @@ public class AIService {
         }
     }
 
+    /** Build a single tool_call JSON object in OpenAI format. */
+    private static JsonObject buildToolCallJson(String toolName, JsonObject args) {
+        JsonObject toolCall = new JsonObject();
+        toolCall.addProperty("id", "recovered_" + System.currentTimeMillis());
+        toolCall.addProperty("type", "function");
+        JsonObject function = new JsonObject();
+        function.addProperty("name", toolName);
+        function.addProperty("arguments", GSON.toJson(args));
+        toolCall.add("function", function);
+        return toolCall;
+    }
+
+    /** Coerce string values that look like numbers to actual numbers (Scout bug workaround). */
+    private static JsonObject coerceStringNumbers(JsonObject obj) {
+        JsonObject fixed = new JsonObject();
+        for (var entry : obj.entrySet()) {
+            JsonElement val = entry.getValue();
+            if (val.isJsonPrimitive() && val.getAsJsonPrimitive().isString()) {
+                String s = val.getAsString();
+                try {
+                    long num = Long.parseLong(s);
+                    fixed.addProperty(entry.getKey(), num);
+                    continue;
+                } catch (NumberFormatException ignored) {}
+                try {
+                    double num = Double.parseDouble(s);
+                    fixed.addProperty(entry.getKey(), num);
+                    continue;
+                } catch (NumberFormatException ignored) {}
+                // Check for boolean strings
+                if ("true".equalsIgnoreCase(s)) { fixed.addProperty(entry.getKey(), true); continue; }
+                if ("false".equalsIgnoreCase(s)) { fixed.addProperty(entry.getKey(), false); continue; }
+            }
+            fixed.add(entry.getKey(), val);
+        }
+        return fixed;
+    }
+
     private static String buildSystemPrompt(String playerContext, String companionName) {
         return """
-                You are %s, a Minecraft AI companion next to the player. Helpful, concise, friendly. Under 3 sentences.
+                You are %s, a Minecraft AI companion. Helpful, concise, friendly. Under 3 sentences.
                 
                 RULES:
-                - When asked to DO something, CALL the tool. Never explain syntax.
+                - When asked to DO something, CALL the tool immediately. Never explain syntax.
                 - "how to make X" / "recipe for X" → get_recipe (info only)
                 - "make X" / "craft X" / "I need X" → craft_item (action)
-                - If craft_item says missing materials: follow the ACTION NEEDED hints exactly. Gather, then re-craft. NEVER say "you need to get materials".
-                - Use plan param to chain steps. On [TASK_COMPLETE], execute next step.
-                - craft_item resolves logs→planks→sticks. Use smelt_items for smelting.
-                - ACT first, explain briefly after. Be autonomous.
+                - craft_item is SMART: it auto-checks chests, pulls materials, resolves intermediates (logs→planks→sticks).
+                - If craft_item says missing materials: follow ACTION NEEDED hints EXACTLY in order. Do each step, then re-call craft_item.
+                - NEVER tell the player "you need materials" — go get them yourself.
+                - Use plan param to chain multi-step tasks. On [TASK_COMPLETE], execute the next step immediately.
+                - For smelting, use smelt_items (requires real furnace + fuel).
+                - ACT first, explain briefly after. Be fully autonomous — complete the entire task.
                 
                 Current state:
                 """.formatted(companionName) + playerContext;
