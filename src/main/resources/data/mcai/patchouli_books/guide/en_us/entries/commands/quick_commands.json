@@ -1,0 +1,13 @@
+{
+    "name": "Quick Commands",
+    "icon": "minecraft:paper",
+    "category": "mcai:commands",
+    "sortnum": 0,
+    "pages": [
+        {
+            "type": "patchouli:text",
+            "title": "! Commands",
+            "text": "Type these in the chat screen for instant actions (no AI processing):$(br2)$(thing)!follow$() — Switch to FOLLOW mode$(br)$(thing)!stay$() — Switch to STAY mode$(br)$(thing)!auto$() — Switch to AUTO mode$(br)$(thing)!come$() / $(thing)!here$() — Teleport companion to you$(br)$(thing)!status$() — Show current task status$(br)$(thing)!cancel$() / $(thing)!stop$() — Cancel all tasks$(br)$(thing)!equip$() — Force re-equip best gear$(br)$(thing)!health$() / $(thing)!hp$() — Show health$(br)$(thing)!help$() / $(thing)?$() — Show command list"
+        }
+    ]
+}

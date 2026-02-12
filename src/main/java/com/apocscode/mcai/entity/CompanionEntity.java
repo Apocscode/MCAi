@@ -84,7 +84,7 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
     private static final String TAG_BEHAVIOR_MODE = "BehaviorMode";
     private static final String TAG_HOME_POS = "HomePos";
     private static final String TAG_LOGISTICS = "LogisticsBlocks";
-    private static final int MAX_TAGGED_BLOCKS = 32;
+    private static final int MAX_TAGGED_BLOCKS_DEFAULT = 32;
 
     public static final int INVENTORY_SIZE = 27;
 
@@ -245,7 +245,9 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
         this.goalSelector.addGoal(3, new CompanionCookFoodGoal(this));   // Cook raw food at furnace/campfire
         this.goalSelector.addGoal(4, new CompanionFarmGoal(this));       // Harvest mature crops
         this.goalSelector.addGoal(5, new CompanionPickupItemGoal(this));   // Actively seek dropped items
-        this.goalSelector.addGoal(6, new CompanionFollowGoal(this, 1.2D, 4.0F, 32.0F));
+        float teleportDist;
+        try { teleportDist = AiConfig.FOLLOW_TELEPORT_DISTANCE.get().floatValue(); } catch (Exception e) { teleportDist = 32.0F; }
+        this.goalSelector.addGoal(6, new CompanionFollowGoal(this, 1.2D, 4.0F, teleportDist));
         this.goalSelector.addGoal(7, new CompanionLookAtPlayerGoal(this, 8.0F));
         this.goalSelector.addGoal(8, new RandomLookAroundGoal(this));
         // Wander only in AUTO mode
@@ -532,6 +534,10 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
 
                 if (movedSq < 0.01) { // Barely moved
                     stuckTicks++;
+                    // Jump assist — try jumping when half-stuck
+                    if (stuckTicks == STUCK_THRESHOLD / 2 && this.onGround()) {
+                        this.setDeltaMovement(this.getDeltaMovement().add(0, 0.42, 0));
+                    }
                     if (stuckTicks >= STUCK_THRESHOLD) {
                         chat.warn(CompanionChat.Category.STUCK,
                                 "I'm stuck and can't reach my destination. Can you help me?");
@@ -556,9 +562,23 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
                 }
             }
 
-            // === Auto-equip best gear every 5 seconds ===
-            if (this.tickCount % 100 == 50) {
+            // === Auto-equip best gear periodically ===
+            int equipInterval;
+            try { equipInterval = AiConfig.AUTO_EQUIP_INTERVAL.get(); } catch (Exception e) { equipInterval = 100; }
+            if (this.tickCount % equipInterval == equipInterval / 2) {
                 autoEquipBestGear();
+            }
+
+            // === Leash teleport — emergency failsafe ===
+            if (this.tickCount % 40 == 0 && getBehaviorMode() != BehaviorMode.STAY) {
+                Player leashOwner = getOwner();
+                double leashDist;
+                try { leashDist = AiConfig.LEASH_DISTANCE.get(); } catch (Exception e) { leashDist = 48.0; }
+                if (leashOwner != null && this.distanceTo(leashOwner) > leashDist) {
+                    this.moveTo(leashOwner.getX(), leashOwner.getY(), leashOwner.getZ(),
+                            this.getYRot(), this.getXRot());
+                    this.getNavigation().stop();
+                }
             }
 
             // === Periodic health warning if hungry and no food ===
@@ -793,7 +813,9 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
      */
     public void addTaggedBlock(BlockPos pos, TaggedBlock.Role role) {
         removeTaggedBlock(pos); // Remove existing entry at same pos
-        if (taggedBlocks.size() >= MAX_TAGGED_BLOCKS) return;
+        int maxBlocks;
+        try { maxBlocks = AiConfig.MAX_TAGGED_BLOCKS.get(); } catch (Exception e) { maxBlocks = MAX_TAGGED_BLOCKS_DEFAULT; }
+        if (taggedBlocks.size() >= maxBlocks) return;
         taggedBlocks.add(new TaggedBlock(pos, role));
         syncTaggedBlocksToOwner();
     }

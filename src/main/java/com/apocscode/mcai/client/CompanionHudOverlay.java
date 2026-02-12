@@ -1,7 +1,11 @@
 package com.apocscode.mcai.client;
 
 import com.apocscode.mcai.MCAi;
+import com.apocscode.mcai.config.AiConfig;
 import com.apocscode.mcai.entity.CompanionEntity;
+import com.apocscode.mcai.item.LogisticsWandItem;
+import com.apocscode.mcai.logistics.TaggedBlock;
+import com.apocscode.mcai.network.SyncWandModePacket;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -41,7 +45,23 @@ public class CompanionHudOverlay {
 
         // Find our companion in the client world
         CompanionEntity companion = findCompanion(mc);
-        if (companion == null) return;
+
+        // --- Companion status HUD (top-left) ---
+        boolean showCompanionHud;
+        try { showCompanionHud = AiConfig.SHOW_COMPANION_HUD.get(); } catch (Exception e) { showCompanionHud = true; }
+        if (companion != null && showCompanionHud) {
+            renderCompanionStatus(graphics, mc, companion);
+        }
+
+        // === Wand mode overlay (bottom-center, like Create goggles) ===
+        boolean showWandHud;
+        try { showWandHud = AiConfig.SHOW_WAND_HUD.get(); } catch (Exception e) { showWandHud = true; }
+        if (showWandHud) {
+            renderWandOverlay(graphics, mc);
+        }
+    }
+
+    private static void renderCompanionStatus(GuiGraphics graphics, Minecraft mc, CompanionEntity companion) {
 
         int x = 4;
         int y = 4;
@@ -113,6 +133,61 @@ public class CompanionHudOverlay {
                 taskStatus += "..";
             }
             graphics.drawString(mc.font, taskStatus, barX, taskY, 0xFFFF55, true);
+        }
+    }
+
+    /**
+     * Render wand mode + tag count overlay when holding Logistics Wand.
+     * Positioned at bottom-center, above the hotbar.
+     */
+    private static void renderWandOverlay(GuiGraphics graphics, Minecraft mc) {
+        if (mc.player == null) return;
+
+        boolean holdingWand = mc.player.getMainHandItem().getItem() instanceof LogisticsWandItem
+                || mc.player.getOffhandItem().getItem() instanceof LogisticsWandItem;
+        if (!holdingWand) return;
+
+        int modeOrd = SyncWandModePacket.getClientMode();
+        TaggedBlock.Role[] roles = TaggedBlock.Role.values();
+        TaggedBlock.Role mode = (modeOrd >= 0 && modeOrd < roles.length) ? roles[modeOrd] : TaggedBlock.Role.INPUT;
+
+        // Get tag count from client cache
+        int tagCount = LogisticsOutlineRenderer.getClientTagCount();
+
+        String modeLabel = mode.getLabel();
+        int modeColor = switch (mode) {
+            case INPUT -> 0xFF5599FF;
+            case OUTPUT -> 0xFFFF8800;
+            case STORAGE -> 0xFF55FF55;
+        };
+
+        // Position: bottom-center, above hotbar
+        int screenW = graphics.guiWidth();
+        int screenH = graphics.guiHeight();
+        int panelW = 110;
+        int panelH = 22;
+        int px = (screenW - panelW) / 2;
+        int py = screenH - 58;
+
+        // Background
+        graphics.fill(px, py, px + panelW, py + panelH, 0x90000000);
+
+        // Mode label
+        String modeText = "Mode: " + modeLabel;
+        graphics.drawString(mc.font, modeText, px + 4, py + 3, modeColor, true);
+
+        // Tag count
+        String tagText = tagCount + " tagged";
+        int tagWidth = mc.font.width(tagText);
+        graphics.drawString(mc.font, tagText, px + panelW - tagWidth - 4, py + 3, 0xAAAAAA, true);
+
+        // Mode indicator dots (show all 3, highlight active)
+        int dotY = py + 14;
+        int dotX = px + 4;
+        for (TaggedBlock.Role r : roles) {
+            int dotColor = (r == mode) ? modeColor : 0xFF444444;
+            graphics.fill(dotX, dotY, dotX + 8, dotY + 4, dotColor);
+            dotX += 12;
         }
     }
 

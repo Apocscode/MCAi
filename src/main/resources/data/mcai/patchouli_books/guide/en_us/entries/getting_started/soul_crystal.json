@@ -1,0 +1,18 @@
+{
+    "name": "Soul Crystal",
+    "icon": "mcai:soul_crystal",
+    "category": "mcai:getting_started",
+    "sortnum": 0,
+    "pages": [
+        {
+            "type": "patchouli:spotlight",
+            "item": "mcai:soul_crystal",
+            "text": "The $(item)Soul Crystal$() is the key to summoning your AI companion. It stores the companion's soul and allows respawning after death."
+        },
+        {
+            "type": "patchouli:text",
+            "title": "Usage",
+            "text": "$(li)$(bold)Right-click$() on the ground to summon your companion.$(li)$(bold)Shift+right-click$() a block to set the companion's home position.$(li)If your companion dies, their inventory is preserved. Use the crystal again to respawn them with all their items."
+        }
+    ]
+}

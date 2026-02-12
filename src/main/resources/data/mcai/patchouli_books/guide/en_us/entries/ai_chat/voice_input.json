@@ -1,0 +1,13 @@
+{
+    "name": "Voice Input",
+    "icon": "minecraft:note_block",
+    "category": "mcai:ai_chat",
+    "sortnum": 1,
+    "pages": [
+        {
+            "type": "patchouli:text",
+            "title": "Push-to-Talk",
+            "text": "Hold $(thing)V$() to record voice input. Release to send your speech to the AI companion.$(br2)Requires a Whisper-compatible transcription server running locally (configurable in mcai-common.toml).$(br2)The default endpoint is $(mono)http://localhost:8178/v1/audio/transcriptions$()"
+        }
+    ]
+}

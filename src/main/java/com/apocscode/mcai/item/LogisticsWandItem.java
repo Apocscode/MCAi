@@ -1,5 +1,6 @@
 package com.apocscode.mcai.item;
 
+import com.apocscode.mcai.config.AiConfig;
 import com.apocscode.mcai.entity.CompanionEntity;
 import com.apocscode.mcai.logistics.TaggedBlock;
 import net.minecraft.core.BlockPos;
@@ -95,13 +96,15 @@ public class LogisticsWandItem extends Item {
 
         // Not tagged — tag it with current mode
 
-        // Check distance from home (if set) — max 32 blocks
+        // Check distance from home (if set)
+        int logisticsRange;
+        try { logisticsRange = AiConfig.LOGISTICS_RANGE.get(); } catch (Exception e) { logisticsRange = 32; }
         if (companion.hasHomePos()) {
             double dist = Math.sqrt(companion.getHomePos().distSqr(pos));
-            if (dist > 32.0) {
+            if (dist > logisticsRange) {
                 player.sendSystemMessage(Component.literal(
                         "§e[MCAi]§r Too far from home position! (§c" +
-                                String.format("%.0f", dist) + "§r/32 blocks)"));
+                                String.format("%.0f", dist) + "§r/" + logisticsRange + " blocks)"));
                 return InteractionResult.FAIL;
             }
         }

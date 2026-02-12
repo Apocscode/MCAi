@@ -1,0 +1,13 @@
+{
+    "name": "Death & Recovery",
+    "icon": "mcai:soul_crystal",
+    "category": "mcai:combat",
+    "sortnum": 1,
+    "pages": [
+        {
+            "type": "patchouli:text",
+            "title": "Death Handling",
+            "text": "When your companion dies, their inventory and equipment are NOT dropped. Instead, everything is saved to the Soul Crystal's death cache.$(br2)Use the Soul Crystal again to respawn the companion — all items and equipment will be fully restored.$(br2)$(bold)Note:$() Death data is stored in memory and will be lost on server restart. Resummon your companion promptly after death."
+        }
+    ]
+}

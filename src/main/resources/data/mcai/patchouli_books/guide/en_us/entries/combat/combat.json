@@ -1,0 +1,18 @@
+{
+    "name": "Combat & Auto-Equip",
+    "icon": "minecraft:iron_sword",
+    "category": "mcai:combat",
+    "sortnum": 0,
+    "pages": [
+        {
+            "type": "patchouli:text",
+            "title": "Combat",
+            "text": "Your companion automatically fights hostile mobs that come near or attack it.$(br2)It targets all monsters within range and will also hunt passive animals for food when hungry.$(br2)Give your companion weapons and armor through its inventory for better combat effectiveness."
+        },
+        {
+            "type": "patchouli:text",
+            "title": "Auto-Equip",
+            "text": "Every 5 seconds, the companion scans its inventory and equips:$(br2)$(li)$(bold)Best weapon$() — Highest attack damage$(li)$(bold)Best armor$() — Highest defense for each slot (head, chest, legs, feet)$(br2)Simply put good gear in the companion's inventory and it will equip it automatically."
+        }
+    ]
+}

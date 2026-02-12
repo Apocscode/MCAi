@@ -1,0 +1,18 @@
+{
+    "name": "Keybinds & HUD",
+    "icon": "minecraft:spyglass",
+    "category": "mcai:commands",
+    "sortnum": 1,
+    "pages": [
+        {
+            "type": "patchouli:text",
+            "title": "Keybinds",
+            "text": "$(thing)V$() — Push-to-talk (voice input to AI)$(br)$(thing)G$() — Whistle (call companion to you)$(br2)Whistle behavior:$(br)$(li)If >64 blocks away: instant teleport$(li)If 6-64 blocks: pathfinds to you$(li)If <6 blocks: no action needed"
+        },
+        {
+            "type": "patchouli:text",
+            "title": "HUD Overlay",
+            "text": "A persistent HUD panel in the $(bold)top-left$() corner shows:$(br2)$(li)Companion name$(li)Health bar (color-coded)$(li)Behavior mode badge$(li)Distance to companion$(li)Current task status$(br2)When holding a $(bold)Logistics Wand$(), an additional overlay in the $(bold)bottom-center$() shows the current wand mode and tagged block count."
+        }
+    ]
+}

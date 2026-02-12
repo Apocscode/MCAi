@@ -1,13 +1,16 @@
 package com.apocscode.mcai.client;
 
 import com.apocscode.mcai.MCAi;
+import com.apocscode.mcai.config.AiConfig;
 import com.apocscode.mcai.entity.CompanionEntity;
 import com.apocscode.mcai.item.LogisticsWandItem;
 import com.apocscode.mcai.logistics.TaggedBlock;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
 import net.minecraft.client.renderer.LevelRenderer;
+import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.Entity;
@@ -22,6 +25,7 @@ import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import org.joml.Matrix4f;
 
 /**
  * Renders color-coded cube outlines around containers tagged with the Logistics Wand.
@@ -43,6 +47,11 @@ public class LogisticsOutlineRenderer {
      */
     public static void updateClientCache(List<TaggedBlock> blocks) {
         clientTaggedBlocks = List.copyOf(blocks);
+    }
+
+    /** Get the number of tagged blocks on the client (for HUD display) */
+    public static int getClientTagCount() {
+        return clientTaggedBlocks.size();
     }
 
     @SubscribeEvent
@@ -97,6 +106,44 @@ public class LogisticsOutlineRenderer {
 
         poseStack.popPose();
         bufferSource.endBatch(RenderType.lines());
+
+        // === Floating role labels above tagged blocks ===
+        boolean showLabels;
+        try { showLabels = AiConfig.SHOW_BLOCK_LABELS.get(); } catch (Exception e) { showLabels = true; }
+        if (!showLabels) return;
+        Font font = mc.font;
+        for (TaggedBlock tagged : taggedBlocks) {
+            BlockPos pos = tagged.pos();
+
+            // Only render labels within 24 blocks
+            if (pos.distToCenterSqr(camera.x, camera.y, camera.z) > 24 * 24) continue;
+
+            String label = tagged.role().getLabel();
+            int labelColor = switch (tagged.role()) {
+                case INPUT -> 0xFF5599FF;
+                case OUTPUT -> 0xFFFF8800;
+                case STORAGE -> 0xFF55FF55;
+            };
+
+            poseStack.pushPose();
+            poseStack.translate(
+                    pos.getX() + 0.5 - camera.x,
+                    pos.getY() + 1.3 - camera.y,
+                    pos.getZ() + 0.5 - camera.z);
+
+            // Billboard: face camera (same approach as vanilla nametag)
+            poseStack.mulPose(mc.getEntityRenderDispatcher().cameraOrientation());
+            poseStack.scale(-0.025F, -0.025F, 0.025F);
+
+            Matrix4f matrix = poseStack.last().pose();
+            float halfWidth = font.width(label) / 2.0f;
+
+            font.drawInBatch(label, -halfWidth, 0, labelColor, false, matrix,
+                    bufferSource, Font.DisplayMode.NORMAL, 0x40000000, 15728880);
+
+            poseStack.popPose();
+        }
+        bufferSource.endBatch();
     }
 
     /**

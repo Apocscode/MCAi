@@ -70,13 +70,18 @@ public class CompanionFollowGoal extends Goal {
             return;
         }
 
-        // Recalculate path periodically
+        // Recalculate path periodically (5 ticks = smoother following)
         if (--ticksUntilPathRecalc <= 0) {
-            ticksUntilPathRecalc = 10;
+            ticksUntilPathRecalc = 5;
             if (!companion.isPassenger()) {
-                companion.getNavigation().moveTo(owner, speedModifier);
+                // Speed boost when owner is moderately far
+                double speed = distSq > 100.0D ? speedModifier * 1.3 : speedModifier;
+                companion.getNavigation().moveTo(owner, speed);
             }
         }
+
+        // Sprint when far from owner
+        companion.setSprinting(distSq > 64.0D);
     }
 
     private void teleportToOwner() {

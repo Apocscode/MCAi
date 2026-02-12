@@ -45,6 +45,21 @@ public class AiConfig {
     public static final ModConfigSpec.BooleanValue LOG_AI_REQUESTS;
     public static final ModConfigSpec.BooleanValue LOG_PERFORMANCE;
 
+    // ---- Companion Behavior ----
+    public static final ModConfigSpec.DoubleValue FOLLOW_TELEPORT_DISTANCE;
+    public static final ModConfigSpec.IntValue AUTO_EQUIP_INTERVAL;
+    public static final ModConfigSpec.DoubleValue LEASH_DISTANCE;
+
+    // ---- Logistics ----
+    public static final ModConfigSpec.IntValue MAX_TAGGED_BLOCKS;
+    public static final ModConfigSpec.IntValue LOGISTICS_RANGE;
+
+    // ---- Display ----
+    public static final ModConfigSpec.BooleanValue SHOW_COMPANION_HUD;
+    public static final ModConfigSpec.BooleanValue SHOW_WAND_HUD;
+    public static final ModConfigSpec.BooleanValue SHOW_BLOCK_LABELS;
+    public static final ModConfigSpec.BooleanValue SHOW_HEALTH_BAR;
+
     static {
         ModConfigSpec.Builder builder = new ModConfigSpec.Builder();
 
@@ -163,6 +178,63 @@ public class AiConfig {
                 .defineInRange("surroundingsScanRadius", 16, 4, 64);
 
         builder.pop(); // ranges
+
+        // ============================================================
+        // Companion Behavior
+        // ============================================================
+        builder.comment("Companion Behavior — pathfinding, teleport, and automation settings").push("companion_behavior");
+
+        FOLLOW_TELEPORT_DISTANCE = builder
+                .comment("Distance (blocks) at which the companion teleports to the owner in follow mode")
+                .defineInRange("followTeleportDistance", 32.0, 8.0, 128.0);
+
+        AUTO_EQUIP_INTERVAL = builder
+                .comment("Ticks between auto-equip checks (lower = more responsive, higher = less CPU)")
+                .defineInRange("autoEquipInterval", 100, 20, 400);
+
+        LEASH_DISTANCE = builder
+                .comment("Distance (blocks) for emergency leash teleport (when companion is very far)")
+                .defineInRange("leashDistance", 48.0, 16.0, 256.0);
+
+        builder.pop(); // companion_behavior
+
+        // ============================================================
+        // Logistics
+        // ============================================================
+        builder.comment("Logistics — wand and tagged block settings").push("logistics");
+
+        MAX_TAGGED_BLOCKS = builder
+                .comment("Maximum number of blocks that can be tagged per companion")
+                .defineInRange("maxTaggedBlocks", 32, 4, 128);
+
+        LOGISTICS_RANGE = builder
+                .comment("Maximum distance (blocks) for logistics wand tagging")
+                .defineInRange("logisticsRange", 32, 4, 128);
+
+        builder.pop(); // logistics
+
+        // ============================================================
+        // Display
+        // ============================================================
+        builder.comment("Display — HUD and overlay toggle settings").push("display");
+
+        SHOW_COMPANION_HUD = builder
+                .comment("Show the companion status HUD overlay (top-left)")
+                .define("showCompanionHud", true);
+
+        SHOW_WAND_HUD = builder
+                .comment("Show the wand mode HUD overlay when holding the logistics wand")
+                .define("showWandHud", true);
+
+        SHOW_BLOCK_LABELS = builder
+                .comment("Show floating role labels above tagged blocks")
+                .define("showBlockLabels", true);
+
+        SHOW_HEALTH_BAR = builder
+                .comment("Show an in-world health bar above the companion when damaged")
+                .define("showHealthBar", true);
+
+        builder.pop(); // display
 
         // ============================================================
         // Diagnostic Logging

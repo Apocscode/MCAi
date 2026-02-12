@@ -13,6 +13,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
+import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 /**
@@ -57,6 +58,9 @@ public record CycleWandModePacket(boolean forward) implements CustomPacketPayloa
                 player.level().playSound(null, player.blockPosition(),
                         SoundEvents.EXPERIENCE_ORB_PICKUP, SoundSource.PLAYERS,
                         0.5F, 1.2F + next.ordinal() * 0.2F);
+
+                // Sync mode to client for HUD display
+                PacketDistributor.sendToPlayer(player, new SyncWandModePacket(next.ordinal()));
             }
         });
     }

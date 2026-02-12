@@ -6,6 +6,7 @@ import com.apocscode.mcai.network.OpenChatScreenPacket;
 import com.apocscode.mcai.network.CycleWandModePacket;
 import com.apocscode.mcai.network.SetBehaviorModePacket;
 import com.apocscode.mcai.network.SyncTaggedBlocksPacket;
+import com.apocscode.mcai.network.SyncWandModePacket;
 import com.apocscode.mcai.network.WhistleCompanionPacket;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -59,6 +60,12 @@ public class ModNetworking {
                 SyncTaggedBlocksPacket.TYPE,
                 SyncTaggedBlocksPacket.STREAM_CODEC,
                 SyncTaggedBlocksPacket::handle);
+
+        // Server → Client: sync wand mode
+        registrar.playToClient(
+                SyncWandModePacket.TYPE,
+                SyncWandModePacket.STREAM_CODEC,
+                SyncWandModePacket::handle);
 
         // Client → Server: whistle to call companion
         registrar.playToServer(

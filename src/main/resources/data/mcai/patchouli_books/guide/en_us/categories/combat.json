@@ -1,0 +1,6 @@
+{
+    "name": "Combat & Survival",
+    "description": "Auto-equip gear, fight hostile mobs, eat food, and handle death gracefully.",
+    "icon": "minecraft:iron_sword",
+    "sortnum": 4
+}

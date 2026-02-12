@@ -1,0 +1,18 @@
+{
+    "name": "Task System",
+    "icon": "minecraft:iron_pickaxe",
+    "category": "mcai:automation",
+    "sortnum": 0,
+    "pages": [
+        {
+            "type": "patchouli:text",
+            "title": "Task Queue",
+            "text": "Ask your companion to perform tasks via AI chat. Tasks are queued and executed in order.$(br2)Available tasks:$(br2)$(li)$(bold)Farm Area$() — Harvest, hoe, and replant crops$(li)$(bold)Mine Blocks$() — Clear blocks in an area$(li)$(bold)Mine Ores$() — Find and mine ore blocks$(li)$(bold)Chop Trees$() — Cut down nearby trees$(li)$(bold)Gather Blocks$() — Collect specific block types"
+        },
+        {
+            "type": "patchouli:text",
+            "title": "Task Progress",
+            "text": "The companion reports progress every 10 seconds.$(br2)Use $(thing)!status$() to check current task and queue.$(br2)Use $(thing)!cancel$() to stop all tasks.$(br2)Progress percentage is shown in the HUD overlay and in chat messages."
+        }
+    ]
+}

@@ -1,0 +1,6 @@
+{
+    "name": "Automation",
+    "description": "Queue tasks like farming, mining, chopping trees, and gathering blocks.",
+    "icon": "minecraft:iron_pickaxe",
+    "sortnum": 2
+}

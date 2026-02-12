@@ -1,0 +1,6 @@
+{
+    "name": "AI Chat",
+    "description": "Talk to your companion using natural language. It can execute commands, craft, build, and more.",
+    "icon": "minecraft:writable_book",
+    "sortnum": 1
+}

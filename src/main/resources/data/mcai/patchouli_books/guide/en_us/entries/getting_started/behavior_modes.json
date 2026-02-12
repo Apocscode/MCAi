@@ -1,0 +1,18 @@
+{
+    "name": "Behavior Modes",
+    "icon": "minecraft:compass",
+    "category": "mcai:getting_started",
+    "sortnum": 1,
+    "pages": [
+        {
+            "type": "patchouli:text",
+            "title": "Three Modes",
+            "text": "Your companion has three behavior modes:$(br2)$(bold)FOLLOW$() — Follows you around. Teleports if too far away.$(br2)$(bold)STAY$() — Stands still at their current position.$(br2)$(bold)AUTO$() — Autonomously performs tasks: farming, logistics, wandering, and combat."
+        },
+        {
+            "type": "patchouli:text",
+            "title": "Switching Modes",
+            "text": "Use these methods to change modes:$(br2)$(li)Quick commands: $(thing)!follow$(), $(thing)!stay$(), $(thing)!auto$()$(li)Chat with the AI: \"Switch to follow mode\"$(li)The HUD overlay shows the current mode as a colored badge."
+        }
+    ]
+}

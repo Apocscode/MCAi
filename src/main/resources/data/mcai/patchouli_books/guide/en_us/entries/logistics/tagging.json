@@ -1,0 +1,18 @@
+{
+    "name": "Container Tagging",
+    "icon": "minecraft:chest",
+    "category": "mcai:logistics",
+    "sortnum": 1,
+    "pages": [
+        {
+            "type": "patchouli:text",
+            "title": "Container Roles",
+            "text": "$(bold)INPUT$() (Blue) — The companion pulls items FROM these containers (e.g., furnace output, farm collection chest).$(br2)$(bold)OUTPUT$() (Orange) — The companion pushes items TO these containers (e.g., sorted storage, processing input).$(br2)$(bold)STORAGE$() (Green) — General storage that the companion manages and sorts through."
+        },
+        {
+            "type": "patchouli:text",
+            "title": "Logistics Goal",
+            "text": "In $(bold)AUTO$() mode with a home position set, the companion automatically moves items between tagged containers based on their roles.$(br2)Containers must be within 32 blocks of the home position. Maximum 32 tagged containers (configurable)."
+        }
+    ]
+}

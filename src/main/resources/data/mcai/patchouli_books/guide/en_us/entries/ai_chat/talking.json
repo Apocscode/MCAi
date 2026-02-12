@@ -1,0 +1,18 @@
+{
+    "name": "Talking to Your Companion",
+    "icon": "minecraft:writable_book",
+    "category": "mcai:ai_chat",
+    "sortnum": 0,
+    "pages": [
+        {
+            "type": "patchouli:text",
+            "title": "Chat Interface",
+            "text": "Right-click your companion to open the inventory, then click the $(bold)Chat$() button to open the AI conversation screen.$(br2)Type natural language messages and your companion will respond using an AI language model (Ollama). The companion can execute in-game actions based on your requests."
+        },
+        {
+            "type": "patchouli:text",
+            "title": "AI Tools (20+)",
+            "text": "Your companion can:$(br2)$(li)Execute game commands$(li)Place/break blocks$(li)Interact with containers$(li)Craft items$(li)Search the web$(li)Scan surroundings$(li)Navigate to locations$(li)Farm, mine, chop, gather$(li)Check task status$(li)And more!"
+        }
+    ]
+}
