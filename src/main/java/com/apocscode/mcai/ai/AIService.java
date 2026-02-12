@@ -5,6 +5,8 @@ import com.apocscode.mcai.ai.tool.AiTool;
 import com.apocscode.mcai.ai.tool.ToolContext;
 import com.apocscode.mcai.ai.tool.ToolRegistry;
 import com.apocscode.mcai.config.AiConfig;
+import com.apocscode.mcai.network.ChatResponsePacket;
+import com.apocscode.mcai.task.TaskContinuation;
 import com.google.gson.*;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Inventory;
@@ -410,7 +412,9 @@ public class AIService {
                 - Use gather_blocks to send the companion to mine specific blocks (sand, cobblestone, logs, etc.)
                 - Use transfer_items with direction='check' to see what the companion collected, then direction='to_player' to take items from the companion
                 - For autonomous crafting when the player lacks materials, chain: gather_blocks / mine_ores / chop_trees → wait for task → transfer_items(to_player) → craft_item
-                - Example: player asks 'make me a stone pickaxe' but has no cobblestone → mine_ores or gather_blocks(cobblestone) → transfer_items(to_player, item=cobblestone) → craft_item(stone_pickaxe)
+                - IMPORTANT: When using gather_blocks, mine_ores, or chop_trees and you need to do something after, include the 'plan' parameter describing the next steps. Example: mine_ores({"plan": "transfer diamonds to player, then craft diamond_pickaxe"}) — this makes you automatically continue the plan when the task finishes.
+                - Example: player asks 'make me a stone pickaxe' but has no cobblestone → gather_blocks({"block":"cobblestone", "maxBlocks":3, "plan":"transfer cobblestone to player then craft stone_pickaxe"})
+                - When a [TASK_COMPLETE] message arrives, execute the plan: use transfer_items(to_player) first, then craft_item
                 - The companion automatically picks up items it mines — they go into its inventory, not the player's. Use transfer_items to move them.
                 - Use task_status to check if a mining/gathering task is complete before attempting transfer_items
                 - For simple 'get me X' requests, use find_and_fetch_item directly — it's the fastest path
@@ -446,5 +450,44 @@ public class AIService {
             executor.shutdown();
         }
         AiLogger.shutdown();
+    }
+
+    /**
+     * Continue an AI plan after a task completes.
+     * Called from TaskManager on the server tick thread when a task with a
+     * continuation finishes. Triggers a new AI chat turn with the task result
+     * and plan context, then sends the response back to the player.
+     *
+     * @param continuation The continuation plan attached to the completed task
+     * @param taskResult   Description of the task outcome (e.g. "Gathered 8 Cobblestone")
+     * @param player       The server player to send the response to
+     * @param companionName The companion's display name
+     */
+    public static void continueAfterTask(TaskContinuation continuation, String taskResult,
+                                          ServerPlayer player, String companionName) {
+        if (executor == null || executor.isShutdown()) return;
+
+        String syntheticMessage = continuation.buildContinuationMessage(taskResult);
+        MCAi.LOGGER.info("Task continuation for {}: {}", player.getName().getString(), syntheticMessage);
+
+        // Add a system note to client-side history so the AI has context
+        ConversationManager.addSystemMessage("[Task completed: " + taskResult + "]");
+
+        chat(syntheticMessage, player, ConversationManager.getHistoryForAI(), companionName)
+                .thenAccept(response -> {
+                    player.getServer().execute(() -> {
+                        net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(
+                                player, new ChatResponsePacket(response));
+                    });
+                })
+                .exceptionally(ex -> {
+                    MCAi.LOGGER.error("Task continuation failed", ex);
+                    player.getServer().execute(() -> {
+                        net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(
+                                player, new ChatResponsePacket(
+                                        "I finished the task but had trouble continuing the plan: " + ex.getMessage()));
+                    });
+                    return null;
+                });
     }
 }

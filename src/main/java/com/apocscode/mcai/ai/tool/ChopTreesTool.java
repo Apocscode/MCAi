@@ -2,6 +2,7 @@ package com.apocscode.mcai.ai.tool;
 
 import com.apocscode.mcai.entity.CompanionEntity;
 import com.apocscode.mcai.task.ChopTreesTask;
+import com.apocscode.mcai.task.TaskContinuation;
 import com.google.gson.JsonObject;
 
 /**
@@ -38,6 +39,14 @@ public class ChopTreesTool implements AiTool {
         maxLogs.addProperty("description", "Maximum number of logs to chop. Default: 64. Use 0 for no limit.");
         props.add("maxLogs", maxLogs);
 
+        JsonObject plan = new JsonObject();
+        plan.addProperty("type", "string");
+        plan.addProperty("description",
+                "Optional: describe what to do AFTER chopping completes. " +
+                "Example: 'transfer logs to player then craft planks and sticks'. " +
+                "If set, the AI will automatically continue the plan when the task finishes.");
+        props.add("plan", plan);
+
         schema.add("properties", props);
         return schema;
     }
@@ -54,6 +63,17 @@ public class ChopTreesTool implements AiTool {
             radius = Math.min(radius, 32);
 
             ChopTreesTask task = new ChopTreesTask(companion, radius, maxLogs);
+
+            // Attach continuation plan if the AI specified next steps
+            if (args.has("plan") && !args.get("plan").getAsString().isBlank()) {
+                String planText = args.get("plan").getAsString();
+                task.setContinuation(new TaskContinuation(
+                        context.player().getUUID(),
+                        "Chop trees (r=" + radius + "), then: " + planText,
+                        planText
+                ));
+            }
+
             companion.getTaskManager().queueTask(task);
 
             return "Queued tree chopping task. Searching within " + radius + " blocks for logs.";

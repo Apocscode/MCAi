@@ -49,11 +49,12 @@ public class ConversationManager {
     }
 
     /**
-     * Get messages suitable for sending to the AI (player + AI only, no system).
+     * Get messages suitable for sending to the AI (player + AI + task system messages).
+     * Includes system messages about task completions for continuation context.
      */
     public static List<ChatMessage> getHistoryForAI() {
         return messages.stream()
-                .filter(m -> !m.isSystem())
+                .filter(m -> !m.isSystem() || m.content().startsWith("[Task"))
                 .toList();
     }
 

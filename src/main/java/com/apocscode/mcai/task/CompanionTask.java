@@ -32,6 +32,7 @@ public abstract class CompanionTask {
     protected String failReason;
     protected int ticksRunning = 0;
     protected static final int MAX_TICKS = 20 * 60 * 5; // 5 minute timeout
+    private TaskContinuation continuation;
 
     protected CompanionTask(CompanionEntity companion, String description) {
         this.companion = companion;
@@ -83,6 +84,21 @@ public abstract class CompanionTask {
      */
     public int getProgressPercent() {
         return -1;
+    }
+
+    /**
+     * Set a continuation plan that should execute after this task completes.
+     * The TaskManager will trigger an AI follow-up chat with the plan context.
+     */
+    public void setContinuation(TaskContinuation continuation) {
+        this.continuation = continuation;
+    }
+
+    /**
+     * Get the continuation plan, or null if none set.
+     */
+    public TaskContinuation getContinuation() {
+        return continuation;
     }
 
     protected void complete() {

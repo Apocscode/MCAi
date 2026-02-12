@@ -2,6 +2,7 @@ package com.apocscode.mcai.ai.tool;
 
 import com.apocscode.mcai.entity.CompanionEntity;
 import com.apocscode.mcai.task.GatherBlocksTask;
+import com.apocscode.mcai.task.TaskContinuation;
 import com.google.gson.JsonObject;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
@@ -51,6 +52,14 @@ public class GatherBlocksTool implements AiTool {
         maxBlocks.addProperty("description", "Maximum number of blocks to gather. Default: 16.");
         props.add("maxBlocks", maxBlocks);
 
+        JsonObject plan = new JsonObject();
+        plan.addProperty("type", "string");
+        plan.addProperty("description",
+                "Optional: describe what to do AFTER gathering completes. " +
+                "Example: 'transfer cobblestone to player then craft stone_pickaxe'. " +
+                "If set, the AI will automatically continue the plan when the task finishes.");
+        props.add("plan", plan);
+
         schema.add("properties", props);
 
         // Required fields
@@ -81,6 +90,17 @@ public class GatherBlocksTool implements AiTool {
             }
 
             GatherBlocksTask task = new GatherBlocksTask(companion, targetBlock, radius, maxBlocks);
+
+            // Attach continuation plan if the AI specified next steps
+            if (args.has("plan") && !args.get("plan").getAsString().isBlank()) {
+                String planText = args.get("plan").getAsString();
+                task.setContinuation(new TaskContinuation(
+                        context.player().getUUID(),
+                        "Gather " + maxBlocks + " " + targetBlock.getName().getString() + ", then: " + planText,
+                        planText
+                ));
+            }
+
             companion.getTaskManager().queueTask(task);
 
             return "Queued gather task: collecting up to " + maxBlocks + " "

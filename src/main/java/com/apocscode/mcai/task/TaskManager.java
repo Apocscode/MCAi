@@ -1,8 +1,11 @@
 package com.apocscode.mcai.task;
 
 import com.apocscode.mcai.MCAi;
+import com.apocscode.mcai.ai.AIService;
 import com.apocscode.mcai.entity.CompanionChat;
 import com.apocscode.mcai.entity.CompanionEntity;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.player.Player;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
@@ -48,15 +51,25 @@ public class TaskManager {
         // If active task is done, clean up and announce
         if (activeTask != null && activeTask.isDone()) {
             activeTask.cleanup();
-            if (activeTask.getStatus() == CompanionTask.Status.COMPLETED) {
+            String taskDescription = activeTask.getDescription();
+            CompanionTask.Status taskStatus = activeTask.getStatus();
+            TaskContinuation continuation = activeTask.getContinuation();
+
+            if (taskStatus == CompanionTask.Status.COMPLETED) {
                 companion.getChat().say(CompanionChat.Category.TASK,
-                        "Done: " + activeTask.getDescription());
+                        "Done: " + taskDescription);
             } else {
                 String reason = activeTask.getFailReason() != null
                         ? activeTask.getFailReason() : "unknown error";
                 companion.getChat().say(CompanionChat.Category.TASK,
-                        "Failed: " + activeTask.getDescription() + " — " + reason);
+                        "Failed: " + taskDescription + " — " + reason);
             }
+
+            // Fire continuation if one was registered (for multi-step plans)
+            if (continuation != null && taskStatus == CompanionTask.Status.COMPLETED) {
+                fireContinuation(continuation, taskDescription);
+            }
+
             activeTask = null;
         }
 
@@ -157,5 +170,27 @@ public class TaskManager {
             sb.append(" | ").append(taskQueue.size()).append(" task(s) queued");
         }
         return sb.toString();
+    }
+
+    /**
+     * Fire a task continuation — triggers an AI follow-up chat to continue a multi-step plan.
+     * Called on the server tick thread when a task with a continuation completes successfully.
+     */
+    private void fireContinuation(TaskContinuation continuation, String taskDescription) {
+        Player owner = companion.getOwner();
+        if (!(owner instanceof ServerPlayer serverPlayer)) {
+            MCAi.LOGGER.warn("Cannot fire task continuation — owner not online");
+            return;
+        }
+
+        String companionName = companion.getCompanionName();
+        MCAi.LOGGER.info("Firing task continuation for '{}': plan='{}'",
+                taskDescription, continuation.planContext());
+
+        companion.getChat().say(CompanionChat.Category.TASK,
+                "Continuing the plan...");
+
+        AIService.continueAfterTask(continuation, "Completed: " + taskDescription,
+                serverPlayer, companionName);
     }
 }

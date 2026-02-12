@@ -2,6 +2,7 @@ package com.apocscode.mcai.ai.tool;
 
 import com.apocscode.mcai.entity.CompanionEntity;
 import com.apocscode.mcai.task.MineOresTask;
+import com.apocscode.mcai.task.TaskContinuation;
 import com.google.gson.JsonObject;
 
 /**
@@ -39,6 +40,14 @@ public class MineOresTool implements AiTool {
         maxOres.addProperty("description", "Maximum number of ore blocks to mine. Default: 32.");
         props.add("maxOres", maxOres);
 
+        JsonObject plan = new JsonObject();
+        plan.addProperty("type", "string");
+        plan.addProperty("description",
+                "Optional: describe what to do AFTER mining completes. " +
+                "Example: 'transfer diamonds to player then craft diamond_pickaxe'. " +
+                "If set, the AI will automatically continue the plan when the task finishes.");
+        props.add("plan", plan);
+
         schema.add("properties", props);
         return schema;
     }
@@ -55,6 +64,17 @@ public class MineOresTool implements AiTool {
             radius = Math.min(radius, 24);
 
             MineOresTask task = new MineOresTask(companion, radius, maxOres);
+
+            // Attach continuation plan if the AI specified next steps
+            if (args.has("plan") && !args.get("plan").getAsString().isBlank()) {
+                String planText = args.get("plan").getAsString();
+                task.setContinuation(new TaskContinuation(
+                        context.player().getUUID(),
+                        "Mine ores (r=" + radius + "), then: " + planText,
+                        planText
+                ));
+            }
+
             companion.getTaskManager().queueTask(task);
 
             return "Queued ore mining task. Searching within " + radius + " blocks for ores.";
