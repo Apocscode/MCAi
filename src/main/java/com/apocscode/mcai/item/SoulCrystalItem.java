@@ -2,6 +2,7 @@ package com.apocscode.mcai.item;
 
 import com.apocscode.mcai.ModRegistry;
 import com.apocscode.mcai.entity.CompanionEntity;
+import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.InteractionHand;
@@ -90,6 +91,26 @@ public class SoulCrystalItem extends Item {
         if (!level.isClientSide && level instanceof ServerLevel serverLevel) {
             UUID playerUUID = player.getUUID();
 
+            // Shift+right-click = set home position for the companion
+            if (player.isShiftKeyDown()) {
+                BlockPos pos = player.blockPosition();
+                // Save home to player persistent data (persists even without a living companion)
+                player.getPersistentData().putLong("mcai:home_pos", pos.asLong());
+
+                // If companion is alive, update it immediately
+                if (CompanionEntity.hasLivingCompanion(playerUUID)) {
+                    CompanionEntity companion = CompanionEntity.getLivingCompanion(playerUUID);
+                    if (companion != null) {
+                        companion.setHomePos(pos);
+                    }
+                }
+
+                player.sendSystemMessage(Component.literal(
+                        "§b[MCAi]§r Home position set to §e" + pos.getX() + ", " + pos.getY() + ", " + pos.getZ() + "§r"));
+                player.getCooldowns().addCooldown(this, 10);
+                return InteractionResultHolder.sidedSuccess(stack, level.isClientSide);
+            }
+
             // Check if companion is already alive
             if (CompanionEntity.hasLivingCompanion(playerUUID)) {
                 player.sendSystemMessage(Component.literal(
@@ -121,6 +142,11 @@ public class SoulCrystalItem extends Item {
 
                 // Restore full state if dismissed (inventory, equipment, health)
                 companion.restoreStateFromOwner(player);
+
+                // Restore home position from player persistent data
+                if (player.getPersistentData().contains("mcai:home_pos")) {
+                    companion.setHomePos(BlockPos.of(player.getPersistentData().getLong("mcai:home_pos")));
+                }
 
                 serverLevel.addFreshEntity(companion);
 
@@ -155,6 +181,7 @@ public class SoulCrystalItem extends Item {
     public void appendHoverText(ItemStack stack, Item.TooltipContext context,
                                 List<Component> tooltipComponents, TooltipFlag tooltipFlag) {
         tooltipComponents.add(Component.literal("§5Right-click to summon your AI companion"));
+        tooltipComponents.add(Component.literal("§5Shift+right-click to set home position"));
         tooltipComponents.add(Component.literal("§8Reusable — not consumed on use"));
         super.appendHoverText(stack, context, tooltipComponents, tooltipFlag);
     }

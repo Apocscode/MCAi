@@ -28,6 +28,7 @@ import net.minecraft.world.entity.monster.Monster;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.world.food.FoodProperties;
 import net.minecraft.world.item.*;
@@ -75,6 +76,7 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
     private static final String TAG_NAME = "CompanionName";
     private static final String TAG_INVENTORY = "CompanionInventory";
     private static final String TAG_BEHAVIOR_MODE = "BehaviorMode";
+    private static final String TAG_HOME_POS = "HomePos";
 
     public static final int INVENTORY_SIZE = 27;
 
@@ -85,6 +87,10 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
     private final SimpleContainer inventory = new SimpleContainer(INVENTORY_SIZE);
     private int eatCooldown = 0;
     private boolean registeredLiving = false; // Tracks if we've registered in LIVING_COMPANIONS
+
+    // Home position — set by shift+clicking Soul Crystal
+    @Nullable
+    private BlockPos homePos;
 
     // Proactive chat system
     private final CompanionChat chat = new CompanionChat(this);
@@ -127,6 +133,21 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
             return false;
         }
         return true;
+    }
+
+    /**
+     * Get the living companion for the given owner, or null if none exists.
+     */
+    @Nullable
+    public static CompanionEntity getLivingCompanion(UUID ownerUUID) {
+        WeakReference<CompanionEntity> ref = LIVING_COMPANIONS.get(ownerUUID);
+        if (ref == null) return null;
+        CompanionEntity companion = ref.get();
+        if (companion == null || !companion.isAlive() || companion.isRemoved()) {
+            LIVING_COMPANIONS.remove(ownerUUID);
+            return null;
+        }
+        return companion;
     }
 
     public CompanionEntity(EntityType<? extends CompanionEntity> type, Level level) {
@@ -218,7 +239,7 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
     }
 
     // ================================================================
-    // Interaction — Right-click = Inventory, Shift+RC = Chat
+    // Interaction — Right-click = Inventory (Chat via GUI button)
     // ================================================================
 
     @Override
@@ -235,17 +256,11 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
                 player.sendSystemMessage(Component.literal(
                         "§b[MCAi]§r " + companionName + " is now your companion!"));
                 chat.say(CompanionChat.Category.GREETING,
-                        "Hey there! I'm ready to help. Right-click me for inventory, Shift+right-click to chat!");
+                        "Hey there! I'm ready to help. Right-click me for inventory, use the Chat button inside!");
             }
 
-            if (player.isShiftKeyDown()) {
-                // Shift+right-click → chat
-                PacketDistributor.sendToPlayer(serverPlayer,
-                        new OpenChatScreenPacket(this.getId()));
-            } else {
-                // Normal right-click → inventory
-                serverPlayer.openMenu(this, buf -> buf.writeInt(this.getId()));
-            }
+            // Always open inventory — chat is accessed via the Chat button in the GUI
+            serverPlayer.openMenu(this, buf -> buf.writeInt(this.getId()));
         }
 
         return InteractionResult.sidedSuccess(this.level().isClientSide);
@@ -628,6 +643,23 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
         return companionName;
     }
 
+    // ================================================================
+    // Home position
+    // ================================================================
+
+    @Nullable
+    public BlockPos getHomePos() {
+        return homePos;
+    }
+
+    public void setHomePos(@Nullable BlockPos pos) {
+        this.homePos = pos;
+    }
+
+    public boolean hasHomePos() {
+        return homePos != null;
+    }
+
     public void setCompanionName(String name) {
         this.companionName = name;
         this.setCustomName(Component.literal(name));
@@ -686,6 +718,10 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
 
         owner.getPersistentData().put("mcai:companion_state", data);
         owner.getPersistentData().putString("mcai:companion_name", companionName);
+        // Persist home position to owner data
+        if (homePos != null) {
+            owner.getPersistentData().putLong("mcai:home_pos", homePos.asLong());
+        }
     }
 
     /**
@@ -758,6 +794,9 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
         }
         tag.put(TAG_INVENTORY, invList);
         tag.putInt(TAG_BEHAVIOR_MODE, getBehaviorMode().ordinal());
+        if (homePos != null) {
+            tag.putLong(TAG_HOME_POS, homePos.asLong());
+        }
     }
 
     @Override
@@ -788,6 +827,9 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
             if (modeOrd >= 0 && modeOrd < modes.length) {
                 this.entityData.set(DATA_BEHAVIOR_MODE, modeOrd);
             }
+        }
+        if (tag.contains(TAG_HOME_POS)) {
+            homePos = BlockPos.of(tag.getLong(TAG_HOME_POS));
         }
     }
 }
