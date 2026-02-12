@@ -43,12 +43,18 @@ public class AIService {
         // Initialize tool registry
         ToolRegistry.init();
 
-        MCAi.LOGGER.info("AI Service initialized (Ollama: {}, model: {}, tools: {})",
-                AiConfig.OLLAMA_URL.get(), AiConfig.OLLAMA_MODEL.get(),
-                ToolRegistry.getAll().keySet());
-        AiLogger.log(AiLogger.Category.SYSTEM, "INFO",
-                "AIService initialized — model=" + AiConfig.OLLAMA_MODEL.get() +
-                ", tools=" + ToolRegistry.getAll().size());
+        try {
+            MCAi.LOGGER.info("AI Service initialized (Ollama: {}, model: {}, tools: {})",
+                    AiConfig.OLLAMA_URL.get(), AiConfig.OLLAMA_MODEL.get(),
+                    ToolRegistry.getAll().keySet());
+            AiLogger.log(AiLogger.Category.SYSTEM, "INFO",
+                    "AIService initialized — model=" + AiConfig.OLLAMA_MODEL.get() +
+                    ", tools=" + ToolRegistry.getAll().size());
+        } catch (Exception e) {
+            // Config may not be loaded yet during mod construction — log defaults
+            MCAi.LOGGER.info("AI Service initialized (config not yet loaded, {} tools registered)",
+                    ToolRegistry.getAll().size());
+        }
     }
 
     /**
