@@ -1,6 +1,7 @@
 package com.apocscode.mcai.network;
 
 import com.apocscode.mcai.MCAi;
+import com.apocscode.mcai.client.LogisticsOutlineRenderer;
 import com.apocscode.mcai.entity.CompanionEntity;
 import com.apocscode.mcai.logistics.TaggedBlock;
 import net.minecraft.client.Minecraft;
@@ -65,6 +66,8 @@ public record SyncTaggedBlocksPacket(int entityId, List<TaggedBlock> blocks) imp
                 if (entity instanceof CompanionEntity companion) {
                     companion.setTaggedBlocks(packet.blocks());
                 }
+                // Also update the renderer's client-side cache
+                LogisticsOutlineRenderer.updateClientCache(packet.blocks());
             }
         });
     }

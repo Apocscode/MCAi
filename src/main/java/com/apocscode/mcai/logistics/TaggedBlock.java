@@ -36,6 +36,14 @@ public record TaggedBlock(BlockPos pos, Role role) {
             Role[] values = values();
             return values[(this.ordinal() + 1) % values.length];
         }
+
+        /**
+         * Cycle to the previous role for mode switching.
+         */
+        public Role prev() {
+            Role[] values = values();
+            return values[(this.ordinal() + values.length - 1) % values.length];
+        }
     }
 
     // ================================================================

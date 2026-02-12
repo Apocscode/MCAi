@@ -3,6 +3,7 @@ package com.apocscode.mcai;
 import com.apocscode.mcai.network.ChatMessagePacket;
 import com.apocscode.mcai.network.ChatResponsePacket;
 import com.apocscode.mcai.network.OpenChatScreenPacket;
+import com.apocscode.mcai.network.CycleWandModePacket;
 import com.apocscode.mcai.network.SetBehaviorModePacket;
 import com.apocscode.mcai.network.SyncTaggedBlocksPacket;
 import net.neoforged.bus.api.IEventBus;
@@ -45,6 +46,12 @@ public class ModNetworking {
                 SetBehaviorModePacket.TYPE,
                 SetBehaviorModePacket.STREAM_CODEC,
                 SetBehaviorModePacket::handle);
+
+        // Client → Server: cycle logistics wand mode
+        registrar.playToServer(
+                CycleWandModePacket.TYPE,
+                CycleWandModePacket.STREAM_CODEC,
+                CycleWandModePacket::handle);
 
         // Server → Client: sync tagged logistics blocks
         registrar.playToClient(

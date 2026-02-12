@@ -10,6 +10,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.LevelRenderer;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
@@ -18,6 +19,7 @@ import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -33,9 +35,19 @@ import java.util.UUID;
 @EventBusSubscriber(modid = MCAi.MOD_ID, value = Dist.CLIENT, bus = EventBusSubscriber.Bus.GAME)
 public class LogisticsOutlineRenderer {
 
+    // Client-side cache updated by SyncTaggedBlocksPacket
+    private static volatile List<TaggedBlock> clientTaggedBlocks = List.of();
+
+    /**
+     * Called from SyncTaggedBlocksPacket handler to update the client cache.
+     */
+    public static void updateClientCache(List<TaggedBlock> blocks) {
+        clientTaggedBlocks = List.copyOf(blocks);
+    }
+
     @SubscribeEvent
     public static void onRenderLevelStage(RenderLevelStageEvent event) {
-        if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_TRANSLUCENT_BLOCKS) return;
+        if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_PARTICLES) return;
 
         Minecraft mc = Minecraft.getInstance();
         Player player = mc.player;
@@ -46,12 +58,9 @@ public class LogisticsOutlineRenderer {
                 || player.getOffhandItem().getItem() instanceof LogisticsWandItem;
         if (!holdingWand) return;
 
-        // Find the player's companion
-        UUID playerUUID = player.getUUID();
-        CompanionEntity companion = CompanionEntity.getLivingCompanion(playerUUID);
-        if (companion == null) return;
-
-        List<TaggedBlock> taggedBlocks = companion.getTaggedBlocks();
+        // Try to get tagged blocks from the client-side companion entity first,
+        // then fall back to our cache
+        List<TaggedBlock> taggedBlocks = findClientTaggedBlocks(mc, player);
         if (taggedBlocks.isEmpty()) return;
 
         PoseStack poseStack = event.getPoseStack();
@@ -71,14 +80,14 @@ public class LogisticsOutlineRenderer {
 
             float r, g, b, a;
             switch (tagged.role()) {
-                case INPUT -> { r = 0.33f; g = 0.6f; b = 1.0f; a = 0.85f; }
-                case OUTPUT -> { r = 1.0f; g = 0.53f; b = 0.0f; a = 0.85f; }
-                case STORAGE -> { r = 0.33f; g = 1.0f; b = 0.33f; a = 0.85f; }
-                default -> { r = 1.0f; g = 1.0f; b = 1.0f; a = 0.85f; }
+                case INPUT -> { r = 0.33f; g = 0.6f; b = 1.0f; a = 1.0f; }
+                case OUTPUT -> { r = 1.0f; g = 0.53f; b = 0.0f; a = 1.0f; }
+                case STORAGE -> { r = 0.33f; g = 1.0f; b = 0.33f; a = 1.0f; }
+                default -> { r = 1.0f; g = 1.0f; b = 1.0f; a = 1.0f; }
             }
 
             // Slightly inflated AABB so the outline doesn't z-fight with the block
-            AABB box = new AABB(pos).inflate(0.002);
+            AABB box = new AABB(pos).inflate(0.005);
 
             LevelRenderer.renderLineBox(poseStack, lineConsumer,
                     box.minX, box.minY, box.minZ,
@@ -88,5 +97,25 @@ public class LogisticsOutlineRenderer {
 
         poseStack.popPose();
         bufferSource.endBatch(RenderType.lines());
+    }
+
+    /**
+     * Find tagged blocks from the client-side companion entity.
+     * Scans all loaded entities to find a CompanionEntity, since
+     * the server-side LIVING_COMPANIONS map isn't available on client.
+     */
+    private static List<TaggedBlock> findClientTaggedBlocks(Minecraft mc, Player player) {
+        // First try scanning entities in the client level
+        for (Entity entity : mc.level.entitiesForRendering()) {
+            if (entity instanceof CompanionEntity companion) {
+                List<TaggedBlock> blocks = companion.getTaggedBlocks();
+                if (!blocks.isEmpty()) {
+                    return blocks;
+                }
+            }
+        }
+
+        // Fall back to the packet-synced cache
+        return clientTaggedBlocks;
     }
 }

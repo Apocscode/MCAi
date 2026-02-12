@@ -4,12 +4,9 @@ import com.apocscode.mcai.entity.CompanionEntity;
 import com.apocscode.mcai.logistics.TaggedBlock;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
-import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
-import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
-import net.minecraft.world.InteractionResultHolder;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -26,9 +23,9 @@ import java.util.UUID;
  * Logistics Wand — designate containers for companion automation.
  *
  * Usage:
- *   Right-click container → tag it with the current mode (INPUT/OUTPUT/STORAGE)
- *   Shift+right-click air → cycle mode
- *   Shift+right-click container → remove tag from that block
+ *   Shift+right-click container → tag/untag it with the current mode
+ *   Shift+scroll → cycle mode (INPUT/OUTPUT/STORAGE)
+ *   Right-click container (no shift) → opens the container normally
  *
  * Tags are stored on the companion entity and persist through save/load/dismiss.
  */
@@ -42,34 +39,6 @@ public class LogisticsWandItem extends Item {
     }
 
     // ================================================================
-    // Right-click on air → cycle mode (shift only)
-    // ================================================================
-
-    @Override
-    public InteractionResultHolder<ItemStack> use(Level level, Player player, InteractionHand hand) {
-        ItemStack stack = player.getItemInHand(hand);
-
-        if (!level.isClientSide && player.isShiftKeyDown()) {
-            // Cycle wand mode
-            TaggedBlock.Role current = getWandMode(player);
-            TaggedBlock.Role next = current.next();
-            setWandMode(player, next);
-
-            int color = next.getColor();
-            String hex = String.format("%06X", color);
-            player.sendSystemMessage(Component.literal(
-                    "§b[MCAi]§r Logistics Wand mode: §#" + hex + next.getLabel() + "§r"));
-
-            level.playSound(null, player.blockPosition(), SoundEvents.EXPERIENCE_ORB_PICKUP,
-                    SoundSource.PLAYERS, 0.5F, 1.2F + next.ordinal() * 0.2F);
-
-            return InteractionResultHolder.sidedSuccess(stack, level.isClientSide);
-        }
-
-        return InteractionResultHolder.pass(stack);
-    }
-
-    // ================================================================
     // Right-click on block → tag or untag container
     // ================================================================
 
@@ -80,13 +49,17 @@ public class LogisticsWandItem extends Item {
         BlockPos pos = context.getClickedPos();
 
         if (level.isClientSide || player == null) return InteractionResult.PASS;
-        if (!(level instanceof ServerLevel serverLevel)) return InteractionResult.PASS;
 
         // Check if the clicked block is a container (has item handler capability)
         boolean isContainer = false;
         BlockEntity blockEntity = level.getBlockEntity(pos);
         if (blockEntity != null) {
             isContainer = level.getCapability(Capabilities.ItemHandler.BLOCK, pos, null) != null;
+        }
+
+        // Non-shift click = pass through (open container normally)
+        if (!player.isShiftKeyDown()) {
+            return InteractionResult.PASS;
         }
 
         if (!isContainer) {
@@ -106,23 +79,21 @@ public class LogisticsWandItem extends Item {
             return InteractionResult.FAIL;
         }
 
-        // Shift+click on container = remove tag
-        if (player.isShiftKeyDown()) {
-            boolean removed = companion.removeTaggedBlock(pos);
-            if (removed) {
-                player.sendSystemMessage(Component.literal(
-                        "§b[MCAi]§r Removed tag from container at §e" +
-                                pos.getX() + ", " + pos.getY() + ", " + pos.getZ() + "§r"));
-                level.playSound(null, pos, SoundEvents.ITEM_PICKUP, SoundSource.PLAYERS, 0.6F, 0.8F);
-            } else {
-                player.sendSystemMessage(Component.literal(
-                        "§e[MCAi]§r That container is not tagged."));
-            }
+        // Shift+click on tagged container = remove tag; on untagged = tag it
+        TaggedBlock.Role mode = getWandMode(player);
+        TaggedBlock existing = companion.getTaggedBlockAt(pos);
+
+        if (existing != null) {
+            // Already tagged — remove it
+            companion.removeTaggedBlock(pos);
+            player.sendSystemMessage(Component.literal(
+                    "§b[MCAi]§r Removed tag from container at §e" +
+                            pos.getX() + ", " + pos.getY() + ", " + pos.getZ() + "§r"));
+            level.playSound(null, pos, SoundEvents.ITEM_PICKUP, SoundSource.PLAYERS, 0.6F, 0.8F);
             return InteractionResult.sidedSuccess(level.isClientSide);
         }
 
-        // Normal click = tag with current mode
-        TaggedBlock.Role mode = getWandMode(player);
+        // Not tagged — tag it with current mode
 
         // Check distance from home (if set) — max 32 blocks
         if (companion.hasHomePos()) {
@@ -157,13 +128,13 @@ public class LogisticsWandItem extends Item {
     // Wand mode persistence (per-player)
     // ================================================================
 
-    private TaggedBlock.Role getWandMode(Player player) {
+    public static TaggedBlock.Role getWandMode(Player player) {
         int modeOrd = player.getPersistentData().getInt(TAG_WAND_MODE);
         TaggedBlock.Role[] roles = TaggedBlock.Role.values();
         return (modeOrd >= 0 && modeOrd < roles.length) ? roles[modeOrd] : TaggedBlock.Role.INPUT;
     }
 
-    private void setWandMode(Player player, TaggedBlock.Role role) {
+    public static void setWandMode(Player player, TaggedBlock.Role role) {
         player.getPersistentData().putInt(TAG_WAND_MODE, role.ordinal());
     }
 
@@ -174,9 +145,8 @@ public class LogisticsWandItem extends Item {
     @Override
     public void appendHoverText(ItemStack stack, Item.TooltipContext context,
                                 List<Component> tooltipComponents, TooltipFlag tooltipFlag) {
-        tooltipComponents.add(Component.literal("§5Right-click container to tag it"));
-        tooltipComponents.add(Component.literal("§5Shift+right-click air to cycle mode"));
-        tooltipComponents.add(Component.literal("§5Shift+right-click container to remove tag"));
+        tooltipComponents.add(Component.literal("§5Shift+right-click container to tag/untag"));
+        tooltipComponents.add(Component.literal("§5Shift+scroll to cycle mode"));
         tooltipComponents.add(Component.literal("§8Modes: §9Input §8| §6Output §8| §aStorage"));
         super.appendHoverText(stack, context, tooltipComponents, tooltipFlag);
     }

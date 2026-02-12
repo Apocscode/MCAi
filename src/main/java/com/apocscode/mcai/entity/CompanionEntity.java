@@ -711,6 +711,14 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
     }
 
     /**
+     * Get the tagged block at a specific position, or null if not tagged.
+     */
+    @Nullable
+    public TaggedBlock getTaggedBlockAt(BlockPos pos) {
+        return taggedBlocks.stream().filter(tb -> tb.pos().equals(pos)).findFirst().orElse(null);
+    }
+
+    /**
      * Get the total number of tagged blocks.
      */
     public int getTaggedBlockCount() {
