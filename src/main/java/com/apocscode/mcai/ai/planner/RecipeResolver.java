@@ -198,32 +198,47 @@ public class RecipeResolver {
         RecipeHolder<?> best = null;
 
         for (RecipeHolder<?> holder : recipeManager.getRecipes()) {
-            Recipe<?> r = holder.value();
-            if (!(r instanceof ShapedRecipe) && !(r instanceof ShapelessRecipe)) continue;
-            ItemStack resultStack = r.getResultItem(registryAccess);
-            if (resultStack == null || resultStack.isEmpty()) continue;
-            if (resultStack.getItem() != item) continue;
-            best = holder;
-            break;
+            try {
+                Recipe<?> r = holder.value();
+                if (r == null) continue;
+                if (!(r instanceof ShapedRecipe) && !(r instanceof ShapelessRecipe)) continue;
+                ItemStack resultStack = r.getResultItem(registryAccess);
+                if (resultStack == null || resultStack.isEmpty()) continue;
+                if (resultStack.getItem() != item) continue;
+                best = holder;
+                break;
+            } catch (Exception e) {
+                // Modded recipe threw during inspection — skip it
+                continue;
+            }
         }
 
         if (best == null) return null;
 
-        Recipe<?> recipe = best.value();
-        int outputPerCraft = recipe.getResultItem(registryAccess).getCount();
-        int craftsNeeded = (int) Math.ceil((double) count / outputPerCraft);
+        try {
+            Recipe<?> recipe = best.value();
+            ItemStack resultStack = recipe.getResultItem(registryAccess);
+            if (resultStack == null || resultStack.isEmpty()) return null;
+            int outputPerCraft = resultStack.getCount();
+            if (outputPerCraft <= 0) outputPerCraft = 1;
+            int craftsNeeded = (int) Math.ceil((double) count / outputPerCraft);
 
-        DependencyNode node = new DependencyNode(item, count, StepType.CRAFT, best);
+            DependencyNode node = new DependencyNode(item, count, StepType.CRAFT, best);
 
-        // Resolve each ingredient recursively
-        Map<Item, Integer> grouped = groupIngredients(recipe.getIngredients(), craftsNeeded);
-        for (Map.Entry<Item, Integer> entry : grouped.entrySet()) {
-            DependencyNode child = resolveRecursive(entry.getKey(), entry.getValue(),
-                    available, new HashSet<>(visited), depth + 1);
-            node.children.add(child);
+            // Resolve each ingredient recursively
+            Map<Item, Integer> grouped = groupIngredients(recipe.getIngredients(), craftsNeeded);
+            for (Map.Entry<Item, Integer> entry : grouped.entrySet()) {
+                DependencyNode child = resolveRecursive(entry.getKey(), entry.getValue(),
+                        available, new HashSet<>(visited), depth + 1);
+                node.children.add(child);
+            }
+
+            return node;
+        } catch (Exception e) {
+            MCAi.LOGGER.warn("RecipeResolver: crafting recipe for {} threw: {}",
+                    BuiltInRegistries.ITEM.getKey(item), e.getMessage());
+            return null;
         }
-
-        return node;
     }
 
     private DependencyNode tryHeatRecipe(Item item, int count, Map<Item, Integer> available,
@@ -232,73 +247,100 @@ public class RecipeResolver {
         StepType stepType = null;
 
         for (RecipeHolder<?> holder : recipeManager.getRecipes()) {
-            Recipe<?> r = holder.value();
-            ItemStack resultStack = r.getResultItem(registryAccess);
-            if (resultStack == null || resultStack.isEmpty()) continue;
-            if (resultStack.getItem() != item) continue;
+            try {
+                Recipe<?> r = holder.value();
+                if (r == null) continue;
+                // Skip non-heat recipe types early (performance: 602 mods = thousands of recipes)
+                if (!(r instanceof SmeltingRecipe) && !(r instanceof BlastingRecipe)
+                        && !(r instanceof SmokingRecipe) && !(r instanceof CampfireCookingRecipe)) continue;
+                ItemStack resultStack = r.getResultItem(registryAccess);
+                if (resultStack == null || resultStack.isEmpty()) continue;
+                if (resultStack.getItem() != item) continue;
 
-            if (r instanceof SmeltingRecipe) {
-                best = holder;
-                stepType = StepType.SMELT;
-                break; // Prefer smelting
-            } else if (r instanceof BlastingRecipe && best == null) {
-                best = holder;
-                stepType = StepType.BLAST;
-            } else if (r instanceof SmokingRecipe && best == null) {
-                best = holder;
-                stepType = StepType.SMOKE;
-            } else if (r instanceof CampfireCookingRecipe && best == null) {
-                best = holder;
-                stepType = StepType.CAMPFIRE_COOK;
+                if (r instanceof SmeltingRecipe) {
+                    best = holder;
+                    stepType = StepType.SMELT;
+                    break; // Prefer smelting
+                } else if (r instanceof BlastingRecipe && best == null) {
+                    best = holder;
+                    stepType = StepType.BLAST;
+                } else if (r instanceof SmokingRecipe && best == null) {
+                    best = holder;
+                    stepType = StepType.SMOKE;
+                } else if (r instanceof CampfireCookingRecipe && best == null) {
+                    best = holder;
+                    stepType = StepType.CAMPFIRE_COOK;
+                }
+            } catch (Exception e) {
+                continue;
             }
         }
 
         if (best == null || stepType == null) return null;
 
-        Recipe<?> recipe = best.value();
-        DependencyNode node = new DependencyNode(item, count, stepType, best);
+        try {
+            Recipe<?> recipe = best.value();
+            DependencyNode node = new DependencyNode(item, count, stepType, best);
 
-        // Smelting recipes have exactly 1 ingredient
-        List<Ingredient> ings = recipe.getIngredients();
-        if (!ings.isEmpty() && !ings.get(0).isEmpty()) {
-            ItemStack[] variants = ings.get(0).getItems();
-            if (variants.length > 0) {
-                Item inputItem = variants[0].getItem();
-                DependencyNode child = resolveRecursive(inputItem, count,
-                        available, new HashSet<>(visited), depth + 1);
-                node.children.add(child);
+            // Smelting recipes have exactly 1 ingredient
+            List<Ingredient> ings = recipe.getIngredients();
+            if (ings != null && !ings.isEmpty()) {
+                Ingredient firstIng = ings.get(0);
+                if (firstIng != null && !firstIng.isEmpty()) {
+                    ItemStack[] variants = firstIng.getItems();
+                    if (variants != null && variants.length > 0 && variants[0] != null) {
+                        Item inputItem = variants[0].getItem();
+                        DependencyNode child = resolveRecursive(inputItem, count,
+                                available, new HashSet<>(visited), depth + 1);
+                        node.children.add(child);
+                    }
+                }
             }
-        }
 
-        return node;
+            return node;
+        } catch (Exception e) {
+            MCAi.LOGGER.warn("RecipeResolver: heat recipe for {} threw: {}",
+                    BuiltInRegistries.ITEM.getKey(item), e.getMessage());
+            return null;
+        }
     }
 
     private DependencyNode tryStonecutRecipe(Item item, int count, Map<Item, Integer> available,
                                               Set<Item> visited, int depth) {
         for (RecipeHolder<?> holder : recipeManager.getRecipes()) {
-            Recipe<?> r = holder.value();
-            if (!(r instanceof StonecutterRecipe)) continue;
-            ItemStack resultStack = r.getResultItem(registryAccess);
-            if (resultStack == null || resultStack.isEmpty()) continue;
-            if (resultStack.getItem() != item) continue;
+            try {
+                Recipe<?> r = holder.value();
+                if (r == null) continue;
+                if (!(r instanceof StonecutterRecipe)) continue;
+                ItemStack resultStack = r.getResultItem(registryAccess);
+                if (resultStack == null || resultStack.isEmpty()) continue;
+                if (resultStack.getItem() != item) continue;
 
-            int outputPerCraft = resultStack.getCount();
-            int craftsNeeded = (int) Math.ceil((double) count / outputPerCraft);
+                int outputPerCraft = resultStack.getCount();
+                if (outputPerCraft <= 0) outputPerCraft = 1;
+                int craftsNeeded = (int) Math.ceil((double) count / outputPerCraft);
 
-            DependencyNode node = new DependencyNode(item, count, StepType.STONECUT, holder);
+                DependencyNode node = new DependencyNode(item, count, StepType.STONECUT, holder);
 
-            List<Ingredient> ings = r.getIngredients();
-            if (!ings.isEmpty() && !ings.get(0).isEmpty()) {
-                ItemStack[] variants = ings.get(0).getItems();
-                if (variants.length > 0) {
-                    Item inputItem = variants[0].getItem();
-                    DependencyNode child = resolveRecursive(inputItem, craftsNeeded,
-                            available, new HashSet<>(visited), depth + 1);
-                    node.children.add(child);
+                List<Ingredient> ings = r.getIngredients();
+                if (ings != null && !ings.isEmpty()) {
+                    Ingredient firstIng = ings.get(0);
+                    if (firstIng != null && !firstIng.isEmpty()) {
+                        ItemStack[] variants = firstIng.getItems();
+                        if (variants != null && variants.length > 0 && variants[0] != null) {
+                            Item inputItem = variants[0].getItem();
+                            DependencyNode child = resolveRecursive(inputItem, craftsNeeded,
+                                    available, new HashSet<>(visited), depth + 1);
+                            node.children.add(child);
+                        }
+                    }
                 }
-            }
 
-            return node;
+                return node;
+            } catch (Exception e) {
+                MCAi.LOGGER.warn("RecipeResolver: stonecut recipe threw: {}", e.getMessage());
+                continue;
+            }
         }
         return null;
     }
@@ -393,13 +435,21 @@ public class RecipeResolver {
      */
     private Map<Item, Integer> groupIngredients(List<Ingredient> ingredients, int craftsNeeded) {
         Map<Item, Integer> grouped = new LinkedHashMap<>();
+        if (ingredients == null) return grouped;
         for (Ingredient ing : ingredients) {
-            if (ing.isEmpty()) continue;
-            ItemStack[] items = ing.getItems();
-            if (items.length == 0) continue;
-            // Use first variant (vanilla preferred)
-            Item representative = pickBestVariant(items);
-            grouped.merge(representative, craftsNeeded, Integer::sum);
+            try {
+                if (ing == null || ing.isEmpty()) continue;
+                ItemStack[] items = ing.getItems();
+                if (items == null || items.length == 0) continue;
+                // Use first variant (vanilla preferred)
+                Item representative = pickBestVariant(items);
+                if (representative == null) continue;
+                grouped.merge(representative, craftsNeeded, Integer::sum);
+            } catch (Exception e) {
+                // Modded ingredient threw during getItems() — skip it
+                MCAi.LOGGER.warn("RecipeResolver: ingredient threw: {}", e.getMessage());
+                continue;
+            }
         }
         return grouped;
     }
@@ -409,15 +459,19 @@ public class RecipeResolver {
      * Prefers vanilla (minecraft:) items over modded to avoid modded-only recipes.
      */
     private Item pickBestVariant(ItemStack[] variants) {
+        if (variants == null || variants.length == 0) return null;
         Item vanillaMatch = null;
+        Item firstValid = null;
         for (ItemStack v : variants) {
+            if (v == null || v.isEmpty()) continue;
+            if (firstValid == null) firstValid = v.getItem();
             ResourceLocation id = BuiltInRegistries.ITEM.getKey(v.getItem());
             if (id != null && id.getNamespace().equals("minecraft")) {
                 vanillaMatch = v.getItem();
                 break;
             }
         }
-        return vanillaMatch != null ? vanillaMatch : variants[0].getItem();
+        return vanillaMatch != null ? vanillaMatch : firstValid;
     }
 
     // ========== Debug / logging ==========

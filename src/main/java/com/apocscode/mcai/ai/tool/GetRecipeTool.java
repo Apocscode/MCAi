@@ -89,11 +89,13 @@ public class GetRecipeTool implements AiTool {
             boolean foundRecipe = false;
 
             for (RecipeHolder<?> holder : recipeManager.getRecipes()) {
-                Recipe<?> recipe = holder.value();
-                ItemStack result = recipe.getResultItem(context.server().registryAccess());
-                if (result == null || result.isEmpty()) continue;
+                try {
+                    Recipe<?> recipe = holder.value();
+                    if (recipe == null) continue;
+                    ItemStack result = recipe.getResultItem(context.server().registryAccess());
+                    if (result == null || result.isEmpty()) continue;
 
-                if (result.getItem() == item) {
+                    if (result.getItem() == item) {
                     foundRecipe = true;
                     sb.append("\nRecipe type: ").append(holder.id()).append("\n");
 
@@ -124,6 +126,10 @@ public class GetRecipeTool implements AiTool {
 
                     // Limit to 3 recipes per item to avoid huge output
                     break;
+                }
+                } catch (Exception e) {
+                    // Modded recipe threw during inspection — skip it
+                    continue;
                 }
             }
 

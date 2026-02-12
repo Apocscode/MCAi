@@ -550,8 +550,15 @@ public class CraftItemTool implements AiTool {
         Map<Item, Integer> available = buildAvailableMap(context);
 
         // === Resolve full dependency tree ===
-        RecipeResolver resolver = new RecipeResolver(recipeManager, registryAccess);
-        RecipeResolver.DependencyNode tree = resolver.resolve(targetItem, requestedCount, available);
+        RecipeResolver.DependencyNode tree;
+        try {
+            RecipeResolver resolver = new RecipeResolver(recipeManager, registryAccess);
+            tree = resolver.resolve(targetItem, requestedCount, available);
+        } catch (Exception e) {
+            MCAi.LOGGER.error("RecipeResolver failed for {}: {}", targetName, e.getMessage(), e);
+            return buildMissingReport(context, recipeManager, registryAccess,
+                    targetItem, ingredients, craftsNeeded, craftLog);
+        }
 
         MCAi.LOGGER.info("Dependency tree for {}:\n{}", targetName, RecipeResolver.printTree(tree));
 
