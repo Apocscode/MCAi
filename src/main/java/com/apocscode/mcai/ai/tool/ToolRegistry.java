@@ -30,6 +30,7 @@ public class ToolRegistry {
         register(new SetBlockTool());
         register(new CraftItemTool());
         register(new RenameCompanionTool());
+        register(new ListInstalledModsTool());
         MCAi.LOGGER.info("Registered {} AI tools: {}", tools.size(), tools.keySet());
     }
 

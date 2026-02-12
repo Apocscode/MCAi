@@ -2,10 +2,7 @@ package com.apocscode.mcai.entity;
 
 import com.apocscode.mcai.MCAi;
 import com.apocscode.mcai.config.AiConfig;
-import com.apocscode.mcai.entity.goal.CompanionCombatGoal;
-import com.apocscode.mcai.entity.goal.CompanionEatFoodGoal;
-import com.apocscode.mcai.entity.goal.CompanionFollowGoal;
-import com.apocscode.mcai.entity.goal.CompanionLookAtPlayerGoal;
+import com.apocscode.mcai.entity.goal.*;
 import com.apocscode.mcai.inventory.CompanionInventoryMenu;
 import com.apocscode.mcai.network.OpenChatScreenPacket;
 import net.minecraft.nbt.CompoundTag;
@@ -100,15 +97,18 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
         this.goalSelector.addGoal(0, new FloatGoal(this));
         this.goalSelector.addGoal(1, new CompanionCombatGoal(this, 1.2D, true));
         this.goalSelector.addGoal(2, new CompanionEatFoodGoal(this));
-        this.goalSelector.addGoal(3, new CompanionFollowGoal(this, 1.2D, 4.0F, 32.0F));
-        this.goalSelector.addGoal(4, new CompanionLookAtPlayerGoal(this, 8.0F));
-        this.goalSelector.addGoal(5, new RandomLookAroundGoal(this));
-        this.goalSelector.addGoal(6, new WaterAvoidingRandomStrollGoal(this, 0.6D));
+        this.goalSelector.addGoal(3, new CompanionCookFoodGoal(this));   // Cook raw food at furnace/campfire
+        this.goalSelector.addGoal(4, new CompanionFarmGoal(this));       // Harvest mature crops
+        this.goalSelector.addGoal(5, new CompanionFollowGoal(this, 1.2D, 4.0F, 32.0F));
+        this.goalSelector.addGoal(6, new CompanionLookAtPlayerGoal(this, 8.0F));
+        this.goalSelector.addGoal(7, new RandomLookAroundGoal(this));
+        this.goalSelector.addGoal(8, new WaterAvoidingRandomStrollGoal(this, 0.6D));
 
         // Targeting
         this.targetSelector.addGoal(1, new HurtByTargetGoal(this));
         this.targetSelector.addGoal(2, new NearestAttackableTargetGoal<>(
                 this, Monster.class, true));
+        this.targetSelector.addGoal(3, new CompanionHuntFoodGoal(this)); // Hunt food animals when hungry
     }
 
     // ================================================================
@@ -349,6 +349,32 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
 
     public SimpleContainer getCompanionInventory() {
         return inventory;
+    }
+
+    /**
+     * Check if companion has any food (cooked or raw) in inventory.
+     */
+    public boolean hasFood() {
+        for (int i = 0; i < inventory.getContainerSize(); i++) {
+            ItemStack stack = inventory.getItem(i);
+            if (!stack.isEmpty() && stack.get(DataComponents.FOOD) != null) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Check if companion has raw/cookable food in inventory.
+     */
+    public boolean hasRawFood() {
+        for (int i = 0; i < inventory.getContainerSize(); i++) {
+            ItemStack stack = inventory.getItem(i);
+            if (!stack.isEmpty() && CompanionCookFoodGoal.isRawFood(stack)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     // ================================================================
