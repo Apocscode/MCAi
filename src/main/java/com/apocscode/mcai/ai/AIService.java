@@ -137,11 +137,26 @@ public class AIService {
         // Agent loop — keep going until AI gives a text response or limit reached
         int maxIterations = AiConfig.MAX_TOOL_ITERATIONS.get();
         for (int iteration = 0; iteration < maxIterations; iteration++) {
-            JsonObject response = useGroq ? callGroq(messages, userMessage) : callOllama(messages, userMessage);
+            JsonObject response;
+            try {
+                response = useGroq ? callGroq(messages, userMessage) : callOllama(messages, userMessage);
+            } catch (IOException e) {
+                if (useGroq && e.getMessage() != null && e.getMessage().contains("429")) {
+                    // Groq rate limited after retries — silently fall back to local Ollama
+                    MCAi.LOGGER.info("Groq rate limited, falling back to Ollama for this request");
+                    AiLogger.log(AiLogger.Category.AI_REQUEST, "WARN",
+                            "Groq rate limited — falling back to Ollama");
+                    response = callOllama(messages, userMessage);
+                } else {
+                    throw e;
+                }
+            }
 
-            // Extract assistant message — Groq wraps in choices[0].message, Ollama uses message directly
+            // Extract assistant message — detect format dynamically:
+            // Groq/OpenAI: response.choices[0].message
+            // Ollama:      response.message
             JsonObject assistantMessage;
-            if (useGroq) {
+            if (response.has("choices")) {
                 assistantMessage = response.getAsJsonArray("choices")
                         .get(0).getAsJsonObject()
                         .getAsJsonObject("message");

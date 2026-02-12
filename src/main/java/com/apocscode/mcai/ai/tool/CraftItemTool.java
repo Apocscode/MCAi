@@ -181,7 +181,7 @@ public class CraftItemTool implements AiTool {
                 if (have >= totalNeeded) continue;
 
                 int deficit = totalNeeded - have;
-                if (tryAutoCraftItem(context, recipeManager, registryAccess, matchingIng, deficit, log)) {
+                if (tryAutoCraftItem(context, recipeManager, registryAccess, matchingIng, deficit, log, 0)) {
                     madeProgress = true;
                 }
             }
@@ -192,11 +192,14 @@ public class CraftItemTool implements AiTool {
 
     /**
      * Attempts to auto-craft enough of a missing ingredient using crafting-table recipes.
+     * Recursively resolves sub-ingredients (e.g., logs → planks → sticks) up to 3 levels deep.
      * Tries each item variant the ingredient accepts (e.g., any plank type).
      */
     private boolean tryAutoCraftItem(ToolContext context, RecipeManager recipeManager,
                                       RegistryAccess registryAccess, Ingredient ingredient,
-                                      int deficit, StringBuilder log) {
+                                      int deficit, StringBuilder log, int depth) {
+        if (depth > MAX_RESOLVE_PASSES) return false;
+
         for (ItemStack variant : ingredient.getItems()) {
             Item targetItem = variant.getItem();
             RecipeHolder<?> subRecipe = findCraftingTableRecipe(recipeManager, registryAccess, targetItem);
@@ -205,11 +208,21 @@ public class CraftItemTool implements AiTool {
             Recipe<?> sub = subRecipe.value();
             int outputPerCraft = sub.getResultItem(registryAccess).getCount();
             List<Ingredient> subIngs = sub.getIngredients();
+            int subCraftsNeeded = (int) Math.ceil((double) deficit / outputPerCraft);
+
+            // Recursively auto-craft any missing sub-ingredients (e.g., planks from logs for sticks)
+            for (Ingredient subIng : subIngs) {
+                if (subIng.isEmpty()) continue;
+                int subHave = countInInventory(context, subIng);
+                if (subHave < subCraftsNeeded) {
+                    tryAutoCraftItem(context, recipeManager, registryAccess, subIng,
+                            subCraftsNeeded - subHave, log, depth + 1);
+                }
+            }
 
             int maxSub = calculateMaxCrafts(context, subIngs);
             if (maxSub <= 0) continue;
 
-            int subCraftsNeeded = (int) Math.ceil((double) deficit / outputPerCraft);
             int actualSub = Math.min(subCraftsNeeded, maxSub);
 
             // Consume sub-ingredients
