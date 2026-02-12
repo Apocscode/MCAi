@@ -5,6 +5,7 @@ import com.apocscode.mcai.config.AiConfig;
 import com.apocscode.mcai.entity.goal.*;
 import com.apocscode.mcai.inventory.CompanionInventoryMenu;
 import com.apocscode.mcai.item.SoulCrystalItem;
+import com.apocscode.mcai.logistics.ItemRoutingHelper;
 import com.apocscode.mcai.logistics.TaggedBlock;
 import com.apocscode.mcai.network.OpenChatScreenPacket;
 import net.minecraft.nbt.CompoundTag;
@@ -499,14 +500,38 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
             return;
         }
 
-        // Then general inventory
+        // Try routing directly to tagged storage (OUTPUT > STORAGE)
+        if (ItemRoutingHelper.hasTaggedStorage(this)) {
+            ItemStack toRoute = stack.copy();
+            int before = toRoute.getCount();
+            ItemRoutingHelper.tryInsertIntoTagged(this.level(), this, toRoute, TaggedBlock.Role.OUTPUT);
+            if (!toRoute.isEmpty()) {
+                ItemRoutingHelper.tryInsertIntoTagged(this.level(), this, toRoute, TaggedBlock.Role.STORAGE);
+            }
+            int routed = before - toRoute.getCount();
+            if (routed > 0) {
+                MCAi.LOGGER.debug("Auto-routed {}x {} to tagged storage on pickup",
+                        routed, stack.getItem().getDescription().getString());
+            }
+            // If everything was routed, we're done
+            if (toRoute.isEmpty()) {
+                this.onItemPickup(itemEntity);
+                this.take(itemEntity, stack.getCount());
+                itemEntity.discard();
+                return;
+            }
+            // Otherwise, try to put the remainder in companion inventory
+            stack = toRoute;
+        }
+
+        // Fallback: companion inventory
         ItemStack remainder = inventory.addItem(stack.copy());
         if (remainder.isEmpty()) {
             this.onItemPickup(itemEntity);
-            this.take(itemEntity, stack.getCount());
+            this.take(itemEntity, itemEntity.getItem().getCount());
             itemEntity.discard();
         } else if (remainder.getCount() < stack.getCount()) {
-            int picked = stack.getCount() - remainder.getCount();
+            int picked = itemEntity.getItem().getCount() - remainder.getCount();
             this.take(itemEntity, picked);
             itemEntity.getItem().setCount(remainder.getCount());
         } else {

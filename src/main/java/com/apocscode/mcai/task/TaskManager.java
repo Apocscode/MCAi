@@ -4,6 +4,7 @@ import com.apocscode.mcai.MCAi;
 import com.apocscode.mcai.ai.AIService;
 import com.apocscode.mcai.entity.CompanionChat;
 import com.apocscode.mcai.entity.CompanionEntity;
+import com.apocscode.mcai.logistics.ItemRoutingHelper;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
 
@@ -60,6 +61,18 @@ public class TaskManager {
                         "Done: " + taskDescription);
                 // Award XP for completing a task
                 companion.awardXp(com.apocscode.mcai.entity.CompanionLevelSystem.TASK_COMPLETE_XP);
+
+                // Auto-deposit any items the companion collected during the task
+                // into tagged OUTPUT/STORAGE containers
+                if (ItemRoutingHelper.hasTaggedStorage(companion)) {
+                    int deposited = ItemRoutingHelper.routeAllCompanionItems(companion);
+                    if (deposited > 0) {
+                        MCAi.LOGGER.info("Auto-deposited {} item(s) to tagged storage after task: {}",
+                                deposited, taskDescription);
+                        companion.getChat().say(CompanionChat.Category.TASK,
+                                "Deposited " + deposited + " item(s) to storage.");
+                    }
+                }
             } else {
                 String reason = activeTask.getFailReason() != null
                         ? activeTask.getFailReason() : "unknown error";

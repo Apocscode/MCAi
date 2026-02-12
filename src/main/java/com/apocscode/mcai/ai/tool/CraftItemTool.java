@@ -2,6 +2,7 @@ package com.apocscode.mcai.ai.tool;
 
 import com.apocscode.mcai.MCAi;
 import com.apocscode.mcai.entity.CompanionEntity;
+import com.apocscode.mcai.logistics.ItemRoutingHelper;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import net.minecraft.core.BlockPos;
@@ -216,16 +217,44 @@ public class CraftItemTool implements AiTool {
             }
 
             ItemStack result = new ItemStack(targetItem, totalOutput);
-            if (!context.player().getInventory().add(result)) {
-                context.player().drop(result, false);
+
+            // Give the requested amount to the player
+            int forPlayer = Math.min(totalOutput, stillNeed);
+            ItemStack playerShare = new ItemStack(targetItem, forPlayer);
+            if (!context.player().getInventory().add(playerShare)) {
+                context.player().drop(playerShare, false);
+            }
+
+            // Route any excess to tagged storage (OUTPUT > STORAGE > companion inventory)
+            int excess = totalOutput - forPlayer;
+            String depositMsg = "";
+            if (excess > 0) {
+                CompanionEntity companion = CompanionEntity.getLivingCompanion(context.player().getUUID());
+                if (companion != null && ItemRoutingHelper.hasTaggedStorage(companion)) {
+                    ItemStack excessStack = new ItemStack(targetItem, excess);
+                    depositMsg = " " + ItemRoutingHelper.routeToStorage(companion, excessStack);
+                    // If any couldn't be routed, give to player
+                    if (!excessStack.isEmpty()) {
+                        if (!context.player().getInventory().add(excessStack)) {
+                            context.player().drop(excessStack, false);
+                        }
+                    }
+                } else {
+                    // No tagged storage — give everything to player
+                    ItemStack excessStack = new ItemStack(targetItem, excess);
+                    if (!context.player().getInventory().add(excessStack)) {
+                        context.player().drop(excessStack, false);
+                    }
+                }
             }
 
             StringBuilder sb = new StringBuilder();
             if (craftLog.length() > 0) sb.append(craftLog);
             sb.append("Crafted ").append(totalOutput).append("x ").append(targetName);
-            if (totalOutput < stillNeed) {
-                sb.append(" (wanted ").append(stillNeed)
-                  .append(" but only had materials for ").append(totalOutput).append(")");
+            if (forPlayer < totalOutput) {
+                sb.append(" (").append(forPlayer).append(" to player");
+                if (excess > 0) sb.append(", ").append(excess).append(" to storage");
+                sb.append(")");
             }
             sb.append(".");
             return sb.toString();
