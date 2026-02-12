@@ -1,6 +1,8 @@
 package com.apocscode.mcai.ai.tool;
 
 import com.apocscode.mcai.MCAi;
+import com.apocscode.mcai.ai.planner.CraftingPlan;
+import com.apocscode.mcai.ai.planner.RecipeResolver;
 import com.apocscode.mcai.entity.CompanionEntity;
 import com.apocscode.mcai.logistics.ItemRoutingHelper;
 import com.apocscode.mcai.task.ChopTreesTask;
@@ -20,14 +22,12 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.*;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.BlockEntity;
 
 import javax.annotation.Nullable;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
 /**
  * Smart crafting tool that behaves like a real player:
@@ -521,13 +521,17 @@ public class CraftItemTool implements AiTool {
 
     /**
      * Autonomously plan and execute a multi-step crafting chain when materials are missing.
-     * Instead of just reporting missing ingredients, this method:
-     * 1. Analyzes what raw materials are needed (wood, ore, stone, etc.)
-     * 2. Queues the first gathering task with a continuation plan
-     * 3. Returns [ASYNC_TASK] so the agent loop stops
+     * Uses RecipeResolver to build a full recursive dependency tree for ANY item,
+     * across ALL recipe types (crafting, smelting, blasting, smoking, stonecutting).
      *
-     * The continuation chain handles: chop wood → craft intermediates → mine ore → smelt → craft.
-     * Works like a real player would approach crafting from scratch.
+     * The resolver handles arbitrary depth: iron_pickaxe → iron_ingot (smelt) → raw_iron (mine)
+     *                                                    → stick (craft) → planks (craft) → logs (chop)
+     *
+     * Steps:
+     * 1. Build full dependency tree via RecipeResolver
+     * 2. Flatten into ordered CraftingPlan (gather → process → craft)
+     * 3. Queue first async task with continuation chain
+     * 4. Return [ASYNC_TASK] so the agent loop stops
      */
     private String autoCraftPlan(ToolContext context, RecipeManager recipeManager,
                                  RegistryAccess registryAccess, Item targetItem,
@@ -539,183 +543,216 @@ public class CraftItemTool implements AiTool {
                     targetItem, ingredients, craftsNeeded, craftLog);
         }
 
-        String targetId = BuiltInRegistries.ITEM.getKey(targetItem).getPath();
         String targetName = targetItem.getDescription().getString();
-        Map<Item, Integer> grouped = getGroupedNeeds(ingredients, craftsNeeded);
+        String targetId = BuiltInRegistries.ITEM.getKey(targetItem).getPath();
 
-        // === Categorize what's missing ===
-        int logsNeeded = 0;
-        int oresNeeded = 0;
-        boolean needSmelt = false;
-        String smeltInputId = null;
-        int smeltCount = 0;
-        int cobbleNeeded = 0;
-        boolean hasUnhandled = false;
+        // === Build available inventory map ===
+        Map<Item, Integer> available = buildAvailableMap(context);
 
-        for (Map.Entry<Item, Integer> entry : grouped.entrySet()) {
-            Item ingItem = entry.getKey();
-            int needed = entry.getValue();
-            Ingredient ing = findIngredientFor(ingredients, ingItem);
-            int have = ing != null ? countInInventory(context, ing) : 0;
-            if (have >= needed) continue;
+        // === Resolve full dependency tree ===
+        RecipeResolver resolver = new RecipeResolver(recipeManager, registryAccess);
+        RecipeResolver.DependencyNode tree = resolver.resolve(targetItem, requestedCount, available);
 
-            int shortage = needed - have;
-            String ingId = BuiltInRegistries.ITEM.getKey(ingItem).getPath();
+        MCAi.LOGGER.info("Dependency tree for {}:\n{}", targetName, RecipeResolver.printTree(tree));
 
-            if (ingId.contains("log") || ingId.contains("wood")) {
-                logsNeeded += shortage;
-            } else if (ingId.contains("plank")) {
-                logsNeeded += (int) Math.ceil((double) shortage / 4.0);
-            } else if (ingId.contains("stick")) {
-                // 1 log → 4 planks, 2 planks → 4 sticks, so 1 log → 8 sticks
-                logsNeeded += (int) Math.ceil((double) shortage / 8.0);
-            } else if (ingId.contains("cobblestone") || ingId.equals("stone")
-                    || ingId.equals("blackstone") || ingId.equals("cobbled_deepslate")) {
-                cobbleNeeded += shortage;
-            } else {
-                // Check if this item needs smelting (iron_ingot, gold_ingot, etc.)
-                RecipeHolder<?> smeltRecipe = findSmeltingRecipe(recipeManager, registryAccess, ingItem);
-                if (smeltRecipe != null && isRealSmeltingNeed(ingId)) {
-                    needSmelt = true;
-                    smeltInputId = getSmeltInputName(smeltRecipe);
-                    smeltCount += shortage;
-                    oresNeeded += shortage;
-                } else if (isKnownOreDrop(ingId)) {
-                    // Direct ore drops (diamond, coal, lapis, redstone, etc.)
-                    oresNeeded += shortage;
-                } else {
-                    hasUnhandled = true;
-                }
-            }
-        }
+        // === Convert to ordered plan ===
+        CraftingPlan plan = CraftingPlan.fromTree(tree);
+        plan.logPlan();
 
-        // If ALL missing items are unhandled types, fall back to report
-        if (hasUnhandled && logsNeeded == 0 && oresNeeded == 0 && cobbleNeeded == 0) {
+        List<CraftingPlan.Step> asyncSteps = plan.getAsyncSteps();
+        List<CraftingPlan.Step> craftSteps = plan.getCraftSteps();
+
+        // If no async steps needed, all items should be obtainable through crafting alone
+        // This shouldn't normally happen (we'd have crafted it already), but handle gracefully
+        if (asyncSteps.isEmpty()) {
             return buildMissingReport(context, recipeManager, registryAccess,
                     targetItem, ingredients, craftsNeeded, craftLog);
         }
 
-        // Ensure minimums for efficiency
-        if (logsNeeded > 0) logsNeeded = Math.max(logsNeeded, 4);
-        if (oresNeeded > 0) oresNeeded = Math.max(oresNeeded, 3);
-        if (cobbleNeeded > 0) cobbleNeeded = Math.max(cobbleNeeded, 3);
+        // === Queue first async task with continuation chain ===
+        // Build continuation plan: describes ALL remaining steps after the first one
+        CraftingPlan.Step firstStep = asyncSteps.get(0);
 
-        // === Build the task chain ===
-        // Plan strings cascade through continuations: each async step's plan
-        // parameter describes what to do after it completes. This chains all
-        // steps together automatically.
+        StringBuilder nextSteps = new StringBuilder();
 
-        String craftCmd = requestedCount > 1
-                ? "craft_item " + targetId + " (count " + requestedCount + ")"
-                : "craft_item " + targetId;
-
-        // Build innermost plan (what comes after ore mining)
-        String innermostPlan = craftCmd;
-        if (needSmelt) {
-            innermostPlan = "smelt_items " + smeltInputId + " " + smeltCount + ", then " + craftCmd;
+        // Remaining async steps after the first
+        for (int i = 1; i < asyncSteps.size(); i++) {
+            CraftingPlan.Step s = asyncSteps.get(i);
+            if (nextSteps.length() > 0) nextSteps.append(", then ");
+            nextSteps.append(stepToInstruction(s));
         }
 
-        // === Determine first task and build continuation ===
-        CompanionTask firstTask;
-        String firstDesc;
-        String nextSteps;
+        // Then craft steps (sync — these happen instantly during continuation)
+        for (CraftingPlan.Step s : craftSteps) {
+            if (nextSteps.length() > 0) nextSteps.append(", then ");
+            nextSteps.append("craft_item({\"item\":\"").append(s.itemId)
+                     .append("\",\"count\":").append(s.count).append("})");
+        }
 
-        if (logsNeeded > 0) {
-            // WOOD FIRST — most common prerequisite
-            firstTask = new ChopTreesTask(companion, 16, logsNeeded);
-            firstDesc = "Chopping " + logsNeeded + " logs";
+        // Queue the first gathering task
+        CompanionTask firstTask = createTaskForStep(firstStep, companion);
+        if (firstTask == null) {
+            return buildMissingReport(context, recipeManager, registryAccess,
+                    targetItem, ingredients, craftsNeeded, craftLog);
+        }
 
-            boolean hasFollowUp = cobbleNeeded > 0 || oresNeeded > 0;
-            if (hasFollowUp) {
-                // Need to craft intermediates (sticks) THEN continue gathering
-                StringBuilder steps = new StringBuilder();
-                steps.append("Call craft_item({\"item\":\"stick\",\"count\":8}) to auto-craft sticks from the logs. Then ");
-
-                if (cobbleNeeded > 0 && oresNeeded > 0) {
-                    // Need both cobblestone and ore
-                    String orePlan = innermostPlan;
-                    String cobblePlan = "mine_ores " + oresNeeded + " ores, then " + orePlan;
-                    steps.append("call gather_blocks({\"block\":\"stone\",\"maxBlocks\":")
-                         .append(cobbleNeeded)
-                         .append(",\"plan\":\"").append(cobblePlan).append("\"}).");
-                } else if (cobbleNeeded > 0) {
-                    // Just cobblestone after wood
-                    steps.append("call gather_blocks({\"block\":\"stone\",\"maxBlocks\":")
-                         .append(cobbleNeeded)
-                         .append(",\"plan\":\"").append(craftCmd).append("\"}).");
-                } else {
-                    // Just ore after wood
-                    steps.append("call mine_ores({\"maxOres\":")
-                         .append(oresNeeded)
-                         .append(",\"plan\":\"").append(innermostPlan).append("\"}).");
-                }
-                nextSteps = steps.toString();
-            } else {
-                // Wood is all we need — craft directly
-                nextSteps = "Call " + craftCmd +
-                        " — all materials should now be available from the chopped logs.";
-            }
-        } else if (cobbleNeeded > 0) {
-            // COBBLESTONE / STONE — companion mines stone blocks, drops cobble
-            firstTask = new GatherBlocksTask(companion, Blocks.STONE, 16, cobbleNeeded);
-            firstDesc = "Gathering " + cobbleNeeded + " stone";
-
-            if (oresNeeded > 0) {
-                nextSteps = "Call mine_ores({\"maxOres\":" + oresNeeded +
-                        ",\"plan\":\"" + innermostPlan + "\"}).";
-            } else {
-                nextSteps = "Call " + craftCmd + ".";
-            }
-        } else if (oresNeeded > 0) {
-            // ORE MINING
-            firstTask = new MineOresTask(companion, 16, oresNeeded);
-            firstDesc = "Mining " + oresNeeded + " ore blocks";
-
-            if (needSmelt) {
-                nextSteps = "Call smelt_items({\"item\":\"" + smeltInputId +
-                        "\",\"count\":" + smeltCount +
-                        ",\"plan\":\"" + craftCmd + "\"}).";
-            } else {
-                nextSteps = "Call " + craftCmd + ".";
-            }
+        // If there are more async steps, the first async step's continuation 
+        // describes the SECOND step (with its own plan for the rest).
+        // This creates a chain: step1 → continuation → step2 → continuation → ... → craft
+        String continuationNext;
+        if (asyncSteps.size() > 1) {
+            // Build nested chain: second step's plan contains step 3+, etc.
+            continuationNext = buildNestedContinuation(asyncSteps, 1, craftSteps, targetId, requestedCount);
         } else {
-            // Nothing gatherable — shouldn't happen, but fallback
-            return buildMissingReport(context, recipeManager, registryAccess,
-                    targetItem, ingredients, craftsNeeded, craftLog);
+            // Only sync craft steps remain
+            continuationNext = "Call craft_item({\"item\":\"" + targetId + 
+                    "\",\"count\":" + requestedCount + "}) — all materials should be gathered now.";
         }
 
-        // Queue the first task with a continuation plan
         firstTask.setContinuation(new TaskContinuation(
                 context.player().getUUID(),
-                "Crafting " + targetName + ": " + firstDesc,
-                nextSteps
+                "Crafting " + targetName + ": " + firstStep,
+                continuationNext
         ));
         companion.getTaskManager().queueTask(firstTask);
 
-        MCAi.LOGGER.info("Auto-craft plan for {}: {} → {}", targetName, firstDesc, nextSteps);
+        MCAi.LOGGER.info("Auto-craft plan for {}: first={}, continuation={}",
+                targetName, firstStep, continuationNext);
 
-        // Build a player-friendly summary
+        // === Build player-friendly summary ===
         StringBuilder summary = new StringBuilder();
-        summary.append("[ASYNC_TASK] Started crafting ").append(targetName).append("! ");
-        summary.append(firstDesc).append(" first");
-        if (cobbleNeeded > 0) summary.append(" → gather stone");
-        if (oresNeeded > 0) summary.append(" → mine ore");
-        if (needSmelt) summary.append(" → smelt");
-        summary.append(" → craft ").append(targetName).append(". ");
-        summary.append("I'll handle each step automatically!");
+        summary.append("[ASYNC_TASK] Started crafting ").append(targetName).append("! Plan: ");
+        summary.append(plan.summarize());
+        summary.append(". I'll handle each step automatically!");
 
         return summary.toString();
     }
 
     /**
-     * Whether this item ID is a known direct drop from mining ores
-     * (items you get from breaking ore blocks, not from smelting).
+     * Build nested continuation chain for async steps.
+     * Each step's continuation text tells the AI to call the NEXT async tool with a plan,
+     * or to call craft_item at the end.
      */
-    private boolean isKnownOreDrop(String ingId) {
-        return ingId.equals("diamond") || ingId.equals("coal")
-                || ingId.equals("lapis_lazuli") || ingId.equals("redstone")
-                || ingId.equals("emerald") || ingId.contains("raw_")
-                || ingId.equals("quartz") || ingId.equals("amethyst_shard");
+    private String buildNestedContinuation(List<CraftingPlan.Step> asyncSteps, int fromIndex,
+                                            List<CraftingPlan.Step> craftSteps,
+                                            String finalItemId, int finalCount) {
+        if (fromIndex >= asyncSteps.size()) {
+            // No more async steps → craft the final item
+            return "Call craft_item({\"item\":\"" + finalItemId +
+                    "\",\"count\":" + finalCount + "}) — all materials should be gathered now.";
+        }
+
+        CraftingPlan.Step current = asyncSteps.get(fromIndex);
+
+        // Build the plan parameter for this step (what comes next)
+        String nestedPlan;
+        if (fromIndex + 1 < asyncSteps.size()) {
+            // More async steps after this one
+            StringBuilder planDesc = new StringBuilder();
+            for (int i = fromIndex + 1; i < asyncSteps.size(); i++) {
+                if (planDesc.length() > 0) planDesc.append(", then ");
+                planDesc.append(asyncSteps.get(i).type.name().toLowerCase())
+                        .append(" ").append(asyncSteps.get(i).itemId);
+            }
+            planDesc.append(", then craft ").append(finalItemId);
+            nestedPlan = planDesc.toString();
+        } else {
+            // Last async step → plan goes straight to crafting
+            nestedPlan = "craft " + finalItemId;
+        }
+
+        // Tell the AI to call this async tool with the plan parameter
+        return "Call " + current.toToolCall(nestedPlan);
+    }
+
+    /**
+     * Convert a plan step to a human-readable instruction for the continuation message.
+     */
+    private String stepToInstruction(CraftingPlan.Step step) {
+        return switch (step.type) {
+            case CHOP -> "chop_trees for " + step.count + " logs";
+            case MINE -> "mine_ores for " + step.count + " ores";
+            case GATHER -> "gather " + step.count + "x " + step.itemId;
+            case SMELT, BLAST -> "smelt " + step.count + "x " + step.itemId;
+            case SMOKE, CAMPFIRE_COOK -> "cook " + step.count + "x " + step.itemId;
+            case FARM -> "farm " + step.itemId;
+            case FISH -> "fish for " + step.count + "x " + step.itemId;
+            case KILL_MOB -> "gather " + step.count + "x " + step.itemId + " (mob drop)";
+            case CRAFT -> "craft " + step.count + "x " + step.itemId;
+            default -> step.toString();
+        };
+    }
+
+    /**
+     * Create a CompanionTask for a plan step.
+     */
+    private CompanionTask createTaskForStep(CraftingPlan.Step step, CompanionEntity companion) {
+        return switch (step.type) {
+            case CHOP -> new ChopTreesTask(companion, 16, Math.max(step.count, 4));
+            case MINE -> new MineOresTask(companion, 16, Math.max(step.count, 3));
+            case GATHER -> {
+                Block block = resolveGatherBlock(step.itemId);
+                yield block != null
+                        ? new GatherBlocksTask(companion, block, 16, step.count)
+                        : null;
+            }
+            case SMELT, BLAST, SMOKE, CAMPFIRE_COOK -> {
+                // Smelting tasks are handled via AI continuation calling smelt_items tool
+                // (SmeltItemsTask needs the furnace interaction which the tool handles)
+                yield null;
+            }
+            default -> null;
+        };
+    }
+
+    /**
+     * Resolve an item ID to a Block for gathering. Maps items to their block forms.
+     */
+    private Block resolveGatherBlock(String itemId) {
+        // Common mappings where the gatherable block differs from the item
+        return switch (itemId) {
+            case "cobblestone" -> Blocks.STONE;  // Breaking stone gives cobblestone
+            case "cobbled_deepslate" -> Blocks.DEEPSLATE;
+            case "flint" -> Blocks.GRAVEL;  // Gravel drops flint
+            case "clay_ball" -> Blocks.CLAY;
+            case "snowball" -> Blocks.SNOW_BLOCK;
+            default -> {
+                // Try to find block by registry name
+                for (var entry : BuiltInRegistries.BLOCK.entrySet()) {
+                    if (entry.getKey().location().getPath().equals(itemId)) {
+                        yield entry.getValue();
+                    }
+                }
+                yield Blocks.STONE; // fallback
+            }
+        };
+    }
+
+    /**
+     * Build a map of all items available in player + companion inventories.
+     */
+    private Map<Item, Integer> buildAvailableMap(ToolContext context) {
+        Map<Item, Integer> available = new HashMap<>();
+
+        var playerInv = context.player().getInventory();
+        for (int i = 0; i < playerInv.getContainerSize(); i++) {
+            ItemStack stack = playerInv.getItem(i);
+            if (!stack.isEmpty()) {
+                available.merge(stack.getItem(), stack.getCount(), Integer::sum);
+            }
+        }
+
+        SimpleContainer companionInv = getCompanionInventory(context);
+        if (companionInv != null) {
+            for (int i = 0; i < companionInv.getContainerSize(); i++) {
+                ItemStack stack = companionInv.getItem(i);
+                if (!stack.isEmpty()) {
+                    available.merge(stack.getItem(), stack.getCount(), Integer::sum);
+                }
+            }
+        }
+
+        return available;
     }
 
     // ========== Missing ingredients report (fallback) ==========
