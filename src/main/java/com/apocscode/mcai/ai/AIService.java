@@ -264,9 +264,9 @@ public class AIService {
     // instead of using the structured tool_calls format.
     // These helpers detect and parse such text so it can be executed.
 
-    /** Pattern: tool_name({...}) or tool_name({"key":"value",...}) */
+    /** Pattern: tool_name({...}) — uses greedy match to handle nested braces in values */
     private static final Pattern TEXT_TOOL_PATTERN = Pattern.compile(
-            "\\b([a-z_]+)\\s*\\(\\s*(\\{.*?\\})\\s*\\)", Pattern.DOTALL);
+            "\\b([a-z_]+)\\s*\\(\\s*(\\{.+\\})\\s*\\)", Pattern.DOTALL);
 
     /**
      * Try to extract a tool name from text that looks like a tool call.
@@ -300,8 +300,14 @@ public class AIService {
                     argsStr = argsStr.replace("'", "\"");
                     return JsonParser.parseString(argsStr).getAsJsonObject();
                 } catch (Exception e) {
-                    MCAi.LOGGER.warn("Fallback: found tool '{}' but couldn't parse args: {}", name, argsStr);
-                    return new JsonObject();
+                    // If nested braces break JSON parsing, try stripping the plan value
+                    try {
+                        argsStr = argsStr.replaceAll(",\\s*\"plan\"\\s*:\\s*\"[^\"]*\"", "");
+                        return JsonParser.parseString(argsStr).getAsJsonObject();
+                    } catch (Exception e2) {
+                        MCAi.LOGGER.warn("Fallback: found tool '{}' but couldn't parse args: {}", name, m.group(2));
+                        return new JsonObject();
+                    }
                 }
             }
         }
@@ -481,7 +487,8 @@ public class AIService {
 
     /**
      * Call Groq cloud API (OpenAI-compatible) with tool support.
-     * Groq's 70B models handle all 30 tools reliably, so we send the full set.
+     * Uses dynamic tool selection to stay within free-tier token limits (12K TPM).
+     * Retries automatically on 429 rate-limit errors with backoff.
      * Returns the full response JSON object (OpenAI format with choices[]).
      */
     private static JsonObject callGroq(JsonArray messages, String userMessage) throws IOException {
@@ -493,8 +500,8 @@ public class AIService {
         request.addProperty("max_tokens", AiConfig.AI_MAX_TOKENS.get());
         request.addProperty("stream", false);
 
-        // Send ALL tools — Groq's 70B+ models handle 30+ tools without issue
-        JsonArray tools = ToolRegistry.toOllamaToolsArray();
+        // Use dynamic tool selection — keeps token usage low for free-tier TPM limits
+        JsonArray tools = ToolRegistry.toOllamaToolsArray(userMessage);
         if (tools.size() > 0) {
             request.add("tools", tools);
             request.addProperty("tool_choice", "auto");
@@ -503,35 +510,66 @@ public class AIService {
         String model = AiConfig.GROQ_MODEL.get();
         AiLogger.aiRequest(messages.size(), tools.size(), model);
 
-        // Send HTTP request
-        int timeoutMs = AiConfig.AI_TIMEOUT_MS.get();
-        String url = AiConfig.GROQ_URL.get();
-        HttpURLConnection conn = (HttpURLConnection) URI.create(url).toURL().openConnection();
-        conn.setRequestMethod("POST");
-        conn.setRequestProperty("Content-Type", "application/json");
-        conn.setRequestProperty("Authorization", "Bearer " + AiConfig.GROQ_API_KEY.get());
-        conn.setDoOutput(true);
-        conn.setConnectTimeout(timeoutMs);
-        conn.setReadTimeout(timeoutMs);
-
         String requestBody = GSON.toJson(request);
         MCAi.LOGGER.debug("Groq request: {} chars, model: {}", requestBody.length(), model);
 
-        try (OutputStream os = conn.getOutputStream()) {
-            os.write(requestBody.getBytes(StandardCharsets.UTF_8));
-        }
+        // Retry loop for rate limits (429)
+        int maxRetries = 3;
+        for (int attempt = 0; attempt <= maxRetries; attempt++) {
+            int timeoutMs = AiConfig.AI_TIMEOUT_MS.get();
+            String url = AiConfig.GROQ_URL.get();
+            HttpURLConnection conn = (HttpURLConnection) URI.create(url).toURL().openConnection();
+            conn.setRequestMethod("POST");
+            conn.setRequestProperty("Content-Type", "application/json");
+            conn.setRequestProperty("Authorization", "Bearer " + AiConfig.GROQ_API_KEY.get());
+            conn.setDoOutput(true);
+            conn.setConnectTimeout(timeoutMs);
+            conn.setReadTimeout(timeoutMs);
 
-        int responseCode = conn.getResponseCode();
-        if (responseCode != 200) {
-            String error = readStream(conn.getErrorStream());
+            try (OutputStream os = conn.getOutputStream()) {
+                os.write(requestBody.getBytes(StandardCharsets.UTF_8));
+            }
+
+            int responseCode = conn.getResponseCode();
+            if (responseCode == 429 && attempt < maxRetries) {
+                // Rate limited — parse retry delay from response, default 15s
+                String error = readStream(conn.getErrorStream());
+                conn.disconnect();
+
+                long waitMs = 15_000;
+                try {
+                    // Try to extract "Please try again in X.XXs" from Groq error
+                    java.util.regex.Matcher retryMatcher = Pattern.compile(
+                            "try again in ([\\d.]+)s").matcher(error);
+                    if (retryMatcher.find()) {
+                        waitMs = (long) (Double.parseDouble(retryMatcher.group(1)) * 1000) + 1000;
+                    }
+                } catch (Exception ignored) {}
+
+                MCAi.LOGGER.info("Groq rate limited (429), retrying in {}ms (attempt {}/{})",
+                        waitMs, attempt + 1, maxRetries);
+                AiLogger.log(AiLogger.Category.AI_REQUEST, "WARN",
+                        "Groq rate limited, waiting " + waitMs + "ms before retry " + (attempt + 1));
+
+                try { Thread.sleep(waitMs); } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw new IOException("Interrupted while waiting for Groq rate limit retry");
+                }
+                continue;
+            }
+
+            if (responseCode != 200) {
+                String error = readStream(conn.getErrorStream());
+                conn.disconnect();
+                throw new IOException("Groq returned HTTP " + responseCode + ": " + error);
+            }
+
+            String responseBody = readStream(conn.getInputStream());
             conn.disconnect();
-            throw new IOException("Groq returned HTTP " + responseCode + ": " + error);
+            return JsonParser.parseString(responseBody).getAsJsonObject();
         }
 
-        String responseBody = readStream(conn.getInputStream());
-        conn.disconnect();
-
-        return JsonParser.parseString(responseBody).getAsJsonObject();
+        throw new IOException("Groq rate limit exceeded after " + maxRetries + " retries");
     }
 
     private static String buildSystemPrompt(String playerContext, String companionName) {
