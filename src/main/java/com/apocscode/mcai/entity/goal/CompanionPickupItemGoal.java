@@ -19,9 +19,9 @@ public class CompanionPickupItemGoal extends Goal {
     private ItemEntity targetItem;
     private int cooldown;
 
-    private static final double SEARCH_RANGE = 10.0;
+    private static final double SEARCH_RANGE = 16.0;
     private static final double PICKUP_RANGE = 1.5;
-    private static final int SEARCH_COOLDOWN = 20; // ticks between scans
+    private static final int SEARCH_COOLDOWN = 10; // ticks between scans (faster during tasks)
     private static final int MAX_PATH_TICKS = 200; // give up after 10 seconds
     private int pathTicks;
 

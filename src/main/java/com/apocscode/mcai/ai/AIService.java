@@ -407,6 +407,12 @@ public class AIService {
                 - Use rename_companion when the player wants to change your name
                 - Use list_installed_mods to see what mods are in the player's modpack — use when they ask about mods or when you need to tailor advice to their setup
                 - You can chain tools: scan_containers → interact_container, or get_recipe → craft_item
+                - Use gather_blocks to send the companion to mine specific blocks (sand, cobblestone, logs, etc.)
+                - Use transfer_items with direction='check' to see what the companion collected, then direction='to_player' to take items from the companion
+                - For autonomous crafting when the player lacks materials, chain: gather_blocks / mine_ores / chop_trees → wait for task → transfer_items(to_player) → craft_item
+                - Example: player asks 'make me a stone pickaxe' but has no cobblestone → mine_ores or gather_blocks(cobblestone) → transfer_items(to_player, item=cobblestone) → craft_item(stone_pickaxe)
+                - The companion automatically picks up items it mines — they go into its inventory, not the player's. Use transfer_items to move them.
+                - Use task_status to check if a mining/gathering task is complete before attempting transfer_items
                 - For simple 'get me X' requests, use find_and_fetch_item directly — it's the fastest path
                 - Only use tools when they'd genuinely help. Don't use tools for simple greetings or basic Minecraft facts you already know.
                 
