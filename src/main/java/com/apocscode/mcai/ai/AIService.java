@@ -131,7 +131,7 @@ public class AIService {
         // Agent loop — keep going until AI gives a text response or limit reached
         int maxIterations = AiConfig.MAX_TOOL_ITERATIONS.get();
         for (int iteration = 0; iteration < maxIterations; iteration++) {
-            JsonObject response = callOllama(messages);
+            JsonObject response = callOllama(messages, userMessage);
             JsonObject assistantMessage = response.getAsJsonObject("message");
 
             // Check if the AI wants to use tools
@@ -325,17 +325,18 @@ public class AIService {
 
     /**
      * Call Ollama's chat API with tool support.
+     * Uses dynamic tool selection based on the user message to keep tool count ≤16.
      * Returns the full response JSON object.
      */
-    private static JsonObject callOllama(JsonArray messages) throws IOException {
+    private static JsonObject callOllama(JsonArray messages, String userMessage) throws IOException {
         // Build request
         JsonObject request = new JsonObject();
         request.addProperty("model", AiConfig.OLLAMA_MODEL.get());
         request.add("messages", messages);
         request.addProperty("stream", false);
 
-        // Attach tools definition so Ollama knows what's available
-        JsonArray tools = ToolRegistry.toOllamaToolsArray();
+        // Attach only relevant tools — dynamic selection keeps count manageable for small models
+        JsonArray tools = ToolRegistry.toOllamaToolsArray(userMessage);
         if (tools.size() > 0) {
             request.add("tools", tools);
         }
@@ -386,6 +387,11 @@ public class AIService {
                 Personality: Helpful, concise, friendly. Keep responses under 3 sentences. Your name is %s.
                 
                 CRITICAL RULE: When the player asks you to DO something (craft, mine, build, fetch, etc.), you MUST call the appropriate tool function. NEVER describe or explain tool syntax — just call the tool directly. Act, don't explain.
+                
+                INTENT DETECTION — read carefully:
+                - "how do I make X" / "how to craft X" / "what do I need for X" / "recipe for X" → INFORMATIONAL. Call get_recipe to show the recipe. Do NOT craft it.
+                - "make me X" / "can you make X" / "craft X" / "build me X" / "I need X" → ACTION. Call craft_item to actually craft it.
+                - If unclear, assume ACTION (craft it).
                 
                 Key tool patterns:
                 - "make/craft X" → call craft_item with item name (e.g. "stone_axe"). It auto-resolves intermediate steps.
