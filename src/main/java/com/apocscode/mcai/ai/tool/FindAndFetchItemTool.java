@@ -33,11 +33,8 @@ public class FindAndFetchItemTool implements AiTool {
 
     @Override
     public String description() {
-        return "Smart item fetcher — scans ALL containers within a large radius (up to 32 blocks), " +
-                "finds where the requested items are, and transfers them directly to the player's inventory. " +
-                "Use this when the player says 'get me 10 iron' or 'I need some diamonds'. " +
-                "No need to know which chest — the AI finds the best source automatically. " +
-                "Pulls from multiple containers if needed to fulfill the request.";
+        return "Scan all containers within 32 blocks and fetch items to player inventory. " +
+                "Best for 'get me X' requests. Auto-finds and pulls from multiple chests.";
     }
 
     @Override

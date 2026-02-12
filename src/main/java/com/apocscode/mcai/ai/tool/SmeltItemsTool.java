@@ -31,13 +31,8 @@ public class SmeltItemsTool implements AiTool {
 
     @Override
     public String description() {
-        return "Smelt items using a nearby furnace, blast furnace, or smoker. " +
-                "The companion pathfinds to the nearest furnace, inserts items and fuel from its inventory, " +
-                "waits for smelting to complete (real game time), and collects the output. " +
-                "Requires: furnace within 32 blocks + fuel (coal, charcoal, wood) in companion inventory. " +
-                "Use for: raw_iron → iron_ingot, raw_gold → gold_ingot, sand → glass, " +
-                "raw_copper → copper_ingot, cobblestone → stone, raw food → cooked food. " +
-                "Items must be in the companion's inventory (they pick up mined items automatically).";
+        return "Smelt items at a nearby furnace. Companion walks to furnace, inserts items+fuel, waits real time, collects output. " +
+                "Needs furnace within 32 blocks + fuel in companion inventory. Works for raw ores, sand, cobblestone, raw food.";
     }
 
     @Override

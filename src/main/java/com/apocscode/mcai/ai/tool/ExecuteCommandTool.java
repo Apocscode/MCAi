@@ -27,12 +27,8 @@ public class ExecuteCommandTool implements AiTool {
 
     @Override
     public String description() {
-        return "Execute a Minecraft command. Can run most gameplay commands like: " +
-                "/time set day, /weather clear, /give, /tp, /gamemode, /effect, " +
-                "/summon, /setblock, /fill, /kill, /xp, /enchant, /clear, " +
-                "/title, /tellraw, /playsound, /particle, etc. " +
-                "Use when the player asks you to change the game state directly. " +
-                "Commands should NOT include the leading slash.";
+        return "Execute a Minecraft command (time, weather, give, tp, gamemode, effect, etc). " +
+                "Do NOT include the leading slash.";
     }
 
     @Override

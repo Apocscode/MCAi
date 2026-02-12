@@ -35,11 +35,8 @@ public class CraftItemTool implements AiTool {
 
     @Override
     public String description() {
-        return "Craft an item using materials from the player's and companion's inventories. " +
-                "Automatically resolves intermediate crafting steps (e.g., logs→planks→sticks). " +
-                "Only works with crafting table recipes. " +
-                "Smelting (raw ores → ingots, raw food → cooked) requires the smelt_items tool instead. " +
-                "Use when the player says 'craft me a pickaxe' or 'make 16 torches'.";
+        return "Craft an item from player+companion inventories. Auto-resolves intermediate steps (logs to planks to sticks). " +
+                "Crafting-table recipes only. For smelting, use smelt_items instead.";
     }
 
     @Override

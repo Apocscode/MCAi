@@ -19,12 +19,8 @@ public class MemoryTool implements AiTool {
 
     @Override
     public String description() {
-        return "Manage the companion's persistent memory. " +
-                "Use this to remember facts about the player (preferences, base location, favorite items), " +
-                "recall saved facts, log notable events, or list all memories. " +
-                "Memory persists across game sessions. " +
-                "Actions: 'remember' (save a fact), 'recall' (get a fact), 'forget' (remove a fact), " +
-                "'log_event' (record something that happened), 'list' (show all facts and recent events).";
+        return "Persistent memory. Actions: 'remember' key+value, 'recall' key, 'forget' key, 'log_event' value, 'list' all. " +
+                "Persists across sessions. Use to store player preferences, locations, names.";
     }
 
     @Override

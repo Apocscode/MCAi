@@ -19,11 +19,8 @@ public class EmoteTool implements AiTool {
 
     @Override
     public String description() {
-        return "Make the companion perform an emote with visual effects and sound. " +
-                "Emotes: 'wave' (friendly greeting), 'celebrate' (happy fireworks), " +
-                "'sad' (rain cloud), 'angry' (smoke), 'love' (hearts), " +
-                "'thinking' (enchantment particles), 'sneeze' (poof). " +
-                "Use to express emotions or react to player actions.";
+        return "Companion emote with particles+sound. " +
+                "Options: wave, celebrate, sad, angry, love, thinking, sneeze.";
     }
 
     @Override

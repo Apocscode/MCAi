@@ -24,12 +24,8 @@ public class TransferItemsTool implements AiTool {
 
     @Override
     public String description() {
-        return "Transfer items between the companion's inventory and the player's inventory, " +
-                "or check what the companion is carrying. " +
-                "Use direction='to_player' to move items from companion to player (after mining/gathering). " +
-                "Use direction='to_companion' to give items to the companion. " +
-                "Use direction='check' to list the companion's inventory contents. " +
-                "Optionally filter by item name and specify a count.";
+        return "Transfer items between companion and player. direction='to_player'/'to_companion'/'check'. " +
+                "Optionally filter by item name and count.";
     }
 
     @Override

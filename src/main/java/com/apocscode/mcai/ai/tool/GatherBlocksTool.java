@@ -22,11 +22,8 @@ public class GatherBlocksTool implements AiTool {
 
     @Override
     public String description() {
-        return "Send the companion to gather a specific block type nearby. " +
-                "The companion will navigate to matching blocks, mine them, and pick up the drops. " +
-                "Works for any block: sand, gravel, clay, stone, dirt, cobblestone, wood, etc. " +
-                "Specify block name (e.g. 'sand', 'oak_log', 'cobblestone'), " +
-                "radius (default 16, max 32), and maxBlocks (default 16).";
+        return "Send companion to mine a specific block type nearby and pick up drops. " +
+                "Works for any block. Specify block name, radius (default 16), maxBlocks (default 16).";
     }
 
     @Override

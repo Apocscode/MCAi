@@ -22,11 +22,8 @@ public class DeliverItemsTool implements AiTool {
 
     @Override
     public String description() {
-        return "Send the companion to deliver items from its inventory to a location. " +
-                "Specify a bookmark name (e.g., 'home', 'base') or coordinates. " +
-                "If a container (chest) is at the destination, items are deposited into it. " +
-                "Otherwise, items are dropped on the ground. " +
-                "Use after gathering/crafting to deliver results to the player's base.";
+        return "Send companion to deliver items to a bookmarked location or coordinates. " +
+                "Deposits into container if present, otherwise drops on ground.";
     }
 
     @Override

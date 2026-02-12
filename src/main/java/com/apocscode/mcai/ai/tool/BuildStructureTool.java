@@ -21,11 +21,8 @@ public class BuildStructureTool implements AiTool {
 
     @Override
     public String description() {
-        return "Build a structure using blocks from the companion's inventory. " +
-                "Shapes: wall (width x height), floor (width x depth), platform (same as floor), " +
-                "shelter (enclosed room with door), column (vertical pillar). " +
-                "The companion navigates to each position and places blocks. " +
-                "Requires sufficient blocks in companion inventory.";
+        return "Build a structure from companion inventory. " +
+                "Shapes: wall, floor, platform, shelter, column. Needs blocks in companion inventory.";
     }
 
     @Override
