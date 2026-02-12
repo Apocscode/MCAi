@@ -8,6 +8,7 @@ import net.minecraft.tags.BlockTags;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.item.crafting.*;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
@@ -59,13 +60,30 @@ public class RecipeResolver {
      * Skips recipes that throw exceptions or return null results (common with 600+ mods).
      */
     private void buildRecipeIndex() {
-        int indexed = 0, skipped = 0;
+        int indexed = 0, skipped = 0, vanillaSkipped = 0;
         for (RecipeHolder<?> holder : recipeManager.getRecipes()) {
             try {
                 Recipe<?> r = holder.value();
                 if (r == null) { skipped++; continue; }
+
+                // Get recipe output — try safeResult first, then fall back for known types
                 ItemStack result = safeResult(r);
-                if (result.isEmpty()) { skipped++; continue; }
+                if (result.isEmpty()) {
+                    // For ShapedRecipe/ShapelessRecipe, try accessing result directly
+                    // Some mods' mixins break getResultItem() for vanilla recipes
+                    result = tryDirectResult(r);
+                }
+                if (result.isEmpty()) {
+                    // Log if this is a vanilla recipe being skipped — critical for diagnosis
+                    ResourceLocation recipeId = holder.id();
+                    if (recipeId != null && recipeId.getNamespace().equals("minecraft")) {
+                        MCAi.LOGGER.warn("RecipeResolver: SKIPPING vanilla recipe {} (getResultItem returned null)",
+                                recipeId);
+                        vanillaSkipped++;
+                    }
+                    skipped++;
+                    continue;
+                }
                 Item outputItem = result.getItem();
 
                 if (r instanceof ShapedRecipe || r instanceof ShapelessRecipe) {
@@ -85,9 +103,13 @@ public class RecipeResolver {
                 skipped++;
             }
         }
-        MCAi.LOGGER.info("RecipeResolver: indexed {} recipes ({} skipped), "
+        MCAi.LOGGER.info("RecipeResolver: indexed {} recipes ({} skipped, {} vanilla skipped), "
                 + "crafting={}, heat={}, stonecut={}",
-                indexed, skipped, craftingByOutput.size(), heatByOutput.size(), stonecutByOutput.size());
+                indexed, skipped, vanillaSkipped,
+                craftingByOutput.size(), heatByOutput.size(), stonecutByOutput.size());
+
+        // Verify critical vanilla items are indexed
+        verifyKeyItemsIndexed();
 
         // Sort each recipe list by score (best first)
         for (List<RecipeHolder<?>> list : craftingByOutput.values()) {
@@ -114,6 +136,61 @@ public class RecipeResolver {
             return result != null ? result : ItemStack.EMPTY;
         } catch (Exception e) {
             return ItemStack.EMPTY;
+        }
+    }
+
+    /**
+     * Fallback: try to get the result directly from known recipe types.
+     * Some mods' mixins break getResultItem() even for vanilla recipes.
+     * For ShapedRecipe/ShapelessRecipe, we can try accessing the result field via reflection.
+     */
+    private ItemStack tryDirectResult(Recipe<?> r) {
+        try {
+            // Both ShapedRecipe and ShapelessRecipe store result as a field
+            // Try reflection as a last resort
+            java.lang.reflect.Field resultField = null;
+            Class<?> clazz = r.getClass();
+            // Walk up the class hierarchy looking for a 'result' field
+            while (clazz != null && clazz != Object.class) {
+                try {
+                    resultField = clazz.getDeclaredField("result");
+                    break;
+                } catch (NoSuchFieldException e) {
+                    clazz = clazz.getSuperclass();
+                }
+            }
+            if (resultField != null) {
+                resultField.setAccessible(true);
+                Object value = resultField.get(r);
+                if (value instanceof ItemStack stack && !stack.isEmpty()) {
+                    return stack.copy();
+                }
+            }
+        } catch (Exception e) {
+            // Reflection failed — nothing we can do
+        }
+        return ItemStack.EMPTY;
+    }
+
+    /**
+     * Verify that critical vanilla items are present in the recipe index.
+     * Logs warnings for any missing items — helps diagnose modded environment issues.
+     */
+    private void verifyKeyItemsIndexed() {
+        String[] criticalItems = {
+            "furnace", "crafting_table", "iron_pickaxe", "iron_ingot", "stone_pickaxe",
+            "wooden_pickaxe", "chest", "torch", "stick", "oak_planks"
+        };
+        for (String name : criticalItems) {
+            Item item = BuiltInRegistries.ITEM.get(ResourceLocation.withDefaultNamespace(name));
+            if (item == null || item == net.minecraft.world.item.Items.AIR) continue;
+            boolean hasCrafting = craftingByOutput.containsKey(item);
+            boolean hasHeat = heatByOutput.containsKey(item);
+            boolean hasStonecut = stonecutByOutput.containsKey(item);
+            if (!hasCrafting && !hasHeat && !hasStonecut) {
+                MCAi.LOGGER.error("RecipeResolver: CRITICAL item '{}' has NO recipes indexed! " +
+                        "This will break crafting plans.", name);
+            }
         }
     }
 

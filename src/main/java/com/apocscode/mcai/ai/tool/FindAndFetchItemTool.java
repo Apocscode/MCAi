@@ -1,6 +1,8 @@
 package com.apocscode.mcai.ai.tool;
 
 import com.apocscode.mcai.MCAi;
+import com.apocscode.mcai.entity.CompanionEntity;
+import com.apocscode.mcai.logistics.TaggedBlock;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import net.minecraft.core.BlockPos;
@@ -84,10 +86,30 @@ public class FindAndFetchItemTool implements AiTool {
         int radius = args.has("radius") ? args.get("radius").getAsInt() : DEFAULT_RADIUS;
         radius = Math.max(1, Math.min(MAX_RADIUS, radius));
 
-        // Phase 1: Scan all containers (read-only, safe from background thread)
         Level level = context.player().level();
         BlockPos center = context.player().blockPosition();
         List<ContainerMatch> matches = new ArrayList<>();
+
+        // Phase 1: Check companion's tagged STORAGE locations FIRST (priority containers)
+        CompanionEntity companion = CompanionEntity.getLivingCompanion(context.player().getUUID());
+        if (companion != null) {
+            List<TaggedBlock> storageBlocks = companion.getTaggedBlocks(TaggedBlock.Role.STORAGE);
+            for (TaggedBlock tb : storageBlocks) {
+                BlockPos sPos = tb.pos();
+                // Storage blocks might be outside the normal radius — always check them
+                BlockEntity sBe = level.getBlockEntity(sPos);
+                if (sBe instanceof Container sContainer) {
+                    int available = countMatchingItems(sContainer, itemQuery);
+                    if (available > 0) {
+                        String blockName = level.getBlockState(sPos).getBlock().getName().getString();
+                        // Priority: storage locations get distance 0 so they sort first
+                        matches.add(new ContainerMatch(sPos, sContainer, blockName + " [STORAGE]", available, 0));
+                    }
+                }
+            }
+        }
+
+        // Phase 2: Scan all containers within radius
 
         for (int x = -radius; x <= radius; x++) {
             for (int y = -radius; y <= radius; y++) {
@@ -122,7 +144,7 @@ public class FindAndFetchItemTool implements AiTool {
             return "Found containers matching '" + itemQuery + "' but they're empty now.";
         }
 
-        // Phase 2: Transfer items (MUST be on server thread)
+        // Phase 3: Transfer items (MUST be on server thread)
         final int finalToFetch = toFetch;
         final List<ContainerMatch> finalMatches = matches;
         final String query = itemQuery;

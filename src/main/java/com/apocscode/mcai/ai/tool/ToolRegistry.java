@@ -38,7 +38,10 @@ public class ToolRegistry {
                 "craft_item", "get_recipe", "get_inventory", "gather_blocks", "chop_trees", "mine_ores", "smelt_items");
         // Mining / gathering
         kw("mine,dig,ore,iron,gold,diamond,coal,copper,gather,collect,cobble,sand,gravel,stone",
-                "mine_ores", "mine_area", "gather_blocks");
+                "mine_ores", "mine_area", "gather_blocks", "dig_down");
+        // Digging down specifically
+        kw("dig down,shaft,tunnel,dig straight,vertical,below",
+                "dig_down", "mine_area");
         // Trees / wood
         kw("chop,tree,log,wood,plank,oak,birch,spruce",
                 "chop_trees", "gather_blocks");
@@ -48,9 +51,11 @@ public class ToolRegistry {
         // Farming
         kw("farm,plant,harvest,wheat,carrot,potato,crop,seed",
                 "farm_area");
-        // Containers / items
+        // Containers / items / storage
         kw("chest,barrel,container,storage,find,fetch,get me,bring,take,put,give",
-                "find_and_fetch_item", "scan_containers", "interact_container");
+                "find_and_fetch_item", "scan_containers", "interact_container", "set_storage");
+        kw("set storage,set chest,inventory chest,designate,your chest,home chest",
+                "set_storage");
         // Looking at things
         kw("this,that,look,what is,block,point",
                 "get_looked_at_block");
@@ -141,6 +146,8 @@ public class ToolRegistry {
         register(new FishingTool());
         register(new MemoryTool());
         register(new EmoteTool());
+        register(new DigDownTool());
+        register(new SetStorageTool());
         MCAi.LOGGER.info("Registered {} AI tools: {}", tools.size(), tools.keySet());
     }
 
