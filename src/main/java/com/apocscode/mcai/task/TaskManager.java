@@ -58,6 +58,8 @@ public class TaskManager {
             if (taskStatus == CompanionTask.Status.COMPLETED) {
                 companion.getChat().say(CompanionChat.Category.TASK,
                         "Done: " + taskDescription);
+                // Award XP for completing a task
+                companion.awardXp(com.apocscode.mcai.entity.CompanionLevelSystem.TASK_COMPLETE_XP);
             } else {
                 String reason = activeTask.getFailReason() != null
                         ? activeTask.getFailReason() : "unknown error";

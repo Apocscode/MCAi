@@ -41,6 +41,15 @@ public class ToolRegistry {
         register(new TransferItemsTool());
         register(new SmeltItemsTool());
         register(new TaskStatusTool());
+
+        // New feature tools
+        register(new DeliverItemsTool());
+        register(new GuardAreaTool());
+        register(new BuildStructureTool());
+        register(new VillagerTradeTool());
+        register(new FishingTool());
+        register(new MemoryTool());
+        register(new EmoteTool());
         MCAi.LOGGER.info("Registered {} AI tools: {}", tools.size(), tools.keySet());
     }
 

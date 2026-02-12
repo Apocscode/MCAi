@@ -5,6 +5,7 @@ import com.apocscode.mcai.ai.tool.AiTool;
 import com.apocscode.mcai.ai.tool.ToolContext;
 import com.apocscode.mcai.ai.tool.ToolRegistry;
 import com.apocscode.mcai.config.AiConfig;
+import com.apocscode.mcai.entity.CompanionEntity;
 import com.apocscode.mcai.network.ChatResponsePacket;
 import com.apocscode.mcai.task.TaskContinuation;
 import com.google.gson.*;
@@ -304,6 +305,21 @@ public class AIService {
         // XP level
         ctx.append("XP Level: ").append(player.experienceLevel).append("\n");
 
+        // Companion state
+        CompanionEntity companion = CompanionEntity.getLivingCompanion(player.getUUID());
+        if (companion != null) {
+            ctx.append("Companion health: ").append((int) companion.getHealth())
+                    .append("/").append((int) companion.getMaxHealth()).append("\n");
+            ctx.append("Companion level: ").append(companion.getLevelSystem().getDisplayString()).append("\n");
+            ctx.append("Companion mode: ").append(companion.getBehaviorMode().name()).append("\n");
+
+            // Include memory context
+            String memoryCtx = companion.getMemory().buildContextString();
+            if (!memoryCtx.isEmpty()) {
+                ctx.append(memoryCtx);
+            }
+        }
+
         return ctx.toString();
     }
 
@@ -421,6 +437,15 @@ public class AIService {
                 - When a [TASK_COMPLETE] message arrives, execute the next step in the plan
                 - Use task_status to check if a mining/gathering/smelting task is complete
                 - For simple 'get me X' requests, use find_and_fetch_item directly — it's the fastest path
+                - Use deliver_items to send the companion to deliver items to a bookmarked location or coordinates
+                - Use guard_area to set the companion to patrol and defend an area. Use action 'stop' to cancel guard mode.
+                - Use build_structure to have the companion build shapes (wall, floor, platform, shelter, column) from blocks in its inventory
+                - Use villager_trade to list trades from a nearby villager ('list') or execute a trade ('trade' with index)
+                - Use go_fishing to send the companion fishing — great for food gathering. Specify count (default 5, max 20).
+                - Use companion_memory to remember facts about the player (preferences, locations, names), recall them later, or log events. Memory persists across sessions!
+                - Proactively remember important things: if the player mentions their base location, favorite items, or name — use companion_memory to store it
+                - Use emote to express emotions with particles: wave, celebrate, sad, angry, love, thinking, sneeze
+                - The companion has a level system — it gains XP from tasks, kills, crafting, etc. Higher levels = more health, speed, damage.
                 - Only use tools when they'd genuinely help. Don't use tools for simple greetings or basic Minecraft facts you already know.
                 
                 Current game state:

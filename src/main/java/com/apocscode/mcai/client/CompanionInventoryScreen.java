@@ -142,11 +142,13 @@ public class CompanionInventoryScreen extends AbstractContainerScreen<CompanionI
                 case STAY -> stayBtn;
                 case FOLLOW -> followBtn;
                 case AUTO -> autoBtn;
+                case GUARD -> stayBtn; // Guard indicator shows under Stay button
             };
             int color = switch (mode) {
                 case STAY -> MODE_STAY_COLOR;
                 case FOLLOW -> MODE_FOLLOW_COLOR;
                 case AUTO -> MODE_AUTO_COLOR;
+                case GUARD -> 0xFFFF8800; // Orange for guard mode
             };
             if (activeBtn != null) {
                 g.fill(activeBtn.getX(), activeBtn.getY() + activeBtn.getHeight(),

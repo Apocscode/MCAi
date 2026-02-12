@@ -113,8 +113,15 @@ public class CompanionHudOverlay {
             case STAY -> 0xFF5555FF;   // Blue
             case FOLLOW -> 0xFFFFAA00; // Orange
             case AUTO -> 0xFF55FF55;   // Green
+            case GUARD -> 0xFFFF8800;  // Dark orange
         };
         graphics.drawString(mc.font, "[" + modeText + "]", barX, modeY, modeColor, true);
+
+        // --- Level display ---
+        String levelText = "Lv." + companion.getLevelSystem().getLevel();
+        int levelWidth = mc.font.width(levelText);
+        int levelX = barX + mc.font.width("[" + modeText + "]") + 4;
+        graphics.drawString(mc.font, levelText, levelX, modeY, 0xFFDD44, true);
 
         // --- Distance ---
         double dist = mc.player.distanceTo(companion);

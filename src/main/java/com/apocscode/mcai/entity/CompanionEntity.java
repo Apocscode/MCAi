@@ -70,7 +70,8 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
     public enum BehaviorMode {
         STAY,    // Stand in place, don't follow or wander
         FOLLOW,  // Follow the owner (default)
-        AUTO     // Autonomous — wander, farm, cook, hunt, pickup independently
+        AUTO,    // Autonomous — wander, farm, cook, hunt, pickup independently
+        GUARD    // Patrol and defend an area from hostile mobs
     }
 
     private static final EntityDataAccessor<Integer> DATA_BEHAVIOR_MODE =
@@ -100,6 +101,10 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
     @Nullable
     private BlockPos homePos;
 
+    // Guard position — center of patrol area in GUARD mode
+    @Nullable
+    private BlockPos guardPos;
+
     // Tagged logistics blocks — containers designated by the Logistics Wand
     private final List<TaggedBlock> taggedBlocks = new ArrayList<>();
 
@@ -109,6 +114,12 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
     // Task manager — handles queued multi-step tasks from chat AI
     private final com.apocscode.mcai.task.TaskManager taskManager =
             new com.apocscode.mcai.task.TaskManager(this);
+
+    // Memory system — persistent facts and events
+    private final com.apocscode.mcai.ai.CompanionMemory memory = new com.apocscode.mcai.ai.CompanionMemory();
+
+    // Leveling system — XP and stat bonuses
+    private final CompanionLevelSystem levelSystem = new CompanionLevelSystem();
 
     // Stuck detection
     private double lastX, lastY, lastZ;
@@ -211,6 +222,7 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
                     case STAY -> "§eStay§r — standing in place";
                     case FOLLOW -> "§aFollow§r — following you";
                     case AUTO -> "§bAuto§r — acting autonomously";
+                    case GUARD -> "§6Guard§r — patrolling and defending area";
                 };
                 owner.sendSystemMessage(Component.literal("§b[MCAi]§r " + companionName + " mode: " + label));
             }
@@ -257,6 +269,8 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
                 return getBehaviorMode() == BehaviorMode.AUTO && super.canUse();
             }
         });
+        // Guard mode — patrol and defend area
+        this.goalSelector.addGoal(3, new CompanionGuardGoal(this));
         // Automation — task queue and logistics (AUTO mode only)
         this.goalSelector.addGoal(3, new com.apocscode.mcai.entity.goal.CompanionTaskGoal(this));
         this.goalSelector.addGoal(4, new com.apocscode.mcai.entity.goal.CompanionLogisticsGoal(this));
@@ -624,15 +638,78 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
 
     private double getWeaponDamage(ItemStack stack) {
         if (stack.isEmpty()) return 0;
-        // Priority-based ranking for weapon selection
+        // Use real damage values from item attributes
         Item item = stack.getItem();
-        if (item instanceof SwordItem) return 10;
-        if (item instanceof AxeItem) return 8;
-        if (item instanceof TridentItem) return 7;
-        if (item instanceof PickaxeItem) return 4;
-        if (item instanceof ShovelItem) return 3;
-        if (item instanceof HoeItem) return 2;
+        if (item instanceof SwordItem sword) return 10 + sword.getTier().getAttackDamageBonus();
+        if (item instanceof AxeItem) return 8 + ((DiggerItem)item).getTier().getAttackDamageBonus();
+        if (item instanceof TridentItem) return 9;
+        if (item instanceof PickaxeItem) return 4 + ((DiggerItem)item).getTier().getAttackDamageBonus();
+        if (item instanceof ShovelItem) return 3 + ((DiggerItem)item).getTier().getAttackDamageBonus();
+        if (item instanceof HoeItem) return 1;
         return 0;
+    }
+
+    /**
+     * Get the best pickaxe from inventory for mining tasks.
+     * Returns the equipped pickaxe or swaps to the best one available.
+     */
+    public void equipBestPickaxe() {
+        ItemStack current = this.getItemBySlot(EquipmentSlot.MAINHAND);
+        ItemStack bestPick = null;
+        int bestSlot = -1;
+        float bestTier = current.getItem() instanceof PickaxeItem p ? p.getTier().getSpeed() : -1;
+
+        for (int i = 0; i < inventory.getContainerSize(); i++) {
+            ItemStack stack = inventory.getItem(i);
+            if (!stack.isEmpty() && stack.getItem() instanceof PickaxeItem pick) {
+                float tier = pick.getTier().getSpeed();
+                if (tier > bestTier) {
+                    bestTier = tier;
+                    bestPick = stack;
+                    bestSlot = i;
+                }
+            }
+        }
+
+        if (bestSlot >= 0 && bestPick != null) {
+            if (!current.isEmpty()) {
+                inventory.setItem(bestSlot, current);
+            } else {
+                inventory.setItem(bestSlot, ItemStack.EMPTY);
+            }
+            this.setItemSlot(EquipmentSlot.MAINHAND, bestPick);
+        }
+    }
+
+    /**
+     * Get the best axe from inventory for chopping tasks.
+     */
+    public void equipBestAxe() {
+        ItemStack current = this.getItemBySlot(EquipmentSlot.MAINHAND);
+        ItemStack bestAxe = null;
+        int bestSlot = -1;
+        float bestTier = current.getItem() instanceof AxeItem a ? ((DiggerItem)a).getTier().getSpeed() : -1;
+
+        for (int i = 0; i < inventory.getContainerSize(); i++) {
+            ItemStack stack = inventory.getItem(i);
+            if (!stack.isEmpty() && stack.getItem() instanceof AxeItem axe) {
+                float tier = ((DiggerItem)axe).getTier().getSpeed();
+                if (tier > bestTier) {
+                    bestTier = tier;
+                    bestAxe = stack;
+                    bestSlot = i;
+                }
+            }
+        }
+
+        if (bestSlot >= 0 && bestAxe != null) {
+            if (!current.isEmpty()) {
+                inventory.setItem(bestSlot, current);
+            } else {
+                inventory.setItem(bestSlot, ItemStack.EMPTY);
+            }
+            this.setItemSlot(EquipmentSlot.MAINHAND, bestAxe);
+        }
     }
 
     /**
@@ -730,6 +807,36 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
         return taskManager;
     }
 
+    /** Get the persistent memory system. */
+    public com.apocscode.mcai.ai.CompanionMemory getMemory() {
+        return memory;
+    }
+
+    /** Get the leveling system. */
+    public CompanionLevelSystem getLevelSystem() {
+        return levelSystem;
+    }
+
+    /**
+     * Award XP to the companion and handle level-up effects.
+     */
+    public void awardXp(int xp) {
+        if (levelSystem.addXp(xp)) {
+            // Level up!
+            levelSystem.applyBonuses(this);
+            memory.addEvent("Leveled up to " + levelSystem.getLevel() + "!");
+            Player owner = getOwner();
+            if (owner != null) {
+                owner.sendSystemMessage(net.minecraft.network.chat.Component.literal(
+                        "§b[MCAi]§r §6" + companionName + " leveled up to " + levelSystem.getLevel() + "!§r" +
+                                " (+" + (int) levelSystem.getBonusMaxHealth() + " HP, +" +
+                                String.format("%.1f", levelSystem.getBonusDamage()) + " ATK)"));
+            }
+            // Play level up sound
+            this.playSound(net.minecraft.sounds.SoundEvents.PLAYER_LEVELUP, 1.0F, 1.0F);
+        }
+    }
+
     /**
      * Check if companion has any food (cooked or raw) in inventory.
      */
@@ -802,6 +909,19 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
 
     public boolean hasHomePos() {
         return homePos != null;
+    }
+
+    // ================================================================
+    // Guard position
+    // ================================================================
+
+    @Nullable
+    public BlockPos getGuardPos() {
+        return guardPos;
+    }
+
+    public void setGuardPos(@Nullable BlockPos pos) {
+        this.guardPos = pos;
     }
 
     // ================================================================
@@ -949,6 +1069,13 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
             }
             owner.getPersistentData().put("mcai:logistics_blocks", logList);
         }
+        // Persist guard position
+        if (guardPos != null) {
+            owner.getPersistentData().putLong("mcai:guard_pos", guardPos.asLong());
+        }
+        // Persist memory and level
+        owner.getPersistentData().put("mcai:memory", memory.save());
+        owner.getPersistentData().put("mcai:level_system", levelSystem.save());
     }
 
     /**
@@ -1004,6 +1131,25 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
                 taggedBlocks.add(TaggedBlock.load(logList.getCompound(i)));
             }
             owner.getPersistentData().remove("mcai:logistics_blocks");
+        }
+
+        // Guard position
+        if (owner.getPersistentData().contains("mcai:guard_pos")) {
+            guardPos = BlockPos.of(owner.getPersistentData().getLong("mcai:guard_pos"));
+            owner.getPersistentData().remove("mcai:guard_pos");
+        }
+
+        // Memory
+        if (owner.getPersistentData().contains("mcai:memory")) {
+            memory.load(owner.getPersistentData().getCompound("mcai:memory"));
+            owner.getPersistentData().remove("mcai:memory");
+        }
+
+        // Leveling
+        if (owner.getPersistentData().contains("mcai:level_system")) {
+            levelSystem.load(owner.getPersistentData().getCompound("mcai:level_system"));
+            levelSystem.applyBonuses(this);
+            owner.getPersistentData().remove("mcai:level_system");
         }
 
         // Clear saved state after restoring (one-time use)
@@ -1076,6 +1222,10 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
         if (homePos != null) {
             tag.putLong(TAG_HOME_POS, homePos.asLong());
         }
+        // Guard position
+        if (guardPos != null) {
+            tag.putLong("GuardPos", guardPos.asLong());
+        }
         // Logistics tagged blocks
         if (!taggedBlocks.isEmpty()) {
             ListTag logList = new ListTag();
@@ -1084,6 +1234,10 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
             }
             tag.put(TAG_LOGISTICS, logList);
         }
+        // Memory system
+        tag.put("CompanionMemory", memory.save());
+        // Leveling system
+        tag.put("LevelSystem", levelSystem.save());
     }
 
     @Override
@@ -1118,6 +1272,10 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
         if (tag.contains(TAG_HOME_POS)) {
             homePos = BlockPos.of(tag.getLong(TAG_HOME_POS));
         }
+        // Guard position
+        if (tag.contains("GuardPos")) {
+            guardPos = BlockPos.of(tag.getLong("GuardPos"));
+        }
         // Logistics tagged blocks
         if (tag.contains(TAG_LOGISTICS)) {
             taggedBlocks.clear();
@@ -1125,6 +1283,15 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
             for (int i = 0; i < logList.size(); i++) {
                 taggedBlocks.add(TaggedBlock.load(logList.getCompound(i)));
             }
+        }
+        // Memory system
+        if (tag.contains("CompanionMemory")) {
+            memory.load(tag.getCompound("CompanionMemory"));
+        }
+        // Leveling system
+        if (tag.contains("LevelSystem")) {
+            levelSystem.load(tag.getCompound("LevelSystem"));
+            levelSystem.applyBonuses(this);
         }
     }
 }
