@@ -119,6 +119,9 @@ public class SoulCrystalItem extends Item {
                     companion.setCompanionName(savedName);
                 }
 
+                // Restore full state if dismissed (inventory, equipment, health)
+                companion.restoreStateFromOwner(player);
+
                 serverLevel.addFreshEntity(companion);
 
                 // Register in living companion tracker immediately

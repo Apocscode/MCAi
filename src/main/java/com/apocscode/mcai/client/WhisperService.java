@@ -1,6 +1,7 @@
 package com.apocscode.mcai.client;
 
 import com.apocscode.mcai.MCAi;
+import com.apocscode.mcai.config.AiConfig;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
@@ -29,10 +30,20 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public class WhisperService {
 
-    // Endpoint for Whisper API (OpenAI-compatible transcription endpoint)
-    private static final String WHISPER_URL = "http://localhost:8178/v1/audio/transcriptions";
     private static final String WHISPER_MODEL = "base"; // Model hint for the API
     private static final int TIMEOUT_MS = 15000;
+
+    /**
+     * Get the Whisper endpoint URL from config, forcing IPv4 to avoid Java's
+     * localhost → IPv6 resolution which fails when Whisper binds IPv4 only.
+     */
+    private static String getWhisperUrl() {
+        try {
+            return AiConfig.WHISPER_URL.get().replace("localhost", "127.0.0.1");
+        } catch (Exception e) {
+            return "http://127.0.0.1:8178/v1/audio/transcriptions";
+        }
+    }
 
     // Audio format: 16kHz mono 16-bit PCM — what Whisper expects
     private static final AudioFormat AUDIO_FORMAT = new AudioFormat(
@@ -66,7 +77,7 @@ public class WhisperService {
                 return;
             }
             available = true;
-            MCAi.LOGGER.info("Whisper voice input ready (endpoint: {})", WHISPER_URL);
+            MCAi.LOGGER.info("Whisper voice input ready (endpoint: {})", getWhisperUrl());
         } catch (Exception e) {
             MCAi.LOGGER.warn("Whisper: Failed to check microphone: {}", e.getMessage());
             available = false;
@@ -216,7 +227,7 @@ public class WhisperService {
     private static String callWhisperApi(byte[] wavData) throws IOException {
         String boundary = "----MCAiWhisper" + System.currentTimeMillis();
 
-        HttpURLConnection conn = (HttpURLConnection) URI.create(WHISPER_URL).toURL().openConnection();
+        HttpURLConnection conn = (HttpURLConnection) URI.create(getWhisperUrl()).toURL().openConnection();
         conn.setRequestMethod("POST");
         conn.setRequestProperty("Content-Type", "multipart/form-data; boundary=" + boundary);
         conn.setDoOutput(true);

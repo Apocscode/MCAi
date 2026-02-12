@@ -115,6 +115,7 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
     public CompanionEntity(EntityType<? extends CompanionEntity> type, Level level) {
         super(type, level);
         this.setPersistenceRequired();
+        this.setCanPickUpLoot(true); // Enable item pickup from ground
         try {
             this.companionName = AiConfig.DEFAULT_COMPANION_NAME.get();
         } catch (Exception ignored) {}
@@ -147,10 +148,11 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
         this.goalSelector.addGoal(2, new CompanionEatFoodGoal(this));
         this.goalSelector.addGoal(3, new CompanionCookFoodGoal(this));   // Cook raw food at furnace/campfire
         this.goalSelector.addGoal(4, new CompanionFarmGoal(this));       // Harvest mature crops
-        this.goalSelector.addGoal(5, new CompanionFollowGoal(this, 1.2D, 4.0F, 32.0F));
-        this.goalSelector.addGoal(6, new CompanionLookAtPlayerGoal(this, 8.0F));
-        this.goalSelector.addGoal(7, new RandomLookAroundGoal(this));
-        this.goalSelector.addGoal(8, new WaterAvoidingRandomStrollGoal(this, 0.6D));
+        this.goalSelector.addGoal(5, new CompanionPickupItemGoal(this));   // Actively seek dropped items
+        this.goalSelector.addGoal(6, new CompanionFollowGoal(this, 1.2D, 4.0F, 32.0F));
+        this.goalSelector.addGoal(7, new CompanionLookAtPlayerGoal(this, 8.0F));
+        this.goalSelector.addGoal(8, new RandomLookAroundGoal(this));
+        this.goalSelector.addGoal(9, new WaterAvoidingRandomStrollGoal(this, 0.6D));
 
         // Targeting
         this.targetSelector.addGoal(1, new HurtByTargetGoal(this));
@@ -216,8 +218,10 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
         if (source.getEntity() instanceof Player player) {
             if (player.isShiftKeyDown() && player.getUUID().equals(ownerUUID)) {
                 if (!this.level().isClientSide) {
+                    // Save companion state to owner's persistent data (survives dismiss)
+                    saveStateToOwner(player);
                     player.sendSystemMessage(Component.literal(
-                            "§b[MCAi]§r " + companionName + " dismissed."));
+                            "§b[MCAi]§r " + companionName + " dismissed. Inventory and equipment saved."));
                     this.discard();
                 }
                 return false;
@@ -488,6 +492,23 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
     }
 
     /**
+     * Check if the companion's inventory has at least one empty slot.
+     */
+    public boolean hasInventorySpace() {
+        for (int i = 0; i < inventory.getContainerSize(); i++) {
+            if (inventory.getItem(i).isEmpty()) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Public wrapper for the protected pickUpItem method, used by CompanionPickupItemGoal.
+     */
+    public void pickUpNearbyItem(net.minecraft.world.entity.item.ItemEntity itemEntity) {
+        this.pickUpItem(itemEntity);
+    }
+
+    /**
      * Get the proactive chat system for this companion.
      */
     public CompanionChat getChat() {
@@ -564,6 +585,100 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
     @Override
     public boolean shouldShowName() {
         return true;
+    }
+
+    // ================================================================
+    // Dismiss persistence — save/restore full state to owner's data
+    // ================================================================
+
+    /**
+     * Save full companion state (inventory, equipment, health) to the owner's
+     * persistent NBT data. Called on dismiss (shift+punch) so state persists.
+     */
+    public void saveStateToOwner(Player owner) {
+        CompoundTag data = new CompoundTag();
+
+        // Inventory
+        ListTag invList = new ListTag();
+        for (int i = 0; i < inventory.getContainerSize(); i++) {
+            ItemStack stack = inventory.getItem(i);
+            if (!stack.isEmpty()) {
+                CompoundTag itemTag = new CompoundTag();
+                itemTag.putByte("Slot", (byte) i);
+                invList.add(stack.save(this.registryAccess(), itemTag));
+            }
+        }
+        data.put("Inventory", invList);
+
+        // Equipment
+        ListTag equipList = new ListTag();
+        for (EquipmentSlot slot : EquipmentSlot.values()) {
+            ItemStack eq = this.getItemBySlot(slot);
+            if (!eq.isEmpty()) {
+                CompoundTag eqTag = new CompoundTag();
+                eqTag.putString("Slot", slot.getName());
+                equipList.add(eq.save(this.registryAccess(), eqTag));
+            }
+        }
+        data.put("Equipment", equipList);
+
+        // Health
+        data.putFloat("Health", this.getHealth());
+
+        // Name
+        data.putString("Name", companionName);
+
+        owner.getPersistentData().put("mcai:companion_state", data);
+        owner.getPersistentData().putString("mcai:companion_name", companionName);
+    }
+
+    /**
+     * Restore companion state from the owner's persistent data.
+     * Called by SoulCrystalItem when resummoning after dismiss.
+     */
+    public void restoreStateFromOwner(Player owner) {
+        CompoundTag data = owner.getPersistentData().getCompound("mcai:companion_state");
+        if (data.isEmpty()) return;
+
+        // Inventory
+        if (data.contains("Inventory")) {
+            ListTag invList = data.getList("Inventory", 10);
+            for (int i = 0; i < invList.size(); i++) {
+                CompoundTag itemTag = invList.getCompound(i);
+                int slot = itemTag.getByte("Slot") & 255;
+                if (slot < inventory.getContainerSize()) {
+                    inventory.setItem(slot,
+                            ItemStack.parse(this.registryAccess(), itemTag)
+                                    .orElse(ItemStack.EMPTY));
+                }
+            }
+        }
+
+        // Equipment
+        if (data.contains("Equipment")) {
+            ListTag equipList = data.getList("Equipment", 10);
+            for (int i = 0; i < equipList.size(); i++) {
+                CompoundTag eqTag = equipList.getCompound(i);
+                String slotName = eqTag.getString("Slot");
+                EquipmentSlot slot = EquipmentSlot.byName(slotName);
+                ItemStack stack = ItemStack.parse(this.registryAccess(), eqTag)
+                        .orElse(ItemStack.EMPTY);
+                this.setItemSlot(slot, stack);
+            }
+        }
+
+        // Health
+        if (data.contains("Health")) {
+            this.setHealth(data.getFloat("Health"));
+        }
+
+        // Name
+        if (data.contains("Name")) {
+            setCompanionName(data.getString("Name"));
+        }
+
+        // Clear saved state after restoring (one-time use)
+        owner.getPersistentData().remove("mcai:companion_state");
     }
 
     // ================================================================
