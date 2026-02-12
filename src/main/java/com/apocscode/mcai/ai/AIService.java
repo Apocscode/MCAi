@@ -405,18 +405,21 @@ public class AIService {
                 - Use execute_command for game commands — when the player says 'make it day', 'clear the weather', 'give me diamonds', 'teleport me', etc. Run commands WITHOUT the leading slash.
                 - Use find_and_fetch_item as a one-step smart fetch — scans ALL containers in range and automatically pulls items. Best for 'get me 10 iron' type requests.
                 - Use set_block to place/break blocks or set up command blocks with commands
-                - Use craft_item to craft items using materials in the player's inventory
+                - Use craft_item to craft items — it auto-resolves intermediate crafting steps (logs→planks→sticks) but does NOT smelt
+                - Use smelt_items to smelt raw materials at a real furnace (raw_iron→iron_ingot, sand→glass). Requires furnace + fuel. Takes real game time.
+                - If craft_item says 'requires smelting', use smelt_items with the raw material it mentions
                 - Use rename_companion when the player wants to change your name
                 - Use list_installed_mods to see what mods are in the player's modpack — use when they ask about mods or when you need to tailor advice to their setup
                 - You can chain tools: scan_containers → interact_container, or get_recipe → craft_item
                 - Use gather_blocks to send the companion to mine specific blocks (sand, cobblestone, logs, etc.)
-                - Use transfer_items with direction='check' to see what the companion collected, then direction='to_player' to take items from the companion
-                - For autonomous crafting when the player lacks materials, chain: gather_blocks / mine_ores / chop_trees → wait for task → transfer_items(to_player) → craft_item
-                - IMPORTANT: When using gather_blocks, mine_ores, or chop_trees and you need to do something after, include the 'plan' parameter describing the next steps. Example: mine_ores({"plan": "transfer diamonds to player, then craft diamond_pickaxe"}) — this makes you automatically continue the plan when the task finishes.
-                - Example: player asks 'make me a stone pickaxe' but has no cobblestone → gather_blocks({"block":"cobblestone", "maxBlocks":3, "plan":"transfer cobblestone to player then craft stone_pickaxe"})
-                - When a [TASK_COMPLETE] message arrives, execute the plan: use transfer_items(to_player) first, then craft_item
-                - The companion automatically picks up items it mines — they go into its inventory, not the player's. Use transfer_items to move them.
-                - Use task_status to check if a mining/gathering task is complete before attempting transfer_items
+                - Use transfer_items with direction='check' to see what the companion collected, then direction='to_player' to take items
+                - The companion automatically picks up items it mines — they go into its inventory. craft_item can use items from both player and companion inventories.
+                - IMPORTANT: When using gather_blocks, mine_ores, chop_trees, or smelt_items and you need to do something after, include the 'plan' parameter.
+                - Example: mine_ores({"plan": "smelt raw_iron into iron_ingot, then craft iron_pickaxe"})
+                - Example: smelt_items({"item":"raw_iron", "count":3, "plan": "craft iron_pickaxe"})
+                - Example iron pickaxe from scratch: 1) mine_ores + chop_trees (gather raw materials) 2) smelt_items(raw_iron) 3) craft_item(iron_pickaxe) — craft_item auto-resolves sticks from logs
+                - When a [TASK_COMPLETE] message arrives, execute the next step in the plan
+                - Use task_status to check if a mining/gathering/smelting task is complete
                 - For simple 'get me X' requests, use find_and_fetch_item directly — it's the fastest path
                 - Only use tools when they'd genuinely help. Don't use tools for simple greetings or basic Minecraft facts you already know.
                 

@@ -39,6 +39,7 @@ public class ToolRegistry {
         register(new MineAreaTool());
         register(new GatherBlocksTool());
         register(new TransferItemsTool());
+        register(new SmeltItemsTool());
         register(new TaskStatusTool());
         MCAi.LOGGER.info("Registered {} AI tools: {}", tools.size(), tools.keySet());
     }
