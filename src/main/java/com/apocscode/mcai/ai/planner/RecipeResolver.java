@@ -13,11 +13,16 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 
 import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * Recursively resolves ANY item into a full dependency tree.
  * Works across all recipe types: crafting, smelting, blasting, smoking, stonecutting.
  * Categorizes each leaf node as a raw material action (MINE, CHOP, GATHER, KILL, FISH, FARM).
+ *
+ * IMPORTANT: With 600+ mods, recipe selection is critical.
+ * We score and prefer vanilla (minecraft:) recipes over modded alternatives
+ * to avoid bizarre modded conversion chains (e.g., "Cultural Log → Porkchop → Iron Ingot").
  *
  * Example: iron_pickaxe →
  *   CRAFT iron_pickaxe (needs 3x iron_ingot + 2x stick)
@@ -35,9 +40,151 @@ public class RecipeResolver {
     /** Maximum recursion depth to prevent infinite loops */
     private static final int MAX_DEPTH = 10;
 
+    /** Pre-indexed recipes by output item — built once, reused for all lookups */
+    private final Map<Item, List<RecipeHolder<?>>> craftingByOutput = new HashMap<>();
+    private final Map<Item, List<RecipeHolder<?>>> heatByOutput = new HashMap<>();
+    private final Map<Item, List<RecipeHolder<?>>> stonecutByOutput = new HashMap<>();
+
     public RecipeResolver(RecipeManager recipeManager, RegistryAccess registryAccess) {
         this.recipeManager = recipeManager;
         this.registryAccess = registryAccess;
+        buildRecipeIndex();
+    }
+
+    // ========== Recipe index (like EMI does client-side) ==========
+
+    /**
+     * Build output→recipe index for O(1) lookups instead of scanning all recipes every time.
+     * Only indexes recipes we can actually use (crafting, smelting, blasting, smoking, campfire, stonecutting).
+     * Skips recipes that throw exceptions or return null results (common with 600+ mods).
+     */
+    private void buildRecipeIndex() {
+        int indexed = 0, skipped = 0;
+        for (RecipeHolder<?> holder : recipeManager.getRecipes()) {
+            try {
+                Recipe<?> r = holder.value();
+                if (r == null) { skipped++; continue; }
+                ItemStack result = safeResult(r);
+                if (result.isEmpty()) { skipped++; continue; }
+                Item outputItem = result.getItem();
+
+                if (r instanceof ShapedRecipe || r instanceof ShapelessRecipe) {
+                    craftingByOutput.computeIfAbsent(outputItem, k -> new ArrayList<>()).add(holder);
+                    indexed++;
+                } else if (r instanceof SmeltingRecipe || r instanceof BlastingRecipe
+                        || r instanceof SmokingRecipe || r instanceof CampfireCookingRecipe) {
+                    heatByOutput.computeIfAbsent(outputItem, k -> new ArrayList<>()).add(holder);
+                    indexed++;
+                } else if (r instanceof StonecutterRecipe) {
+                    stonecutByOutput.computeIfAbsent(outputItem, k -> new ArrayList<>()).add(holder);
+                    indexed++;
+                }
+                // Skip all other recipe types (Create processing, Mekanism machines, etc.)
+                // — these require special machines the companion can't use
+            } catch (Exception e) {
+                skipped++;
+            }
+        }
+        MCAi.LOGGER.info("RecipeResolver: indexed {} recipes ({} skipped), "
+                + "crafting={}, heat={}, stonecut={}",
+                indexed, skipped, craftingByOutput.size(), heatByOutput.size(), stonecutByOutput.size());
+
+        // Sort each recipe list by score (best first)
+        for (List<RecipeHolder<?>> list : craftingByOutput.values()) {
+            list.sort((a, b) -> scoreRecipe(b) - scoreRecipe(a));
+        }
+        for (List<RecipeHolder<?>> list : heatByOutput.values()) {
+            list.sort((a, b) -> scoreRecipe(b) - scoreRecipe(a));
+        }
+        for (List<RecipeHolder<?>> list : stonecutByOutput.values()) {
+            list.sort((a, b) -> scoreRecipe(b) - scoreRecipe(a));
+        }
+    }
+
+    // ========== Null-safe result helper ==========
+
+    /**
+     * Safely get result ItemStack from any recipe.
+     * Many modded recipes (Create ProcessingRecipe, Mystical Agriculture essence, etc.)
+     * return null from getResultItem(). This ALWAYS returns non-null.
+     */
+    private ItemStack safeResult(Recipe<?> r) {
+        try {
+            ItemStack result = r.getResultItem(registryAccess);
+            return result != null ? result : ItemStack.EMPTY;
+        } catch (Exception e) {
+            return ItemStack.EMPTY;
+        }
+    }
+
+    /**
+     * Static version for use outside the resolver (CraftItemTool, GetRecipeTool).
+     */
+    public static ItemStack safeGetResult(Recipe<?> r, RegistryAccess registryAccess) {
+        try {
+            ItemStack result = r.getResultItem(registryAccess);
+            return result != null ? result : ItemStack.EMPTY;
+        } catch (Exception e) {
+            return ItemStack.EMPTY;
+        }
+    }
+
+    // ========== Recipe scoring (vanilla preference) ==========
+
+    /**
+     * Score a recipe for preference ranking. Higher = better.
+     * Strongly prefers vanilla (minecraft:) recipes over modded alternatives.
+     * This prevents the resolver from picking bizarre modded conversion chains
+     * like "Cultural Log → Raw Porkchop → Iron Ingot" when the vanilla recipe
+     * "3x Iron Ingot + 2x Stick → Iron Pickaxe" is available.
+     */
+    private int scoreRecipe(RecipeHolder<?> holder) {
+        int score = 0;
+        try {
+            ResourceLocation recipeId = holder.id();
+            String namespace = recipeId.getNamespace();
+
+            // ---- Namespace scoring ----
+            // Vanilla recipes are almost always correct and simple
+            if (namespace.equals("minecraft")) {
+                score += 1000;
+            }
+            // Penalize mob/essence/mystical agriculture conversion recipes
+            // These mods add recipes that convert mob essences → vanilla items
+            if (namespace.contains("mystical") || namespace.contains("apotheosis")
+                    || namespace.contains("productive") || namespace.contains("mob")
+                    || namespace.contains("essence") || namespace.contains("occultism")
+                    || namespace.contains("ars_") || namespace.contains("botania")
+                    || namespace.contains("bloodmagic") || namespace.contains("forbidden")
+                    || namespace.contains("pneumaticcraft") || namespace.contains("integrated")) {
+                score -= 500;
+            }
+
+            // ---- Ingredient scoring ----
+            Recipe<?> r = holder.value();
+            if (r != null) {
+                List<Ingredient> ings = r.getIngredients();
+                if (ings != null) {
+                    for (Ingredient ing : ings) {
+                        if (ing == null || ing.isEmpty()) continue;
+                        try {
+                            ItemStack[] items = ing.getItems();
+                            if (items != null && items.length > 0 && items[0] != null) {
+                                ResourceLocation itemId = BuiltInRegistries.ITEM.getKey(items[0].getItem());
+                                if (itemId != null && itemId.getNamespace().equals("minecraft")) {
+                                    score += 20; // Vanilla ingredient = good
+                                } else {
+                                    score -= 10; // Modded ingredient = slightly bad
+                                }
+                            }
+                        } catch (Exception ignored) {}
+                    }
+                }
+            }
+        } catch (Exception e) {
+            score = -9999; // Can't even inspect this recipe — rank it last
+        }
+        return score;
     }
 
     // ========== Step category for each node in the tree ==========
@@ -195,81 +342,92 @@ public class RecipeResolver {
 
     private DependencyNode tryCraftingRecipe(Item item, int count, Map<Item, Integer> available,
                                               Set<Item> visited, int depth) {
-        RecipeHolder<?> best = null;
+        // Use pre-indexed recipes — already sorted by score (vanilla first)
+        List<RecipeHolder<?>> candidates = craftingByOutput.get(item);
+        if (candidates == null || candidates.isEmpty()) return null;
 
-        for (RecipeHolder<?> holder : recipeManager.getRecipes()) {
+        // Try each candidate in score order (best/vanilla first)
+        for (RecipeHolder<?> best : candidates) {
             try {
-                Recipe<?> r = holder.value();
-                if (r == null) continue;
-                if (!(r instanceof ShapedRecipe) && !(r instanceof ShapelessRecipe)) continue;
-                ItemStack resultStack = r.getResultItem(registryAccess);
-                if (resultStack == null || resultStack.isEmpty()) continue;
-                if (resultStack.getItem() != item) continue;
-                best = holder;
-                break;
+                Recipe<?> recipe = best.value();
+                if (recipe == null) continue;
+                ItemStack resultStack = safeResult(recipe);
+                if (resultStack.isEmpty()) continue;
+                int outputPerCraft = resultStack.getCount();
+                if (outputPerCraft <= 0) outputPerCraft = 1;
+                int craftsNeeded = (int) Math.ceil((double) count / outputPerCraft);
+
+                DependencyNode node = new DependencyNode(item, count, StepType.CRAFT, best);
+
+                // Resolve each ingredient recursively
+                Map<Item, Integer> grouped = groupIngredients(recipe.getIngredients(), craftsNeeded);
+                boolean hasUnresolvable = false;
+                for (Map.Entry<Item, Integer> entry : grouped.entrySet()) {
+                    DependencyNode child = resolveRecursive(entry.getKey(), entry.getValue(),
+                            available, new HashSet<>(visited), depth + 1);
+                    node.children.add(child);
+                    // If ANY child is UNKNOWN and this is a modded recipe, try next candidate
+                    if (child.type == StepType.UNKNOWN) hasUnresolvable = true;
+                }
+
+                // If all ingredients resolved OR this is a vanilla recipe, accept it
+                ResourceLocation recipeId = best.id();
+                if (!hasUnresolvable || recipeId.getNamespace().equals("minecraft")) {
+                    return node;
+                }
+                // Modded recipe with unresolvable ingredients — try next candidate
+                MCAi.LOGGER.debug("RecipeResolver: skipping {} (has UNKNOWN ingredients), trying next",
+                        recipeId);
             } catch (Exception e) {
-                // Modded recipe threw during inspection — skip it
-                continue;
+                MCAi.LOGGER.warn("RecipeResolver: crafting recipe for {} threw: {}",
+                        BuiltInRegistries.ITEM.getKey(item), e.getMessage());
             }
         }
 
-        if (best == null) return null;
-
+        // All candidates had issues — use the best-scored one anyway
         try {
-            Recipe<?> recipe = best.value();
-            ItemStack resultStack = recipe.getResultItem(registryAccess);
-            if (resultStack == null || resultStack.isEmpty()) return null;
-            int outputPerCraft = resultStack.getCount();
-            if (outputPerCraft <= 0) outputPerCraft = 1;
+            RecipeHolder<?> fallback = candidates.get(0);
+            Recipe<?> recipe = fallback.value();
+            ItemStack resultStack = safeResult(recipe);
+            if (resultStack.isEmpty()) return null;
+            int outputPerCraft = Math.max(1, resultStack.getCount());
             int craftsNeeded = (int) Math.ceil((double) count / outputPerCraft);
-
-            DependencyNode node = new DependencyNode(item, count, StepType.CRAFT, best);
-
-            // Resolve each ingredient recursively
+            DependencyNode node = new DependencyNode(item, count, StepType.CRAFT, fallback);
             Map<Item, Integer> grouped = groupIngredients(recipe.getIngredients(), craftsNeeded);
             for (Map.Entry<Item, Integer> entry : grouped.entrySet()) {
                 DependencyNode child = resolveRecursive(entry.getKey(), entry.getValue(),
                         available, new HashSet<>(visited), depth + 1);
                 node.children.add(child);
             }
-
             return node;
         } catch (Exception e) {
-            MCAi.LOGGER.warn("RecipeResolver: crafting recipe for {} threw: {}",
-                    BuiltInRegistries.ITEM.getKey(item), e.getMessage());
             return null;
         }
     }
 
     private DependencyNode tryHeatRecipe(Item item, int count, Map<Item, Integer> available,
                                           Set<Item> visited, int depth) {
+        // Use pre-indexed heat recipes — already sorted by score (vanilla first)
+        List<RecipeHolder<?>> candidates = heatByOutput.get(item);
+        if (candidates == null || candidates.isEmpty()) return null;
+
+        // Pick best candidate, preferring SmeltingRecipe > BlastingRecipe > others
         RecipeHolder<?> best = null;
         StepType stepType = null;
 
-        for (RecipeHolder<?> holder : recipeManager.getRecipes()) {
+        for (RecipeHolder<?> holder : candidates) {
             try {
                 Recipe<?> r = holder.value();
                 if (r == null) continue;
-                // Skip non-heat recipe types early (performance: 602 mods = thousands of recipes)
-                if (!(r instanceof SmeltingRecipe) && !(r instanceof BlastingRecipe)
-                        && !(r instanceof SmokingRecipe) && !(r instanceof CampfireCookingRecipe)) continue;
-                ItemStack resultStack = r.getResultItem(registryAccess);
-                if (resultStack == null || resultStack.isEmpty()) continue;
-                if (resultStack.getItem() != item) continue;
-
                 if (r instanceof SmeltingRecipe) {
                     best = holder;
                     stepType = StepType.SMELT;
-                    break; // Prefer smelting
-                } else if (r instanceof BlastingRecipe && best == null) {
+                    break; // SmeltingRecipe is always preferred
+                } else if (best == null) {
                     best = holder;
-                    stepType = StepType.BLAST;
-                } else if (r instanceof SmokingRecipe && best == null) {
-                    best = holder;
-                    stepType = StepType.SMOKE;
-                } else if (r instanceof CampfireCookingRecipe && best == null) {
-                    best = holder;
-                    stepType = StepType.CAMPFIRE_COOK;
+                    if (r instanceof BlastingRecipe) stepType = StepType.BLAST;
+                    else if (r instanceof SmokingRecipe) stepType = StepType.SMOKE;
+                    else if (r instanceof CampfireCookingRecipe) stepType = StepType.CAMPFIRE_COOK;
                 }
             } catch (Exception e) {
                 continue;
@@ -289,10 +447,12 @@ public class RecipeResolver {
                 if (firstIng != null && !firstIng.isEmpty()) {
                     ItemStack[] variants = firstIng.getItems();
                     if (variants != null && variants.length > 0 && variants[0] != null) {
-                        Item inputItem = variants[0].getItem();
-                        DependencyNode child = resolveRecursive(inputItem, count,
-                                available, new HashSet<>(visited), depth + 1);
-                        node.children.add(child);
+                        Item inputItem = pickBestVariant(variants);
+                        if (inputItem != null) {
+                            DependencyNode child = resolveRecursive(inputItem, count,
+                                    available, new HashSet<>(visited), depth + 1);
+                            node.children.add(child);
+                        }
                     }
                 }
             }
@@ -307,17 +467,18 @@ public class RecipeResolver {
 
     private DependencyNode tryStonecutRecipe(Item item, int count, Map<Item, Integer> available,
                                               Set<Item> visited, int depth) {
-        for (RecipeHolder<?> holder : recipeManager.getRecipes()) {
+        // Use pre-indexed stonecut recipes
+        List<RecipeHolder<?>> candidates = stonecutByOutput.get(item);
+        if (candidates == null || candidates.isEmpty()) return null;
+
+        for (RecipeHolder<?> holder : candidates) {
             try {
                 Recipe<?> r = holder.value();
                 if (r == null) continue;
-                if (!(r instanceof StonecutterRecipe)) continue;
-                ItemStack resultStack = r.getResultItem(registryAccess);
-                if (resultStack == null || resultStack.isEmpty()) continue;
-                if (resultStack.getItem() != item) continue;
+                ItemStack resultStack = safeResult(r);
+                if (resultStack.isEmpty()) continue;
 
-                int outputPerCraft = resultStack.getCount();
-                if (outputPerCraft <= 0) outputPerCraft = 1;
+                int outputPerCraft = Math.max(1, resultStack.getCount());
                 int craftsNeeded = (int) Math.ceil((double) count / outputPerCraft);
 
                 DependencyNode node = new DependencyNode(item, count, StepType.STONECUT, holder);
@@ -328,10 +489,12 @@ public class RecipeResolver {
                     if (firstIng != null && !firstIng.isEmpty()) {
                         ItemStack[] variants = firstIng.getItems();
                         if (variants != null && variants.length > 0 && variants[0] != null) {
-                            Item inputItem = variants[0].getItem();
-                            DependencyNode child = resolveRecursive(inputItem, craftsNeeded,
-                                    available, new HashSet<>(visited), depth + 1);
-                            node.children.add(child);
+                            Item inputItem = pickBestVariant(variants);
+                            if (inputItem != null) {
+                                DependencyNode child = resolveRecursive(inputItem, craftsNeeded,
+                                        available, new HashSet<>(visited), depth + 1);
+                                node.children.add(child);
+                            }
                         }
                     }
                 }

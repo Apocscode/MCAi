@@ -1,6 +1,7 @@
 package com.apocscode.mcai.ai.tool;
 
 import com.apocscode.mcai.MCAi;
+import com.apocscode.mcai.ai.planner.RecipeResolver;
 import com.google.gson.JsonObject;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
@@ -85,17 +86,24 @@ public class GetRecipeTool implements AiTool {
             String displayName = item.getDescription().getString();
             sb.append("=== ").append(displayName).append(" (").append(itemId).append(") ===\n");
 
-            // Search all recipes for this item output
+            // Search all recipes for this item output — prefer vanilla (minecraft:) recipes
             boolean foundRecipe = false;
+            boolean foundVanilla = false;
 
             for (RecipeHolder<?> holder : recipeManager.getRecipes()) {
                 try {
                     Recipe<?> recipe = holder.value();
                     if (recipe == null) continue;
-                    ItemStack result = recipe.getResultItem(context.server().registryAccess());
-                    if (result == null || result.isEmpty()) continue;
+                    ItemStack result = RecipeResolver.safeGetResult(recipe, context.server().registryAccess());
+                    if (result.isEmpty()) continue;
 
                     if (result.getItem() == item) {
+                    // Skip non-vanilla recipes if we already have a vanilla one
+                    boolean isVanilla = holder.id().getNamespace().equals("minecraft");
+                    if (foundVanilla && !isVanilla) continue;
+                    if (isVanilla && !foundVanilla) {
+                        foundVanilla = true;
+                    }
                     foundRecipe = true;
                     sb.append("\nRecipe type: ").append(holder.id()).append("\n");
 

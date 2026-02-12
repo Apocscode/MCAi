@@ -159,7 +159,10 @@ public class CraftItemTool implements AiTool {
             }
 
             Recipe<?> recipe = craftRecipe.value();
-            ItemStack recipeResult = recipe.getResultItem(registryAccess);
+            ItemStack recipeResult = RecipeResolver.safeGetResult(recipe, registryAccess);
+            if (recipeResult.isEmpty()) {
+                return craftLog.toString() + "Found recipe but cannot determine output for '" + targetName + "'.";
+            }
             int outputPerCraft = recipeResult.getCount();
             List<Ingredient> ingredients = recipe.getIngredients();
             int stillNeed = finalCount - (alreadyHave + fetched);
@@ -375,7 +378,8 @@ public class CraftItemTool implements AiTool {
             // Skip 3x3 sub-recipes if no crafting table access (can't auto-place during fetch phase)
             if (!sub.canCraftInDimensions(2, 2) && !hasCraftingAccess(context)) continue;
 
-            int outputPerCraft = sub.getResultItem(registryAccess).getCount();
+            int outputPerCraft = RecipeResolver.safeGetResult(sub, registryAccess).getCount();
+            if (outputPerCraft <= 0) outputPerCraft = 1;
             List<Ingredient> subIngs = sub.getIngredients();
             int subCraftsNeeded = (int) Math.ceil((double) deficit / outputPerCraft);
 
@@ -472,7 +476,8 @@ public class CraftItemTool implements AiTool {
             // Skip 3x3 sub-recipes if no crafting table access (can't auto-place during auto-craft phase)
             if (!sub.canCraftInDimensions(2, 2) && !hasCraftingAccess(context)) continue;
 
-            int outputPerCraft = sub.getResultItem(registryAccess).getCount();
+            int outputPerCraft = RecipeResolver.safeGetResult(sub, registryAccess).getCount();
+            if (outputPerCraft <= 0) outputPerCraft = 1;
             List<Ingredient> subIngs = sub.getIngredients();
             int subCraftsNeeded = (int) Math.ceil((double) deficit / outputPerCraft);
 
@@ -1101,28 +1106,45 @@ public class CraftItemTool implements AiTool {
                                                      RegistryAccess registryAccess, Item targetItem,
                                                      @Nullable ToolContext context) {
         RecipeHolder<?> firstMatch = null;
+        RecipeHolder<?> vanillaMatch = null;
 
         for (RecipeHolder<?> holder : recipeManager.getRecipes()) {
-            Recipe<?> r = holder.value();
-            if (!(r instanceof ShapedRecipe) && !(r instanceof ShapelessRecipe)) continue;
-            if (r.getResultItem(registryAccess).getItem() != targetItem) continue;
+            try {
+                Recipe<?> r = holder.value();
+                if (r == null) continue;
+                if (!(r instanceof ShapedRecipe) && !(r instanceof ShapelessRecipe)) continue;
+                ItemStack result = RecipeResolver.safeGetResult(r, registryAccess);
+                if (result.isEmpty()) continue;
+                if (result.getItem() != targetItem) continue;
 
-            if (firstMatch == null) firstMatch = holder;
+                // Track first match as fallback
+                if (firstMatch == null) firstMatch = holder;
 
-            // If context available, prefer recipes the player can actually craft
-            if (context != null) {
-                boolean canCraft = true;
-                for (Ingredient ing : r.getIngredients()) {
-                    if (ing.isEmpty()) continue;
-                    if (countInInventory(context, ing) <= 0) {
-                        canCraft = false;
-                        break;
-                    }
+                // Strongly prefer vanilla (minecraft:) namespace recipes
+                ResourceLocation recipeId = holder.id();
+                if (recipeId.getNamespace().equals("minecraft")) {
+                    vanillaMatch = holder;
                 }
-                if (canCraft) return holder; // Player has all ingredients — use this recipe
+
+                // If context available, prefer recipes the player can actually craft
+                if (context != null) {
+                    boolean canCraft = true;
+                    for (Ingredient ing : r.getIngredients()) {
+                        if (ing.isEmpty()) continue;
+                        if (countInInventory(context, ing) <= 0) {
+                            canCraft = false;
+                            break;
+                        }
+                    }
+                    if (canCraft) return holder; // Player has all ingredients — use this recipe
+                }
+            } catch (Exception e) {
+                // Modded recipe threw during inspection — skip it
+                continue;
             }
         }
-        return firstMatch; // Fallback to first match if no craftable recipe found
+        // Prefer vanilla recipe, then first match as fallback
+        return vanillaMatch != null ? vanillaMatch : firstMatch;
     }
 
     /**
@@ -1131,12 +1153,18 @@ public class CraftItemTool implements AiTool {
     private RecipeHolder<?> findSmeltingRecipe(RecipeManager recipeManager,
                                                 RegistryAccess registryAccess, Item targetItem) {
         for (RecipeHolder<?> holder : recipeManager.getRecipes()) {
-            Recipe<?> r = holder.value();
-            if (r instanceof SmeltingRecipe || r instanceof BlastingRecipe
-                    || r instanceof SmokingRecipe || r instanceof CampfireCookingRecipe) {
-                if (r.getResultItem(registryAccess).getItem() == targetItem) {
-                    return holder;
+            try {
+                Recipe<?> r = holder.value();
+                if (r == null) continue;
+                if (r instanceof SmeltingRecipe || r instanceof BlastingRecipe
+                        || r instanceof SmokingRecipe || r instanceof CampfireCookingRecipe) {
+                    ItemStack result = RecipeResolver.safeGetResult(r, registryAccess);
+                    if (!result.isEmpty() && result.getItem() == targetItem) {
+                        return holder;
+                    }
                 }
+            } catch (Exception e) {
+                continue; // Modded recipe threw — skip
             }
         }
         return null;

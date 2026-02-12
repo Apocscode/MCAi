@@ -1,5 +1,6 @@
 package com.apocscode.mcai.ai.tool;
 
+import com.apocscode.mcai.ai.planner.RecipeResolver;
 import com.apocscode.mcai.entity.CompanionEntity;
 import com.apocscode.mcai.task.BlockHelper;
 import com.apocscode.mcai.task.SmeltItemsTask;
@@ -122,8 +123,8 @@ public class SmeltItemsTool implements AiTool {
             }
 
             String outputName;
-            ItemStack outputStack = smeltRecipe.value().getResultItem(registryAccess);
-            if (outputStack != null && !outputStack.isEmpty()) {
+            ItemStack outputStack = RecipeResolver.safeGetResult(smeltRecipe.value(), registryAccess);
+            if (!outputStack.isEmpty()) {
                 outputName = outputStack.getItem().getDescription().getString();
             } else {
                 outputName = "smelted item";
@@ -200,8 +201,8 @@ public class SmeltItemsTool implements AiTool {
                         && !(r instanceof SmokingRecipe) && !(r instanceof CampfireCookingRecipe)) {
                     continue;
                 }
-                ItemStack result = r.getResultItem(registryAccess);
-                if (result != null && !result.isEmpty() && result.is(outputItem)) {
+                ItemStack result = RecipeResolver.safeGetResult(r, registryAccess);
+                if (!result.isEmpty() && result.is(outputItem)) {
                     return holder;
                 }
             } catch (Exception e) {
