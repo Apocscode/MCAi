@@ -32,6 +32,8 @@ public class CompanionPickupItemGoal extends Goal {
 
     @Override
     public boolean canUse() {
+        // STAY mode: don't seek items
+        if (companion.getBehaviorMode() == CompanionEntity.BehaviorMode.STAY) return false;
         if (--cooldown > 0) return false;
         cooldown = SEARCH_COOLDOWN;
 

@@ -42,6 +42,8 @@ public class CompanionFarmGoal extends Goal {
 
     @Override
     public boolean canUse() {
+        if (companion.getBehaviorMode() == CompanionEntity.BehaviorMode.STAY) return false;
+        if (companion.getBehaviorMode() == CompanionEntity.BehaviorMode.FOLLOW) return false;
         if (companion.getOwner() == null) return false;
         if (companion.level().isClientSide) return false;
         if (harvestCooldown > 0) {

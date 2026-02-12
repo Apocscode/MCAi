@@ -9,6 +9,9 @@ import com.apocscode.mcai.network.OpenChatScreenPacket;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.syncher.EntityDataAccessor;
+import net.minecraft.network.syncher.EntityDataSerializers;
+import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
@@ -55,9 +58,23 @@ import java.util.concurrent.ConcurrentHashMap;
  *   - Sneak + hit (owner) = dismiss
  */
 public class CompanionEntity extends PathfinderMob implements MenuProvider {
+
+    // ================================================================
+    // Behavior modes — STAY, FOLLOW, AUTO (autonomous)
+    // ================================================================
+    public enum BehaviorMode {
+        STAY,    // Stand in place, don't follow or wander
+        FOLLOW,  // Follow the owner (default)
+        AUTO     // Autonomous — wander, farm, cook, hunt, pickup independently
+    }
+
+    private static final EntityDataAccessor<Integer> DATA_BEHAVIOR_MODE =
+            SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.INT);
+
     private static final String TAG_OWNER = "OwnerUUID";
     private static final String TAG_NAME = "CompanionName";
     private static final String TAG_INVENTORY = "CompanionInventory";
+    private static final String TAG_BEHAVIOR_MODE = "BehaviorMode";
 
     public static final int INVENTORY_SIZE = 27;
 
@@ -121,6 +138,39 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
         } catch (Exception ignored) {}
     }
 
+    @Override
+    protected void defineSynchedData(SynchedEntityData.Builder builder) {
+        super.defineSynchedData(builder);
+        builder.define(DATA_BEHAVIOR_MODE, BehaviorMode.FOLLOW.ordinal());
+    }
+
+    // ================================================================
+    // BehaviorMode getters / setters
+    // ================================================================
+
+    public BehaviorMode getBehaviorMode() {
+        int ordinal = this.entityData.get(DATA_BEHAVIOR_MODE);
+        BehaviorMode[] modes = BehaviorMode.values();
+        return (ordinal >= 0 && ordinal < modes.length) ? modes[ordinal] : BehaviorMode.FOLLOW;
+    }
+
+    public void setBehaviorMode(BehaviorMode mode) {
+        this.entityData.set(DATA_BEHAVIOR_MODE, mode.ordinal());
+        if (!this.level().isClientSide) {
+            // Stop navigation on mode change
+            this.getNavigation().stop();
+            Player owner = getOwner();
+            if (owner != null) {
+                String label = switch (mode) {
+                    case STAY -> "§eStay§r — standing in place";
+                    case FOLLOW -> "§aFollow§r — following you";
+                    case AUTO -> "§bAuto§r — acting autonomously";
+                };
+                owner.sendSystemMessage(Component.literal("§b[MCAi]§r " + companionName + " mode: " + label));
+            }
+        }
+    }
+
     // ================================================================
     // Attributes — now has attack damage for combat
     // ================================================================
@@ -152,7 +202,13 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
         this.goalSelector.addGoal(6, new CompanionFollowGoal(this, 1.2D, 4.0F, 32.0F));
         this.goalSelector.addGoal(7, new CompanionLookAtPlayerGoal(this, 8.0F));
         this.goalSelector.addGoal(8, new RandomLookAroundGoal(this));
-        this.goalSelector.addGoal(9, new WaterAvoidingRandomStrollGoal(this, 0.6D));
+        // Wander only in AUTO mode
+        this.goalSelector.addGoal(9, new WaterAvoidingRandomStrollGoal(this, 0.6D) {
+            @Override
+            public boolean canUse() {
+                return getBehaviorMode() == BehaviorMode.AUTO && super.canUse();
+            }
+        });
 
         // Targeting
         this.targetSelector.addGoal(1, new HurtByTargetGoal(this));
@@ -701,6 +757,7 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
             }
         }
         tag.put(TAG_INVENTORY, invList);
+        tag.putInt(TAG_BEHAVIOR_MODE, getBehaviorMode().ordinal());
     }
 
     @Override
@@ -722,6 +779,14 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
                             ItemStack.parse(this.registryAccess(), itemTag)
                                     .orElse(ItemStack.EMPTY));
                 }
+            }
+        }
+
+        if (tag.contains(TAG_BEHAVIOR_MODE)) {
+            int modeOrd = tag.getInt(TAG_BEHAVIOR_MODE);
+            BehaviorMode[] modes = BehaviorMode.values();
+            if (modeOrd >= 0 && modeOrd < modes.length) {
+                this.entityData.set(DATA_BEHAVIOR_MODE, modeOrd);
             }
         }
     }

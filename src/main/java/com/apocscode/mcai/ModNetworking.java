@@ -3,6 +3,7 @@ package com.apocscode.mcai;
 import com.apocscode.mcai.network.ChatMessagePacket;
 import com.apocscode.mcai.network.ChatResponsePacket;
 import com.apocscode.mcai.network.OpenChatScreenPacket;
+import com.apocscode.mcai.network.SetBehaviorModePacket;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
@@ -37,5 +38,11 @@ public class ModNetworking {
                 ChatResponsePacket.TYPE,
                 ChatResponsePacket.STREAM_CODEC,
                 ChatResponsePacket::handle);
+
+        // Client → Server: set companion behavior mode
+        registrar.playToServer(
+                SetBehaviorModePacket.TYPE,
+                SetBehaviorModePacket.STREAM_CODEC,
+                SetBehaviorModePacket::handle);
     }
 }

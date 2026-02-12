@@ -28,6 +28,8 @@ public class CompanionFollowGoal extends Goal {
 
     @Override
     public boolean canUse() {
+        // Only follow in FOLLOW mode
+        if (companion.getBehaviorMode() != CompanionEntity.BehaviorMode.FOLLOW) return false;
         owner = companion.getOwner();
         if (owner == null) return false;
         if (owner.isSpectator()) return false;

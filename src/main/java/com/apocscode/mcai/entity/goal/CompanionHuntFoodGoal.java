@@ -33,6 +33,8 @@ public class CompanionHuntFoodGoal extends NearestAttackableTargetGoal<Animal> {
 
     @Override
     public boolean canUse() {
+        if (companion.getBehaviorMode() == CompanionEntity.BehaviorMode.STAY) return false;
+        if (companion.getBehaviorMode() == CompanionEntity.BehaviorMode.FOLLOW) return false;
         if (companion.getOwner() == null) return false;
         if (companion.getHealth() >= companion.getMaxHealth() * 0.8f) return false;
         if (companion.hasFood()) return false;

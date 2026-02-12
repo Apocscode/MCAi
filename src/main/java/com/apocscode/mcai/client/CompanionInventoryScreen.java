@@ -2,12 +2,14 @@ package com.apocscode.mcai.client;
 
 import com.apocscode.mcai.entity.CompanionEntity;
 import com.apocscode.mcai.inventory.CompanionInventoryMenu;
+import com.apocscode.mcai.network.SetBehaviorModePacket;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.inventory.Slot;
+import net.neoforged.neoforge.network.PacketDistributor;
 
 /**
  * GUI screen for the companion's inventory.
@@ -28,6 +30,13 @@ public class CompanionInventoryScreen extends AbstractContainerScreen<CompanionI
     private static final int SLOT_BG      = 0xFF8B8B8B;
     private static final int SLOT_SHADOW  = 0xFF373737;
     private static final int LABEL_COLOR  = 0x404040;
+
+    // Mode button colors
+    private static final int MODE_STAY_COLOR   = 0xFFFFAA00; // Orange
+    private static final int MODE_FOLLOW_COLOR = 0xFF55FF55; // Green
+    private static final int MODE_AUTO_COLOR   = 0xFF55FFFF; // Cyan
+
+    private Button stayBtn, followBtn, autoBtn;
 
     public CompanionInventoryScreen(CompanionInventoryMenu menu, Inventory playerInv, Component title) {
         super(menu, playerInv, title);
@@ -52,6 +61,38 @@ public class CompanionInventoryScreen extends AbstractContainerScreen<CompanionI
                 })
                 .bounds(this.leftPos + this.imageWidth - 52, this.topPos + 6, 44, 14)
                 .build());
+
+        // Behavior mode buttons — placed to the right of equipment label row
+        int btnY = this.topPos + 22;
+        int btnW = 34;
+        int btnH = 14;
+        int btnStartX = this.leftPos + this.imageWidth - 110;
+
+        stayBtn = this.addRenderableWidget(Button.builder(
+                Component.literal("Stay"),
+                btn -> sendModePacket(CompanionEntity.BehaviorMode.STAY))
+                .bounds(btnStartX, btnY, btnW, btnH)
+                .build());
+
+        followBtn = this.addRenderableWidget(Button.builder(
+                Component.literal("Follow"),
+                btn -> sendModePacket(CompanionEntity.BehaviorMode.FOLLOW))
+                .bounds(btnStartX + btnW + 2, btnY, btnW + 4, btnH)
+                .build());
+
+        autoBtn = this.addRenderableWidget(Button.builder(
+                Component.literal("Auto"),
+                btn -> sendModePacket(CompanionEntity.BehaviorMode.AUTO))
+                .bounds(btnStartX + btnW + 2 + btnW + 4 + 2, btnY, btnW, btnH)
+                .build());
+    }
+
+    private void sendModePacket(CompanionEntity.BehaviorMode mode) {
+        CompanionEntity companion = this.menu.getCompanion();
+        if (companion != null) {
+            PacketDistributor.sendToServer(
+                    new SetBehaviorModePacket(companion.getId(), mode.ordinal()));
+        }
     }
 
     // ================================================================
@@ -92,6 +133,27 @@ public class CompanionInventoryScreen extends AbstractContainerScreen<CompanionI
         g.drawString(this.font, "B", x + 66, labelY, 0x606060, false);
         g.drawString(this.font, "W", x + 100, labelY, 0x606060, false);
         g.drawString(this.font, "S", x + 120, labelY, 0x606060, false);
+
+        // Active mode indicator — colored bar under the active button
+        CompanionEntity companion = this.menu.getCompanion();
+        if (companion != null) {
+            CompanionEntity.BehaviorMode mode = companion.getBehaviorMode();
+            Button activeBtn = switch (mode) {
+                case STAY -> stayBtn;
+                case FOLLOW -> followBtn;
+                case AUTO -> autoBtn;
+            };
+            int color = switch (mode) {
+                case STAY -> MODE_STAY_COLOR;
+                case FOLLOW -> MODE_FOLLOW_COLOR;
+                case AUTO -> MODE_AUTO_COLOR;
+            };
+            if (activeBtn != null) {
+                g.fill(activeBtn.getX(), activeBtn.getY() + activeBtn.getHeight(),
+                        activeBtn.getX() + activeBtn.getWidth(),
+                        activeBtn.getY() + activeBtn.getHeight() + 2, color);
+            }
+        }
     }
 
     @Override
