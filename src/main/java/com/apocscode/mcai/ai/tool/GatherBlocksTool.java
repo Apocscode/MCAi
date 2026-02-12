@@ -100,9 +100,9 @@ public class GatherBlocksTool implements AiTool {
 
             companion.getTaskManager().queueTask(task);
 
-            return "Queued gather task: collecting up to " + maxBlocks + " "
+            return "[ASYNC_TASK] Queued gather task: collecting up to " + maxBlocks + " "
                     + targetBlock.getName().getString() + " within " + radius + " blocks. "
-                    + "The companion will mine the blocks and pick up the drops automatically.";
+                    + "This task runs over time — STOP calling tools and tell the player you're on it.";
         });
     }
 

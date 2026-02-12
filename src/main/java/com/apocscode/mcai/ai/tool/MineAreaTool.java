@@ -85,7 +85,8 @@ public class MineAreaTool implements AiTool {
             MineBlocksTask task = new MineBlocksTask(companion, from, to);
             companion.getTaskManager().queueTask(task);
 
-            return "Queued area mining task: " + sizeX + "x" + sizeY + "x" + sizeZ + " blocks.";
+            return "[ASYNC_TASK] Queued area mining task: " + sizeX + "x" + sizeY + "x" + sizeZ + " blocks. " +
+                    "This task runs over time — STOP calling tools and tell the player you're on it.";
         });
     }
 }

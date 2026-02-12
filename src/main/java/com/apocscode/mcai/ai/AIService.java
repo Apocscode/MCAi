@@ -183,6 +183,7 @@ public class AIService {
                     messages.add(assistantMessage);
 
                     // Execute each tool call and add results
+                    boolean asyncTaskQueued = false;
                     for (JsonElement tcElement : toolCalls) {
                         JsonObject toolCall = tcElement.getAsJsonObject();
                         JsonObject function = toolCall.getAsJsonObject("function");
@@ -212,6 +213,11 @@ public class AIService {
                         String result = executeTool(toolName, toolArgs, toolCtx);
                         long toolElapsed = System.currentTimeMillis() - toolStartMs;
 
+                        // Detect async task marker
+                        if (result.contains("[ASYNC_TASK]")) {
+                            asyncTaskQueued = true;
+                        }
+
                         // Add tool result — Groq requires tool_call_id, Ollama just uses "tool" role
                         JsonObject toolResultMsg = new JsonObject();
                         toolResultMsg.addProperty("role", "tool");
@@ -226,7 +232,40 @@ public class AIService {
                                 toolName, toolElapsed, result.length());
                     }
 
-                    // Continue loop — Ollama will process tool results and either
+                    // If an async task was queued, inject a stop instruction and do ONE final
+                    // iteration to get the AI's text response to the player, then break.
+                    if (asyncTaskQueued) {
+                        MCAi.LOGGER.info("Async task detected — forcing AI to respond to player");
+                        JsonObject stopMsg = new JsonObject();
+                        stopMsg.addProperty("role", "system");
+                        stopMsg.addProperty("content",
+                                "An async task is now running. STOP calling tools. " +
+                                "Give the player a brief, friendly status update about what you're doing. " +
+                                "Do NOT call any more tools.");
+                        messages.add(stopMsg);
+
+                        // One more LLM call to get the final text
+                        try {
+                            JsonObject finalResp = useGroq ? callGroq(messages, userMessage) : callOllama(messages, userMessage);
+                            JsonObject finalMsg;
+                            if (finalResp.has("choices")) {
+                                finalMsg = finalResp.getAsJsonArray("choices")
+                                        .get(0).getAsJsonObject()
+                                        .getAsJsonObject("message");
+                            } else {
+                                finalMsg = finalResp.getAsJsonObject("message");
+                            }
+                            if (finalMsg.has("content") && !finalMsg.get("content").isJsonNull()) {
+                                String text = finalMsg.get("content").getAsString().trim();
+                                if (!text.isEmpty()) return text;
+                            }
+                        } catch (IOException e) {
+                            MCAi.LOGGER.warn("Failed to get async stop response: {}", e.getMessage());
+                        }
+                        return "I've queued that task — working on it now!";
+                    }
+
+                    // Continue loop — LLM will process tool results and either
                     // call more tools or generate a final response
                     continue;
                 }
@@ -742,11 +781,12 @@ public class AIService {
                 - When asked to DO something, CALL the tool immediately. Never explain syntax.
                 - "how to make X" / "recipe for X" → get_recipe (info only)
                 - "make X" / "craft X" / "I need X" → craft_item (action)
-                - craft_item is SMART: it auto-checks chests, pulls materials, resolves intermediates (logs→planks→sticks).
-                - If craft_item says missing materials: follow ACTION NEEDED hints EXACTLY in order. Do each step, then re-call craft_item.
-                - NEVER tell the player "you need materials" — go get them yourself.
-                - Use plan param to chain multi-step tasks. On [TASK_COMPLETE], execute the next step immediately.
-                - For smelting, use smelt_items (requires real furnace + fuel).
+                - craft_item is FULLY AUTONOMOUS: it checks chests, pulls materials, auto-crafts intermediates (logs→planks→sticks), AND if raw materials are missing, it auto-queues gathering tasks (chop trees, mine ores, smelt) with a step-by-step continuation plan. Just call craft_item ONCE and it handles everything.
+                - ASYNC TASKS: When a tool returns [ASYNC_TASK], STOP calling tools immediately. Tell the player what you're doing. The plan will auto-continue when each task finishes.
+                - Do NOT call craft_item again in the same turn after it returns [ASYNC_TASK].
+                - On [TASK_COMPLETE], follow the 'Next steps' instructions EXACTLY. Call each tool as described with the parameters shown.
+                - NEVER tell the player "you need materials" — craft_item handles gathering automatically.
+                - For smelting, use smelt_items (requires real furnace + fuel in companion inventory).
                 - ACT first, explain briefly after. Be fully autonomous — complete the entire task.
                 
                 Current state:

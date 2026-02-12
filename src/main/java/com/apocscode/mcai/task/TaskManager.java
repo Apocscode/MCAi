@@ -62,9 +62,10 @@ public class TaskManager {
                 // Award XP for completing a task
                 companion.awardXp(com.apocscode.mcai.entity.CompanionLevelSystem.TASK_COMPLETE_XP);
 
-                // Auto-deposit any items the companion collected during the task
-                // into tagged OUTPUT/STORAGE containers
-                if (ItemRoutingHelper.hasTaggedStorage(companion)) {
+                // Auto-deposit items ONLY if no continuation is set.
+                // When a continuation exists, items are needed for the next step
+                // (e.g., mined ore needed for smelting, chopped logs for crafting).
+                if (continuation == null && ItemRoutingHelper.hasTaggedStorage(companion)) {
                     int deposited = ItemRoutingHelper.routeAllCompanionItems(companion);
                     if (deposited > 0) {
                         MCAi.LOGGER.info("Auto-deposited {} item(s) to tagged storage after task: {}",

@@ -88,9 +88,9 @@ public class FarmAreaTool implements AiTool {
             companion.getTaskManager().queueTask(task);
 
             int seedCount = com.apocscode.mcai.task.BlockHelper.countItem(companion, cropType.seedItem);
-            return "Queued farming task: " + sizeX + "x" + sizeZ + " " + cropName + " farm. " +
+            return "[ASYNC_TASK] Queued farming task: " + sizeX + "x" + sizeZ + " " + cropName + " farm. " +
                     "Seeds available: " + seedCount + ". " +
-                    "The companion will hoe, harvest, and plant in this area.";
+                    "This task runs over time — STOP calling tools and tell the player you're on it.";
         });
     }
 }

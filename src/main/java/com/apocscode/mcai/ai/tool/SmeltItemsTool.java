@@ -150,10 +150,10 @@ public class SmeltItemsTool implements AiTool {
 
             companion.getTaskManager().queueTask(task);
 
-            return "Queued smelting: " + count + "x " + inputItem.getDescription().getString() +
+            return "[ASYNC_TASK] Queued smelting: " + count + "x " + inputItem.getDescription().getString() +
                     " → " + outputName + ". The companion will find a nearby furnace, " +
                     "load items + fuel, and wait for smelting to complete (real game time). " +
-                    "Use task_status to check progress.";
+                    "STOP calling tools — tell the player you're working on it.";
         });
     }
 

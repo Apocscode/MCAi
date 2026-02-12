@@ -27,7 +27,8 @@ public record TaskContinuation(
         return "[TASK_COMPLETE] " + taskResult +
                 "\n\nOriginal plan: " + planContext +
                 "\nNext steps: " + nextSteps +
-                "\n\nContinue executing the plan. Use transfer_items and craft_item as needed. " +
-                "Do NOT queue another gathering task — the resources should already be collected.";
+                "\n\nFollow the next steps EXACTLY as described above. " +
+                "Call each tool with the parameters shown. " +
+                "craft_item will auto-pull materials from your inventory and nearby chests.";
     }
 }

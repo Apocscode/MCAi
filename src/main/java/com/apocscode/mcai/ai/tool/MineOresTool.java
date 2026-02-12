@@ -77,7 +77,9 @@ public class MineOresTool implements AiTool {
 
             companion.getTaskManager().queueTask(task);
 
-            return "Queued ore mining task. Searching within " + radius + " blocks for ores.";
+            return "[ASYNC_TASK] Queued ore mining task. Searching within " + radius + " blocks for ores. " +
+                    "This task runs over time — STOP calling tools and tell the player you're on it. " +
+                    "If you used the plan parameter, the next step will auto-execute when mining finishes.";
         });
     }
 }

@@ -76,7 +76,8 @@ public class ChopTreesTool implements AiTool {
 
             companion.getTaskManager().queueTask(task);
 
-            return "Queued tree chopping task. Searching within " + radius + " blocks for logs.";
+            return "[ASYNC_TASK] Queued tree chopping task. Searching within " + radius + " blocks for logs. " +
+                    "This task runs over time — STOP calling tools and tell the player you're on it.";
         });
     }
 }
