@@ -4,6 +4,7 @@ import com.apocscode.mcai.network.ChatMessagePacket;
 import com.apocscode.mcai.network.ChatResponsePacket;
 import com.apocscode.mcai.network.OpenChatScreenPacket;
 import com.apocscode.mcai.network.SetBehaviorModePacket;
+import com.apocscode.mcai.network.SyncTaggedBlocksPacket;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
@@ -44,5 +45,11 @@ public class ModNetworking {
                 SetBehaviorModePacket.TYPE,
                 SetBehaviorModePacket.STREAM_CODEC,
                 SetBehaviorModePacket::handle);
+
+        // Server → Client: sync tagged logistics blocks
+        registrar.playToClient(
+                SyncTaggedBlocksPacket.TYPE,
+                SyncTaggedBlocksPacket.STREAM_CODEC,
+                SyncTaggedBlocksPacket::handle);
     }
 }

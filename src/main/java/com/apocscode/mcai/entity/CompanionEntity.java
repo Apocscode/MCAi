@@ -5,6 +5,7 @@ import com.apocscode.mcai.config.AiConfig;
 import com.apocscode.mcai.entity.goal.*;
 import com.apocscode.mcai.inventory.CompanionInventoryMenu;
 import com.apocscode.mcai.item.SoulCrystalItem;
+import com.apocscode.mcai.logistics.TaggedBlock;
 import com.apocscode.mcai.network.OpenChatScreenPacket;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
@@ -37,6 +38,9 @@ import net.neoforged.neoforge.network.PacketDistributor;
 
 import javax.annotation.Nullable;
 import java.lang.ref.WeakReference;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -77,6 +81,8 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
     private static final String TAG_INVENTORY = "CompanionInventory";
     private static final String TAG_BEHAVIOR_MODE = "BehaviorMode";
     private static final String TAG_HOME_POS = "HomePos";
+    private static final String TAG_LOGISTICS = "LogisticsBlocks";
+    private static final int MAX_TAGGED_BLOCKS = 32;
 
     public static final int INVENTORY_SIZE = 27;
 
@@ -91,6 +97,9 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
     // Home position — set by shift+clicking Soul Crystal
     @Nullable
     private BlockPos homePos;
+
+    // Tagged logistics blocks — containers designated by the Logistics Wand
+    private final List<TaggedBlock> taggedBlocks = new ArrayList<>();
 
     // Proactive chat system
     private final CompanionChat chat = new CompanionChat(this);
@@ -468,6 +477,10 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
             if (!registeredLiving && ownerUUID != null) {
                 registerLivingCompanion(ownerUUID, this);
                 registeredLiving = true;
+                // Sync tagged blocks to owner client
+                if (!taggedBlocks.isEmpty()) {
+                    syncTaggedBlocksToOwner();
+                }
             }
 
             if (eatCooldown > 0) eatCooldown--;
@@ -660,6 +673,71 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
         return homePos != null;
     }
 
+    // ================================================================
+    // Logistics — tagged block management
+    // ================================================================
+
+    /**
+     * Add or update a tagged block. If the position already exists, its role is updated.
+     */
+    public void addTaggedBlock(BlockPos pos, TaggedBlock.Role role) {
+        removeTaggedBlock(pos); // Remove existing entry at same pos
+        if (taggedBlocks.size() >= MAX_TAGGED_BLOCKS) return;
+        taggedBlocks.add(new TaggedBlock(pos, role));
+        syncTaggedBlocksToOwner();
+    }
+
+    /**
+     * Remove a tagged block by position. Returns true if it was found and removed.
+     */
+    public boolean removeTaggedBlock(BlockPos pos) {
+        boolean removed = taggedBlocks.removeIf(tb -> tb.pos().equals(pos));
+        if (removed) syncTaggedBlocksToOwner();
+        return removed;
+    }
+
+    /**
+     * Get all tagged blocks (unmodifiable view).
+     */
+    public List<TaggedBlock> getTaggedBlocks() {
+        return Collections.unmodifiableList(taggedBlocks);
+    }
+
+    /**
+     * Get tagged blocks filtered by role.
+     */
+    public List<TaggedBlock> getTaggedBlocks(TaggedBlock.Role role) {
+        return taggedBlocks.stream().filter(tb -> tb.role() == role).toList();
+    }
+
+    /**
+     * Get the total number of tagged blocks.
+     */
+    public int getTaggedBlockCount() {
+        return taggedBlocks.size();
+    }
+
+    /**
+     * Set the full tagged block list (used by sync packet on client).
+     */
+    public void setTaggedBlocks(List<TaggedBlock> blocks) {
+        taggedBlocks.clear();
+        taggedBlocks.addAll(blocks);
+    }
+
+    /**
+     * Sync the tagged block list to the owner client via network packet.
+     */
+    private void syncTaggedBlocksToOwner() {
+        if (this.level().isClientSide) return;
+        Player owner = getOwner();
+        if (owner instanceof ServerPlayer sp) {
+            PacketDistributor.sendToPlayer(sp,
+                    new com.apocscode.mcai.network.SyncTaggedBlocksPacket(
+                            this.getId(), taggedBlocks));
+        }
+    }
+
     public void setCompanionName(String name) {
         this.companionName = name;
         this.setCustomName(Component.literal(name));
@@ -722,6 +800,14 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
         if (homePos != null) {
             owner.getPersistentData().putLong("mcai:home_pos", homePos.asLong());
         }
+        // Persist logistics tagged blocks
+        if (!taggedBlocks.isEmpty()) {
+            ListTag logList = new ListTag();
+            for (TaggedBlock tb : taggedBlocks) {
+                logList.add(tb.save());
+            }
+            owner.getPersistentData().put("mcai:logistics_blocks", logList);
+        }
     }
 
     /**
@@ -769,6 +855,16 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
             setCompanionName(data.getString("Name"));
         }
 
+        // Logistics tagged blocks
+        if (owner.getPersistentData().contains("mcai:logistics_blocks")) {
+            taggedBlocks.clear();
+            ListTag logList = owner.getPersistentData().getList("mcai:logistics_blocks", 10);
+            for (int i = 0; i < logList.size(); i++) {
+                taggedBlocks.add(TaggedBlock.load(logList.getCompound(i)));
+            }
+            owner.getPersistentData().remove("mcai:logistics_blocks");
+        }
+
         // Clear saved state after restoring (one-time use)
         owner.getPersistentData().remove("mcai:companion_state");
     }
@@ -796,6 +892,14 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
         tag.putInt(TAG_BEHAVIOR_MODE, getBehaviorMode().ordinal());
         if (homePos != null) {
             tag.putLong(TAG_HOME_POS, homePos.asLong());
+        }
+        // Logistics tagged blocks
+        if (!taggedBlocks.isEmpty()) {
+            ListTag logList = new ListTag();
+            for (TaggedBlock tb : taggedBlocks) {
+                logList.add(tb.save());
+            }
+            tag.put(TAG_LOGISTICS, logList);
         }
     }
 
@@ -830,6 +934,14 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
         }
         if (tag.contains(TAG_HOME_POS)) {
             homePos = BlockPos.of(tag.getLong(TAG_HOME_POS));
+        }
+        // Logistics tagged blocks
+        if (tag.contains(TAG_LOGISTICS)) {
+            taggedBlocks.clear();
+            ListTag logList = tag.getList(TAG_LOGISTICS, 10);
+            for (int i = 0; i < logList.size(); i++) {
+                taggedBlocks.add(TaggedBlock.load(logList.getCompound(i)));
+            }
         }
     }
 }

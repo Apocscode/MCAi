@@ -3,6 +3,7 @@ package com.apocscode.mcai;
 import com.apocscode.mcai.entity.CompanionEntity;
 import com.apocscode.mcai.inventory.CompanionInventoryMenu;
 import com.apocscode.mcai.item.SoulCrystalItem;
+import com.apocscode.mcai.item.LogisticsWandItem;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.EntityType;
@@ -49,6 +50,13 @@ public class ModRegistry {
                             .stacksTo(1)
                             .rarity(Rarity.RARE)));
 
+    // Logistics Wand — tag containers for companion automation
+    public static final DeferredHolder<Item, LogisticsWandItem> LOGISTICS_WAND =
+            ITEMS.register("logistics_wand", () ->
+                    new LogisticsWandItem(new Item.Properties()
+                            .stacksTo(1)
+                            .rarity(Rarity.UNCOMMON)));
+
     // Menu type (companion inventory)
     public static final DeferredHolder<MenuType<?>, MenuType<CompanionInventoryMenu>> COMPANION_MENU =
             MENU_TYPES.register("companion_menu", () ->
@@ -63,6 +71,7 @@ public class ModRegistry {
                             .displayItems((params, output) -> {
                                 output.accept(COMPANION_SPAWN_EGG.get());
                                 output.accept(SOUL_CRYSTAL.get());
+                                output.accept(LOGISTICS_WAND.get());
                             })
                             .build());
 

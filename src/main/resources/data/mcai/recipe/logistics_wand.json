@@ -1,0 +1,24 @@
+{
+    "type": "minecraft:crafting_shaped",
+    "category": "misc",
+    "pattern": [
+        " E ",
+        " G ",
+        " I "
+    ],
+    "key": {
+        "E": {
+            "item": "minecraft:ender_pearl"
+        },
+        "G": {
+            "item": "minecraft:gold_nugget"
+        },
+        "I": {
+            "item": "minecraft:iron_ingot"
+        }
+    },
+    "result": {
+        "id": "mcai:logistics_wand",
+        "count": 1
+    }
+}
