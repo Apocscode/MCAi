@@ -66,6 +66,10 @@ public class CompanionCookFoodGoal extends Goal {
     @Override
     public void start() {
         if (targetCooker != null) {
+            net.minecraft.world.level.block.Block block = companion.level().getBlockState(targetCooker).getBlock();
+            String cookerName = block instanceof net.minecraft.world.level.block.CampfireBlock ? "campfire" : "furnace";
+            companion.getChat().say(com.apocscode.mcai.entity.CompanionChat.Category.COOKING,
+                    "I have raw food. Heading to a " + cookerName + " to cook it.");
             companion.getNavigation().moveTo(
                     targetCooker.getX() + 0.5, targetCooker.getY(), targetCooker.getZ() + 0.5, 1.0);
             pathRetryTimer = 0;
@@ -131,6 +135,8 @@ public class CompanionCookFoodGoal extends Goal {
             }
             furnace.setChanged();
             companion.playSound(SoundEvents.ITEM_PICKUP, 0.5F, 1.0F);
+            companion.getChat().say(com.apocscode.mcai.entity.CompanionChat.Category.COOKING,
+                    "Collected cooked food from the furnace.");
         }
 
         // Then: load raw food into input slot if empty
@@ -162,6 +168,9 @@ public class CompanionCookFoodGoal extends Goal {
                 furnace.setItem(1, fuel.copy());
                 inv.setItem(fuelIdx, ItemStack.EMPTY);
                 furnace.setChanged();
+            } else {
+                companion.getChat().warn(com.apocscode.mcai.entity.CompanionChat.Category.NO_FUEL,
+                        "The furnace needs fuel but I don't have any. Give me coal or wood!");
             }
         }
     }

@@ -1,5 +1,6 @@
 package com.apocscode.mcai.entity.goal;
 
+import com.apocscode.mcai.entity.CompanionChat;
 import com.apocscode.mcai.entity.CompanionEntity;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.entity.player.Player;
@@ -78,6 +79,9 @@ public class CompanionFollowGoal extends Goal {
 
     private void teleportToOwner() {
         if (owner == null) return;
+
+        companion.getChat().say(CompanionChat.Category.TELEPORT,
+                "You're too far away! Teleporting to you.");
 
         // Try positions around the owner
         for (int i = 0; i < 10; i++) {

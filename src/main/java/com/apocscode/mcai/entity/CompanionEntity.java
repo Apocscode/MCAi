@@ -64,6 +64,14 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
     private final SimpleContainer inventory = new SimpleContainer(INVENTORY_SIZE);
     private int eatCooldown = 0;
 
+    // Proactive chat system
+    private final CompanionChat chat = new CompanionChat(this);
+
+    // Stuck detection
+    private double lastX, lastY, lastZ;
+    private int stuckTicks = 0;
+    private static final int STUCK_THRESHOLD = 100; // 5 seconds not moving while navigating
+
     public CompanionEntity(EntityType<? extends CompanionEntity> type, Level level) {
         super(type, level);
         this.setPersistenceRequired();
@@ -124,6 +132,8 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
                 ownerUUID = player.getUUID();
                 player.sendSystemMessage(Component.literal(
                         "§b[MCAi]§r " + companionName + " is now your companion!"));
+                chat.say(CompanionChat.Category.GREETING,
+                        "Hey there! I'm ready to help. Right-click me for inventory, Shift+right-click to chat!");
             }
 
             if (player.isShiftKeyDown()) {
@@ -172,7 +182,22 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
             if (player.getUUID().equals(ownerUUID)) return false;
         }
 
-        return super.hurt(source, amount);
+        boolean wasHurt = super.hurt(source, amount);
+
+        if (wasHurt && !this.level().isClientSide) {
+            float healthPct = this.getHealth() / this.getMaxHealth();
+            if (healthPct < 0.25f) {
+                chat.warn(CompanionChat.Category.CRITICAL_HEALTH,
+                        "§cI'm in critical condition! (" + String.format("%.0f", this.getHealth()) + " HP) I need help!");
+            } else if (healthPct < 0.5f) {
+                String attacker = source.getEntity() != null ? source.getEntity().getName().getString() : "something";
+                chat.warn(CompanionChat.Category.LOW_HEALTH,
+                        "Taking heavy damage from " + attacker + "! (" + String.format("%.0f", this.getHealth()) + "/" +
+                                String.format("%.0f", this.getMaxHealth()) + " HP)");
+            }
+        }
+
+        return wasHurt;
     }
 
     @Override
@@ -241,6 +266,10 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
             int picked = stack.getCount() - remainder.getCount();
             this.take(itemEntity, picked);
             itemEntity.getItem().setCount(remainder.getCount());
+        } else {
+            // Nothing could fit — inventory full
+            chat.warn(CompanionChat.Category.INVENTORY_FULL,
+                    "My inventory is full! I can't pick up any more items.");
         }
     }
 
@@ -295,8 +324,45 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
     @Override
     public void tick() {
         super.tick();
-        if (!this.level().isClientSide && eatCooldown > 0) {
-            eatCooldown--;
+        if (!this.level().isClientSide) {
+            if (eatCooldown > 0) eatCooldown--;
+
+            // Tick proactive chat cooldowns
+            chat.tick();
+
+            // === Stuck detection ===
+            if (this.getNavigation().isInProgress()) {
+                double dx = this.getX() - lastX;
+                double dy = this.getY() - lastY;
+                double dz = this.getZ() - lastZ;
+                double movedSq = dx * dx + dy * dy + dz * dz;
+
+                if (movedSq < 0.01) { // Barely moved
+                    stuckTicks++;
+                    if (stuckTicks >= STUCK_THRESHOLD) {
+                        chat.warn(CompanionChat.Category.STUCK,
+                                "I'm stuck and can't reach my destination. Can you help me?");
+                        this.getNavigation().stop();
+                        stuckTicks = 0;
+                    }
+                } else {
+                    stuckTicks = 0;
+                }
+            } else {
+                stuckTicks = 0;
+            }
+            lastX = this.getX();
+            lastY = this.getY();
+            lastZ = this.getZ();
+
+            // === Periodic health warning if hungry and no food ===
+            if (this.tickCount % 200 == 0) { // Every 10 sec
+                float healthPct = this.getHealth() / this.getMaxHealth();
+                if (healthPct < 0.5f && !hasFood()) {
+                    chat.warn(CompanionChat.Category.HUNGRY,
+                            "I'm low on health and have no food. Could you give me something to eat?");
+                }
+            }
         }
     }
 
@@ -349,6 +415,13 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
 
     public SimpleContainer getCompanionInventory() {
         return inventory;
+    }
+
+    /**
+     * Get the proactive chat system for this companion.
+     */
+    public CompanionChat getChat() {
+        return chat;
     }
 
     /**

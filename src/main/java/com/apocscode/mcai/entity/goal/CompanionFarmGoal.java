@@ -66,6 +66,8 @@ public class CompanionFarmGoal extends Goal {
     @Override
     public void start() {
         if (targetCrop != null) {
+            companion.getChat().say(com.apocscode.mcai.entity.CompanionChat.Category.FARMING,
+                    "Found a mature crop nearby. Going to harvest it.");
             companion.getNavigation().moveTo(
                     targetCrop.getX() + 0.5, targetCrop.getY(), targetCrop.getZ() + 0.5, 1.0);
             pathRetryTimer = 0;

@@ -1,5 +1,6 @@
 package com.apocscode.mcai.entity.goal;
 
+import com.apocscode.mcai.entity.CompanionChat;
 import com.apocscode.mcai.entity.CompanionEntity;
 import net.minecraft.world.entity.ai.goal.Goal;
 
@@ -14,24 +15,29 @@ public class CompanionEatFoodGoal extends Goal {
 
     public CompanionEatFoodGoal(CompanionEntity companion) {
         this.companion = companion;
-        // No movement or look flags — eating doesn't block other goals
         this.setFlags(EnumSet.noneOf(Goal.Flag.class));
     }
 
     @Override
     public boolean canUse() {
-        // Eat when health is below 80%
         return companion.getHealth() < companion.getMaxHealth() * 0.8f;
     }
 
     @Override
     public void start() {
-        companion.tryEatFood();
+        boolean ate = companion.tryEatFood();
+        if (ate) {
+            companion.getChat().say(CompanionChat.Category.EATING,
+                    "Eating some food to heal up. (" + String.format("%.0f", companion.getHealth()) +
+                    "/" + String.format("%.0f", companion.getMaxHealth()) + " HP)");
+        } else if (!companion.hasFood()) {
+            companion.getChat().warn(CompanionChat.Category.NO_FOOD,
+                    "I'm hurt but have no food! Can you give me something to eat?");
+        }
     }
 
     @Override
     public boolean canContinueToUse() {
-        // One-shot: eat once per activation
         return false;
     }
 }
