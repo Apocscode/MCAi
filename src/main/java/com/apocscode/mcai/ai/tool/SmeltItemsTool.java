@@ -121,8 +121,13 @@ public class SmeltItemsTool implements AiTool {
                         "There's no smelting recipe for this item (as input or output).";
             }
 
-            String outputName = smeltRecipe.value().getResultItem(registryAccess)
-                    .getItem().getDescription().getString();
+            String outputName;
+            ItemStack outputStack = smeltRecipe.value().getResultItem(registryAccess);
+            if (outputStack != null && !outputStack.isEmpty()) {
+                outputName = outputStack.getItem().getDescription().getString();
+            } else {
+                outputName = "smelted item";
+            }
 
             // Check companion inventory
             int available = BlockHelper.countItem(companion, inputItem);
@@ -163,14 +168,19 @@ public class SmeltItemsTool implements AiTool {
     private RecipeHolder<?> findSmeltRecipeForInput(RecipeManager recipeManager, Item inputItem) {
         ItemStack testStack = new ItemStack(inputItem);
         for (RecipeHolder<?> holder : recipeManager.getRecipes()) {
-            Recipe<?> r = holder.value();
-            if (!(r instanceof SmeltingRecipe) && !(r instanceof BlastingRecipe)
-                    && !(r instanceof SmokingRecipe) && !(r instanceof CampfireCookingRecipe)) {
+            try {
+                Recipe<?> r = holder.value();
+                if (r == null) continue;
+                if (!(r instanceof SmeltingRecipe) && !(r instanceof BlastingRecipe)
+                        && !(r instanceof SmokingRecipe) && !(r instanceof CampfireCookingRecipe)) {
+                    continue;
+                }
+                List<Ingredient> ings = r.getIngredients();
+                if (ings != null && !ings.isEmpty() && ings.get(0) != null && ings.get(0).test(testStack)) {
+                    return holder;
+                }
+            } catch (Exception e) {
                 continue;
-            }
-            List<Ingredient> ings = r.getIngredients();
-            if (!ings.isEmpty() && ings.get(0).test(testStack)) {
-                return holder;
             }
         }
         return null;
@@ -183,14 +193,19 @@ public class SmeltItemsTool implements AiTool {
     private RecipeHolder<?> findSmeltRecipeForOutput(RecipeManager recipeManager,
                                                       RegistryAccess registryAccess, Item outputItem) {
         for (RecipeHolder<?> holder : recipeManager.getRecipes()) {
-            Recipe<?> r = holder.value();
-            if (!(r instanceof SmeltingRecipe) && !(r instanceof BlastingRecipe)
-                    && !(r instanceof SmokingRecipe) && !(r instanceof CampfireCookingRecipe)) {
+            try {
+                Recipe<?> r = holder.value();
+                if (r == null) continue;
+                if (!(r instanceof SmeltingRecipe) && !(r instanceof BlastingRecipe)
+                        && !(r instanceof SmokingRecipe) && !(r instanceof CampfireCookingRecipe)) {
+                    continue;
+                }
+                ItemStack result = r.getResultItem(registryAccess);
+                if (result != null && !result.isEmpty() && result.is(outputItem)) {
+                    return holder;
+                }
+            } catch (Exception e) {
                 continue;
-            }
-            ItemStack result = r.getResultItem(registryAccess);
-            if (result.is(outputItem)) {
-                return holder;
             }
         }
         return null;

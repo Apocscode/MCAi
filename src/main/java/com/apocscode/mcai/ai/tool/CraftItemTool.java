@@ -576,14 +576,34 @@ public class CraftItemTool implements AiTool {
                     targetItem, ingredients, craftsNeeded, craftLog);
         }
 
+        // === Find the first async step that can be directly tasked ===
+        // Some async steps (SMELT, KILL_MOB, etc.) can't create a CompanionTask directly —
+        // they're handled via AI continuation calling the tool. So find the first one we CAN task.
+        int firstTaskableIndex = -1;
+        CompanionTask firstTask = null;
+        for (int i = 0; i < asyncSteps.size(); i++) {
+            firstTask = createTaskForStep(asyncSteps.get(i), companion);
+            if (firstTask != null) {
+                firstTaskableIndex = i;
+                break;
+            }
+        }
+
+        if (firstTask == null) {
+            // No async step can be directly tasked (e.g. only SMELT steps remain)
+            // Fall back: have the AI handle it via tool calls in the continuation
+            return buildMissingReport(context, recipeManager, registryAccess,
+                    targetItem, ingredients, craftsNeeded, craftLog);
+        }
+
         // === Queue first async task with continuation chain ===
-        // Build continuation plan: describes ALL remaining steps after the first one
-        CraftingPlan.Step firstStep = asyncSteps.get(0);
+        // Build continuation plan: describes ALL remaining steps after the first taskable one
+        CraftingPlan.Step firstStep = asyncSteps.get(firstTaskableIndex);
 
         StringBuilder nextSteps = new StringBuilder();
 
-        // Remaining async steps after the first
-        for (int i = 1; i < asyncSteps.size(); i++) {
+        // Remaining async steps after the first taskable one
+        for (int i = firstTaskableIndex + 1; i < asyncSteps.size(); i++) {
             CraftingPlan.Step s = asyncSteps.get(i);
             if (nextSteps.length() > 0) nextSteps.append(", then ");
             nextSteps.append(stepToInstruction(s));
@@ -596,20 +616,14 @@ public class CraftItemTool implements AiTool {
                      .append("\",\"count\":").append(s.count).append("})");
         }
 
-        // Queue the first gathering task
-        CompanionTask firstTask = createTaskForStep(firstStep, companion);
-        if (firstTask == null) {
-            return buildMissingReport(context, recipeManager, registryAccess,
-                    targetItem, ingredients, craftsNeeded, craftLog);
-        }
-
         // If there are more async steps, the first async step's continuation 
-        // describes the SECOND step (with its own plan for the rest).
+        // describes the NEXT step (with its own plan for the rest).
         // This creates a chain: step1 → continuation → step2 → continuation → ... → craft
         String continuationNext;
-        if (asyncSteps.size() > 1) {
-            // Build nested chain: second step's plan contains step 3+, etc.
-            continuationNext = buildNestedContinuation(asyncSteps, 1, craftSteps, targetId, requestedCount);
+        if (firstTaskableIndex + 1 < asyncSteps.size()) {
+            // Build nested chain: next step's plan contains remaining steps, etc.
+            continuationNext = buildNestedContinuation(asyncSteps, firstTaskableIndex + 1,
+                    craftSteps, targetId, requestedCount);
         } else {
             // Only sync craft steps remain
             continuationNext = "Call craft_item({\"item\":\"" + targetId + 
