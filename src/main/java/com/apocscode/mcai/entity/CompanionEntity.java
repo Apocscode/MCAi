@@ -501,6 +501,10 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
         }
 
         // Try routing directly to tagged storage (OUTPUT > STORAGE)
+        // Auto-create a chest if no storage exists and companion has materials
+        if (!ItemRoutingHelper.hasTaggedStorage(this)) {
+            ItemRoutingHelper.ensureStorageAvailable(this);
+        }
         if (ItemRoutingHelper.hasTaggedStorage(this)) {
             ItemStack toRoute = stack.copy();
             int before = toRoute.getCount();

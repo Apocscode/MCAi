@@ -79,7 +79,11 @@ public class SmeltItemsTask extends CompanionTask {
                         "and couldn't auto-craft one (need 8 cobblestone).");
                 return;
             }
-            shouldPickUpFurnace = true;
+            // Only pick up if NOT placed near home — near home it stays permanently
+            shouldPickUpFurnace = !isNearHome(furnacePos);
+            if (!shouldPickUpFurnace) {
+                MCAi.LOGGER.info("Furnace placed near home — will not pick up");
+            }
         }
 
         Block furnaceBlock = companion.level().getBlockState(furnacePos).getBlock();
@@ -453,11 +457,19 @@ public class SmeltItemsTask extends CompanionTask {
     }
 
     /**
-     * Find a suitable air block near the companion with solid ground below.
+     * Find a suitable air block near the companion (or its home) with solid ground below.
+     * Prefers home position for permanent placement.
      */
     private BlockPos findPlaceableSpot() {
-        BlockPos center = companion.blockPosition();
         Level level = companion.level();
+
+        // Prefer home position for placement
+        BlockPos center;
+        if (companion.hasHomePos()) {
+            center = companion.getHomePos();
+        } else {
+            center = companion.blockPosition();
+        }
 
         for (int radius = 1; radius <= 3; radius++) {
             for (int x = -radius; x <= radius; x++) {
@@ -477,9 +489,19 @@ public class SmeltItemsTask extends CompanionTask {
         return null;
     }
 
+    /**
+     * Check if a position is near the companion's home (within 10 blocks).
+     * Blocks placed near home stay permanently.
+     */
+    private boolean isNearHome(BlockPos pos) {
+        if (!companion.hasHomePos()) return false;
+        return companion.getHomePos().distManhattan(pos) <= 10;
+    }
+
     @Override
     protected void cleanup() {
         // If we auto-placed a furnace and the task is cancelled/failed, try to pick it up
+        // (unless it's near home — those stay)
         if (shouldPickUpFurnace && furnacePos != null) {
             pickUpAutoPlacedFurnace();
         }

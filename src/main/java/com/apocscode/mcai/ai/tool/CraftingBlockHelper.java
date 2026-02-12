@@ -35,6 +35,8 @@ import java.util.*;
 public class CraftingBlockHelper {
 
     private static final int SCAN_RADIUS = 8;
+    /** If a placed block is within this distance of the companion's home, leave it permanently. */
+    private static final int HOME_RADIUS = 10;
 
     /**
      * Represents a crafting station type with its block, item, and recipe.
@@ -97,8 +99,8 @@ public class CraftingBlockHelper {
             return new StationResult(true, "", pos, false);
         }
 
-        public static StationResult placed(BlockPos pos, String msg) {
-            return new StationResult(true, msg, pos, true);
+        public static StationResult placed(BlockPos pos, String msg, boolean shouldPickUp) {
+            return new StationResult(true, msg, pos, shouldPickUp);
         }
 
         public static StationResult failed(String msg) {
@@ -134,7 +136,10 @@ public class CraftingBlockHelper {
     public static StationResult ensureStation(StationType type, ToolContext context) {
         Level level = context.player().level();
         CompanionEntity companion = CompanionEntity.getLivingCompanion(context.player().getUUID());
-        BlockPos center = companion != null ? companion.blockPosition() : context.player().blockPosition();
+        // Prefer placing near home position if set, otherwise near companion/player
+        BlockPos homePos = companion != null ? companion.getHomePos() : null;
+        BlockPos center = homePos != null ? homePos
+                : (companion != null ? companion.blockPosition() : context.player().blockPosition());
 
         // 1. Check for existing block nearby
         BlockPos existing = findNearbyBlock(level, center, type.block, SCAN_RADIUS);
@@ -241,6 +246,16 @@ public class CraftingBlockHelper {
         MCAi.LOGGER.info("Picked up auto-placed {} at {}", blockItem.getDescription().getString(), result.pos);
     }
 
+    /**
+     * Check if a position is within HOME_RADIUS of the companion's home position.
+     * Blocks placed near home are permanent — no pickup.
+     */
+    public static boolean isNearHome(@Nullable CompanionEntity companion, BlockPos pos) {
+        if (companion == null || !companion.hasHomePos()) return false;
+        BlockPos home = companion.getHomePos();
+        return home.distManhattan(pos) <= HOME_RADIUS;
+    }
+
     // ========== Block placement ==========
 
     /**
@@ -261,13 +276,22 @@ public class CraftingBlockHelper {
 
         // Place the block
         level.setBlockAndUpdate(placePos, type.block.defaultBlockState());
-        MCAi.LOGGER.info("Auto-placed {} at {} (crafted={})", type.name(), placePos, wasCrafted);
+
+        // If placed near companion's home, leave it there permanently
+        CompanionEntity companion = CompanionEntity.getLivingCompanion(context.player().getUUID());
+        boolean nearHome = isNearHome(companion, placePos);
+        boolean shouldPickUp = !nearHome;
+
+        MCAi.LOGGER.info("Auto-placed {} at {} (crafted={}, nearHome={}, shouldPickUp={})",
+                type.name(), placePos, wasCrafted, nearHome, shouldPickUp);
 
         String msg = wasCrafted
-                ? "Crafted and placed a " + type.item.getDescription().getString() + "."
-                : "Placed a " + type.item.getDescription().getString() + " from inventory.";
+                ? "Crafted and placed a " + type.item.getDescription().getString()
+                  + (nearHome ? " at home base." : ".")
+                : "Placed a " + type.item.getDescription().getString()
+                  + (nearHome ? " at home base." : " from inventory.");
 
-        return StationResult.placed(placePos, msg);
+        return StationResult.placed(placePos, msg, shouldPickUp);
     }
 
     /**
