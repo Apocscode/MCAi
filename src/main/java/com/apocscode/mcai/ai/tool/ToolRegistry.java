@@ -33,8 +33,9 @@ public class ToolRegistry {
 
     static {
         // Crafting / making (covers both "how to make X" and "make me X")
+        // Include gathering tools so AI can autonomously get missing materials
         kw("craft,make,build,create,axe,pickaxe,sword,shovel,hoe,armor,shield,tool,how to,how do,recipe,need,what do i need",
-                "craft_item", "get_recipe", "get_inventory");
+                "craft_item", "get_recipe", "get_inventory", "gather_blocks", "chop_trees", "mine_ores", "smelt_items");
         // Mining / gathering
         kw("mine,dig,ore,iron,gold,diamond,coal,copper,gather,collect,cobble,sand,gravel,stone",
                 "mine_ores", "mine_area", "gather_blocks");

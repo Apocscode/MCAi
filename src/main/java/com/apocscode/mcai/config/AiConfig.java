@@ -92,7 +92,7 @@ public class AiConfig {
 
         MAX_TOOL_ITERATIONS = builder
                 .comment("Maximum tool-call iterations per message (prevents runaway loops)")
-                .defineInRange("maxToolIterations", 5, 1, 20);
+                .defineInRange("maxToolIterations", 10, 1, 20);
 
         builder.pop(); // connection
 

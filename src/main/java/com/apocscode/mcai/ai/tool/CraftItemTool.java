@@ -253,6 +253,13 @@ public class CraftItemTool implements AiTool {
               .append(targetItem.getDescription().getString()).append(":\n");
 
         Map<Item, Integer> grouped = getGroupedNeeds(ingredients, craftsNeeded);
+        String targetName = net.minecraft.core.registries.BuiltInRegistries.ITEM
+                .getKey(targetItem).getPath();
+
+        // Build actionable hints for each missing item
+        StringBuilder actions = new StringBuilder();
+        actions.append("\nACTION NEEDED — gather these materials, then craft again:\n");
+        int actionNum = 0;
 
         for (Map.Entry<Item, Integer> entry : grouped.entrySet()) {
             Item ingItem = entry.getKey();
@@ -261,16 +268,49 @@ public class CraftItemTool implements AiTool {
             int have = ing != null ? countInInventory(context, ing) : 0;
             if (have >= needed) continue;
 
-            result.append("  - ").append(ingItem.getDescription().getString())
+            int shortage = needed - have;
+            String ingName = ingItem.getDescription().getString();
+            String ingId = net.minecraft.core.registries.BuiltInRegistries.ITEM
+                    .getKey(ingItem).getPath();
+
+            result.append("  - ").append(ingName)
                   .append(": have ").append(have).append(", need ").append(needed);
 
-            // Hint: can this be smelted?
+            // Determine the best gathering action
             RecipeHolder<?> smeltRecipe = findSmeltingRecipe(recipeManager, registryAccess, ingItem);
             if (smeltRecipe != null) {
                 String inputName = getSmeltInputName(smeltRecipe);
-                result.append(" (smelt from ").append(inputName).append(" using smelt_items)");
+                result.append(" (smelt from ").append(inputName).append(")");
+                actionNum++;
+                actions.append("  ").append(actionNum).append(". gather the raw material, then call smelt_items({\"item\":\"")
+                       .append(ingId).append("\", \"count\":").append(shortage).append("})\n");
+            } else if (ingId.contains("log") || ingId.contains("wood")) {
+                result.append(" (chop trees)");
+                actionNum++;
+                actions.append("  ").append(actionNum).append(". call chop_trees({\"maxLogs\":").append(shortage)
+                       .append(", \"plan\":\"craft ").append(targetName).append("\"})\n");
+            } else if (ingId.contains("cobblestone") || ingId.contains("stone") || ingId.contains("ore")
+                    || ingId.contains("deepslate") || ingId.contains("iron") || ingId.contains("gold")
+                    || ingId.contains("copper") || ingId.contains("diamond") || ingId.contains("coal")) {
+                result.append(" (mine/gather)");
+                actionNum++;
+                actions.append("  ").append(actionNum).append(". call gather_blocks({\"block\":\"")
+                       .append(ingId).append("\", \"maxBlocks\":").append(shortage)
+                       .append(", \"plan\":\"craft ").append(targetName).append("\"})\n");
+            } else {
+                result.append(" (gather nearby)");
+                actionNum++;
+                actions.append("  ").append(actionNum).append(". call gather_blocks({\"block\":\"")
+                       .append(ingId).append("\", \"maxBlocks\":").append(shortage)
+                       .append(", \"plan\":\"craft ").append(targetName).append("\"})\n");
             }
             result.append("\n");
+        }
+
+        if (actionNum > 0) {
+            actions.append("After gathering, call craft_item({\"item\":\"").append(targetName).append("\"}) again.\n");
+            actions.append("Do NOT tell the player materials are missing — go gather them NOW.\n");
+            result.append(actions);
         }
         return result.toString();
     }
