@@ -20,7 +20,10 @@ public class MineOresTask extends CompanionTask {
     private int stuckTimer = 0;
     private int oresMined = 0;
     private int scanAttempts = 0;
+    private int consecutiveSkips = 0;
     private static final int MAX_SCAN_ATTEMPTS = 3;
+    private static final int STUCK_TIMEOUT_TICKS = 60; // 3 seconds per block
+    private static final int MAX_CONSECUTIVE_SKIPS = 3; // give up after 3 unreachable ores
 
     public MineOresTask(CompanionEntity companion, int radius, int maxOres) {
         super(companion);
@@ -87,14 +90,21 @@ public class MineOresTask extends CompanionTask {
             targets.poll();
             currentTarget = null;
             stuckTimer = 0;
+            consecutiveSkips = 0;
             oresMined++;
         } else {
             navigateTo(currentTarget);
             stuckTimer++;
-            if (stuckTimer > 120) {
+            if (stuckTimer > STUCK_TIMEOUT_TICKS) {
                 targets.poll();
                 currentTarget = null;
                 stuckTimer = 0;
+                consecutiveSkips++;
+                if (consecutiveSkips >= MAX_CONSECUTIVE_SKIPS) {
+                    say("Can't reach any more ores. Mined " + oresMined + " ores.");
+                    complete();
+                    return;
+                }
             }
         }
     }

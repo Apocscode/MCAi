@@ -386,6 +386,16 @@ public class RecipeResolver {
         if (visited.contains(item)) {
             return classifyRawMaterial(item, remaining);
         }
+
+        // === Early exit: known raw materials skip recipe lookup ===
+        // Items like raw_iron, coal, oak_log are directly obtainable (mine, chop, etc.)
+        // Without this, raw_iron resolves via crafting (uncraft raw_iron_block → 9 raw_iron)
+        // which is absurd — raw_iron drops from mining iron_ore.
+        DependencyNode rawCheck = classifyRawMaterial(item, remaining);
+        if (rawCheck.type != StepType.UNKNOWN) {
+            return rawCheck;
+        }
+
         visited.add(item);
 
         boolean hasHeatRecipe = heatByOutput.containsKey(item);

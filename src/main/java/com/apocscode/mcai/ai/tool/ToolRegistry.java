@@ -53,9 +53,7 @@ public class ToolRegistry {
                 "farm_area");
         // Containers / items / storage
         kw("chest,barrel,container,storage,find,fetch,get me,bring,take,put,give",
-                "find_and_fetch_item", "scan_containers", "interact_container", "set_storage");
-        kw("set storage,set chest,inventory chest,designate,your chest,home chest",
-                "set_storage");
+                "find_and_fetch_item", "scan_containers", "interact_container");
         // Looking at things
         kw("this,that,look,what is,block,point",
                 "get_looked_at_block");
@@ -147,7 +145,6 @@ public class ToolRegistry {
         register(new MemoryTool());
         register(new EmoteTool());
         register(new DigDownTool());
-        register(new SetStorageTool());
         MCAi.LOGGER.info("Registered {} AI tools: {}", tools.size(), tools.keySet());
     }
 

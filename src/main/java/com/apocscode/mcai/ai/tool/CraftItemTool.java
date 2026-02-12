@@ -933,7 +933,7 @@ public class CraftItemTool implements AiTool {
     }
 
     /**
-     * Build a map of all items available in player + companion inventories.
+     * Build a map of all items available in player + companion inventories + tagged storage chests.
      */
     private Map<Item, Integer> buildAvailableMap(ToolContext context) {
         Map<Item, Integer> available = new HashMap<>();
@@ -952,6 +952,25 @@ public class CraftItemTool implements AiTool {
                 ItemStack stack = companionInv.getItem(i);
                 if (!stack.isEmpty()) {
                     available.merge(stack.getItem(), stack.getCount(), Integer::sum);
+                }
+            }
+        }
+
+        // Also include items in tagged STORAGE containers
+        CompanionEntity companion = CompanionEntity.getLivingCompanion(context.player().getUUID());
+        if (companion != null) {
+            var storageBlocks = companion.getTaggedBlocks(
+                    com.apocscode.mcai.logistics.TaggedBlock.Role.STORAGE);
+            for (var tb : storageBlocks) {
+                net.minecraft.world.level.block.entity.BlockEntity be =
+                        context.player().level().getBlockEntity(tb.pos());
+                if (be instanceof net.minecraft.world.Container container) {
+                    for (int i = 0; i < container.getContainerSize(); i++) {
+                        ItemStack stack = container.getItem(i);
+                        if (!stack.isEmpty()) {
+                            available.merge(stack.getItem(), stack.getCount(), Integer::sum);
+                        }
+                    }
                 }
             }
         }

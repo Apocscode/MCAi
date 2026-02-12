@@ -86,6 +86,13 @@ public class ChatMessageHandler {
      * @param useGameChat If true, respond via sendSystemMessage; if false, via ChatResponsePacket.
      */
     private static void sendToAI(String message, ServerPlayer player, String companionName, boolean useGameChat) {
+        // Cancel any active companion task — new player input overrides old tasks
+        CompanionEntity companion = CompanionEntity.getLivingCompanion(player.getUUID());
+        if (companion != null && companion.getTaskManager().hasTasks()) {
+            companion.getTaskManager().cancelAll();
+            MCAi.LOGGER.info("Cancelled active tasks — new player command: {}", message);
+        }
+
         AIService.chat(message, player, ConversationManager.getHistoryForAI(), companionName)
                 .thenAccept(response -> {
                     player.getServer().execute(() -> {
