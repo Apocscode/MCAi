@@ -75,6 +75,15 @@ public abstract class CompanionTask {
     public Status getStatus() { return status; }
     public String getDescription() { return getTaskName(); }
     public String getFailReason() { return failReason; }
+    public int getTicksRunning() { return ticksRunning; }
+
+    /**
+     * Override in subclasses to report progress (0-100).
+     * Returns -1 if progress is unknown.
+     */
+    public int getProgressPercent() {
+        return -1;
+    }
 
     protected void complete() {
         this.status = Status.COMPLETED;

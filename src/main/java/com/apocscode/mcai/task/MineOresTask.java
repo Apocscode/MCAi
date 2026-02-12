@@ -34,6 +34,11 @@ public class MineOresTask extends CompanionTask {
     }
 
     @Override
+    public int getProgressPercent() {
+        return maxOres > 0 ? (oresMined * 100) / maxOres : -1;
+    }
+
+    @Override
     protected void start() {
         scanForOres();
         if (targets.isEmpty()) {

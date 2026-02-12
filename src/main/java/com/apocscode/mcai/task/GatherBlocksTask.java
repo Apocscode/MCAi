@@ -21,6 +21,7 @@ public class GatherBlocksTask extends CompanionTask {
     private BlockPos currentTarget;
     private int stuckTimer = 0;
     private int blocksGathered = 0;
+    private int totalBlocks = 0;
 
     public GatherBlocksTask(CompanionEntity companion, Block targetBlock, int radius, int maxBlocks) {
         super(companion);
@@ -35,6 +36,11 @@ public class GatherBlocksTask extends CompanionTask {
     }
 
     @Override
+    public int getProgressPercent() {
+        return totalBlocks > 0 ? (blocksGathered * 100) / totalBlocks : -1;
+    }
+
+    @Override
     protected void start() {
         List<BlockPos> found = BlockHelper.scanForBlocks(companion, targetBlock, radius, maxBlocks);
         targets.addAll(found);
@@ -43,7 +49,8 @@ public class GatherBlocksTask extends CompanionTask {
             complete();
             return;
         }
-        say("Found " + targets.size() + " " + targetBlock.getName().getString() + " to gather!");
+        totalBlocks = targets.size();
+        say("Found " + totalBlocks + " " + targetBlock.getName().getString() + " to gather!");
     }
 
     @Override

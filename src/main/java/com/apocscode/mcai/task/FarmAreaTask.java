@@ -27,6 +27,8 @@ public class FarmAreaTask extends CompanionTask {
     private Phase phase = Phase.HOE;
     private BlockPos currentTarget;
     private int stuckTimer = 0;
+    private int totalWork = 0;
+    private int workDone = 0;
 
     public enum Phase { HOE, PLANT, HARVEST, DONE }
 
@@ -78,6 +80,12 @@ public class FarmAreaTask extends CompanionTask {
 
     @Override
     protected void start() {
+        // Calculate total area for progress tracking
+        int sizeX = corner2.getX() - corner1.getX() + 1;
+        int sizeZ = corner2.getZ() - corner1.getZ() + 1;
+        totalWork = sizeX * sizeZ * 2; // hoe + plant each block (rough estimate)
+        workDone = 0;
+
         // First: harvest any mature crops in the area
         phase = Phase.HARVEST;
         buildHarvestQueue();
@@ -86,6 +94,12 @@ public class FarmAreaTask extends CompanionTask {
             buildHoeQueue();
         }
         say("Starting to farm! " + getTaskName());
+    }
+
+    @Override
+    public int getProgressPercent() {
+        if (totalWork <= 0) return -1;
+        return Math.min(100, (workDone * 100) / totalWork);
     }
 
     @Override
@@ -142,6 +156,7 @@ public class FarmAreaTask extends CompanionTask {
             workQueue.poll();
             currentTarget = null;
             stuckTimer = 0;
+            workDone++;
         } else {
             navigateTo(currentTarget);
             stuckTimer++;
@@ -192,6 +207,7 @@ public class FarmAreaTask extends CompanionTask {
             workQueue.poll();
             currentTarget = null;
             stuckTimer = 0;
+            workDone++;
         } else {
             navigateTo(currentTarget);
             stuckTimer++;
@@ -246,6 +262,7 @@ public class FarmAreaTask extends CompanionTask {
             if (!planted) {
                 // Farmland might have reverted, skip
             }
+            workDone++;
             workQueue.poll();
             currentTarget = null;
             stuckTimer = 0;

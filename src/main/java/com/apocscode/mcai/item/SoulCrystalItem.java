@@ -39,6 +39,9 @@ public class SoulCrystalItem extends Item {
     /** Server-side per-player death cooldown tracking (ownerUUID → gameTime of death) */
     private static final Map<UUID, Long> DEATH_COOLDOWNS = new ConcurrentHashMap<>();
 
+    /** Server-side per-player death data (inventory + equipment saved on death) */
+    private static final Map<UUID, net.minecraft.nbt.CompoundTag> DEATH_DATA = new ConcurrentHashMap<>();
+
     public SoulCrystalItem(Properties properties) {
         super(properties);
     }
@@ -59,6 +62,20 @@ public class SoulCrystalItem extends Item {
      */
     public static void clearDeathCooldown(UUID ownerUUID) {
         DEATH_COOLDOWNS.remove(ownerUUID);
+    }
+
+    /**
+     * Store death data (inventory + equipment) for recovery on respawn.
+     */
+    public static void setDeathData(UUID ownerUUID, net.minecraft.nbt.CompoundTag data) {
+        DEATH_DATA.put(ownerUUID, data);
+    }
+
+    /**
+     * Retrieve and consume death data (returns null if none).
+     */
+    public static net.minecraft.nbt.CompoundTag consumeDeathData(UUID ownerUUID) {
+        return DEATH_DATA.remove(ownerUUID);
     }
 
     /**
@@ -142,6 +159,12 @@ public class SoulCrystalItem extends Item {
 
                 // Restore full state if dismissed (inventory, equipment, health)
                 companion.restoreStateFromOwner(player);
+
+                // Restore inventory + equipment from death (if died rather than dismissed)
+                net.minecraft.nbt.CompoundTag deathData = consumeDeathData(playerUUID);
+                if (deathData != null) {
+                    companion.restoreFromDeathData(deathData);
+                }
 
                 // Restore home position from player persistent data
                 if (player.getPersistentData().contains("mcai:home_pos")) {

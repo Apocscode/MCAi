@@ -12,6 +12,7 @@ import org.lwjgl.glfw.GLFW;
 /**
  * Registers custom keybindings for MCAi.
  * - Push-to-Talk: V key (hold to record, release to transcribe)
+ * - Whistle: G key (call companion to player)
  */
 @EventBusSubscriber(modid = MCAi.MOD_ID, bus = EventBusSubscriber.Bus.MOD, value = Dist.CLIENT)
 public class ModKeybinds {
@@ -23,9 +24,17 @@ public class ModKeybinds {
             "key.categories.mcai"
     );
 
+    public static final KeyMapping WHISTLE = new KeyMapping(
+            "key.mcai.whistle",
+            InputConstants.Type.KEYSYM,
+            GLFW.GLFW_KEY_G,
+            "key.categories.mcai"
+    );
+
     @SubscribeEvent
     public static void registerKeyMappings(RegisterKeyMappingsEvent event) {
         event.register(PUSH_TO_TALK);
-        MCAi.LOGGER.info("Registered MCAi keybinds (Push-to-Talk: V)");
+        event.register(WHISTLE);
+        MCAi.LOGGER.info("Registered MCAi keybinds (Push-to-Talk: V, Whistle: G)");
     }
 }

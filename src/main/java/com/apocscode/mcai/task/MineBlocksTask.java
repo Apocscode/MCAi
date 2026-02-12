@@ -17,6 +17,8 @@ public class MineBlocksTask extends CompanionTask {
     private BlockPos currentTarget;
     private int stuckTimer = 0;
     private final String description;
+    private int totalBlocks = 0;
+    private int blocksMined = 0;
 
     /**
      * Mine a list of specific block positions.
@@ -59,13 +61,19 @@ public class MineBlocksTask extends CompanionTask {
     }
 
     @Override
+    public int getProgressPercent() {
+        return totalBlocks > 0 ? (blocksMined * 100) / totalBlocks : -1;
+    }
+
+    @Override
     protected void start() {
         if (targets.isEmpty()) {
             say("Nothing to mine here.");
             complete();
             return;
         }
-        say("Starting to mine " + targets.size() + " blocks!");
+        totalBlocks = targets.size();
+        say("Starting to mine " + totalBlocks + " blocks!");
     }
 
     @Override
@@ -89,6 +97,7 @@ public class MineBlocksTask extends CompanionTask {
 
         if (isInReach(currentTarget, 3.0)) {
             BlockHelper.breakBlock(companion, currentTarget);
+            blocksMined++;
             targets.poll();
             currentTarget = null;
             stuckTimer = 0;

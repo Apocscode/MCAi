@@ -39,6 +39,11 @@ public class ChopTreesTask extends CompanionTask {
     }
 
     @Override
+    public int getProgressPercent() {
+        return maxLogs > 0 ? (logsChopped * 100) / maxLogs : -1;
+    }
+
+    @Override
     protected void start() {
         scanForLogs();
         if (targets.isEmpty()) {

@@ -18,6 +18,8 @@ public class TaskManager {
     private final CompanionEntity companion;
     private final Deque<CompanionTask> taskQueue = new ArrayDeque<>();
     private CompanionTask activeTask;
+    private int progressAnnounceTicks = 0;
+    private int lastAnnouncedPercent = -1;
 
     public TaskManager(CompanionEntity companion) {
         this.companion = companion;
@@ -61,6 +63,8 @@ public class TaskManager {
         // Start next task if idle
         if (activeTask == null && !taskQueue.isEmpty()) {
             activeTask = taskQueue.pollFirst();
+            progressAnnounceTicks = 0;
+            lastAnnouncedPercent = -1;
             companion.getChat().say(CompanionChat.Category.TASK,
                     "Starting: " + activeTask.getDescription());
         }
@@ -68,6 +72,18 @@ public class TaskManager {
         // Tick active task
         if (activeTask != null) {
             activeTask.doTick();
+
+            // Periodic progress announcements (every 10 seconds)
+            progressAnnounceTicks++;
+            if (progressAnnounceTicks >= 200) {
+                progressAnnounceTicks = 0;
+                int percent = activeTask.getProgressPercent();
+                if (percent >= 0 && percent != lastAnnouncedPercent) {
+                    lastAnnouncedPercent = percent;
+                    companion.getChat().say(CompanionChat.Category.TASK,
+                            activeTask.getTaskName() + ": " + percent + "% done");
+                }
+            }
         }
     }
 
@@ -130,8 +146,12 @@ public class TaskManager {
         }
         StringBuilder sb = new StringBuilder();
         if (activeTask != null) {
-            sb.append("Active: ").append(activeTask.getDescription())
-                    .append(" (").append(activeTask.getStatus()).append(")");
+            sb.append("Active: ").append(activeTask.getDescription());
+            int percent = activeTask.getProgressPercent();
+            if (percent >= 0) {
+                sb.append(" [").append(percent).append("%]");
+            }
+            sb.append(" (").append(activeTask.getStatus()).append(")");
         }
         if (!taskQueue.isEmpty()) {
             sb.append(" | ").append(taskQueue.size()).append(" task(s) queued");

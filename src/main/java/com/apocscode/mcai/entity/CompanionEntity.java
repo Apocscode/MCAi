@@ -75,6 +75,8 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
 
     private static final EntityDataAccessor<Integer> DATA_BEHAVIOR_MODE =
             SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.INT);
+    private static final EntityDataAccessor<String> DATA_TASK_STATUS =
+            SynchedEntityData.defineId(CompanionEntity.class, EntityDataSerializers.STRING);
 
     private static final String TAG_OWNER = "OwnerUUID";
     private static final String TAG_NAME = "CompanionName";
@@ -178,6 +180,14 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
     protected void defineSynchedData(SynchedEntityData.Builder builder) {
         super.defineSynchedData(builder);
         builder.define(DATA_BEHAVIOR_MODE, BehaviorMode.FOLLOW.ordinal());
+        builder.define(DATA_TASK_STATUS, "");
+    }
+
+    /**
+     * Get task status text (synced to client via entity data).
+     */
+    public String getTaskStatus() {
+        return this.entityData.get(DATA_TASK_STATUS);
     }
 
     // ================================================================
@@ -345,25 +355,41 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
     @Override
     public void die(DamageSource source) {
         if (!this.level().isClientSide) {
-            // Drop inventory
+            // Save inventory + equipment to NBT for respawn recovery
+            net.minecraft.nbt.CompoundTag deathData = new net.minecraft.nbt.CompoundTag();
+
+            // Save inventory
+            net.minecraft.nbt.ListTag invTag = new net.minecraft.nbt.ListTag();
             for (int i = 0; i < inventory.getContainerSize(); i++) {
                 ItemStack stack = inventory.getItem(i);
                 if (!stack.isEmpty()) {
-                    this.spawnAtLocation(stack);
-                    inventory.setItem(i, ItemStack.EMPTY);
+                    net.minecraft.nbt.CompoundTag slotTag = new net.minecraft.nbt.CompoundTag();
+                    slotTag.putByte("Slot", (byte) i);
+                    invTag.add(stack.save(this.registryAccess(), slotTag));
                 }
+                inventory.setItem(i, ItemStack.EMPTY);
             }
-            // Drop equipment
+            deathData.put("Inventory", invTag);
+
+            // Save equipment
+            net.minecraft.nbt.ListTag eqTag = new net.minecraft.nbt.ListTag();
             for (EquipmentSlot slot : EquipmentSlot.values()) {
                 ItemStack eq = this.getItemBySlot(slot);
                 if (!eq.isEmpty()) {
-                    this.spawnAtLocation(eq);
+                    net.minecraft.nbt.CompoundTag slotTag = new net.minecraft.nbt.CompoundTag();
+                    slotTag.putString("Slot", slot.getName());
+                    eqTag.add(eq.save(this.registryAccess(), slotTag));
                     this.setItemSlot(slot, ItemStack.EMPTY);
                 }
             }
+            deathData.put("Equipment", eqTag);
 
-            // Set respawn cooldown on the owner's soul crystal tracker
+            // Save companion name
+            deathData.putString("Name", companionName);
+
+            // Store in SoulCrystal death data cache for recovery on respawn
             if (ownerUUID != null) {
+                SoulCrystalItem.setDeathData(ownerUUID, deathData);
                 SoulCrystalItem.setDeathCooldown(ownerUUID, this.level().getGameTime());
                 unregisterLivingCompanion(ownerUUID);
             }
@@ -373,7 +399,7 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
                 long cooldownSec = SoulCrystalItem.RESPAWN_COOLDOWN_TICKS / 20;
                 owner.sendSystemMessage(Component.literal(
                         "§c[MCAi]§r " + companionName +
-                                " was defeated! Items dropped. Use your §dSoul Crystal§r to resummon in " +
+                                " was defeated! Inventory preserved. Use your §dSoul Crystal§r to resummon in " +
                                 cooldownSec + " seconds."));
             }
         }
@@ -522,6 +548,19 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
             lastY = this.getY();
             lastZ = this.getZ();
 
+            // === Sync task status to client every 20 ticks ===
+            if (this.tickCount % 20 == 0) {
+                String status = taskManager.isIdle() ? "" : taskManager.getStatusSummary();
+                if (!status.equals(this.entityData.get(DATA_TASK_STATUS))) {
+                    this.entityData.set(DATA_TASK_STATUS, status);
+                }
+            }
+
+            // === Auto-equip best gear every 5 seconds ===
+            if (this.tickCount % 100 == 50) {
+                autoEquipBestGear();
+            }
+
             // === Periodic health warning if hungry and no food ===
             if (this.tickCount % 200 == 0) { // Every 10 sec
                 float healthPct = this.getHealth() / this.getMaxHealth();
@@ -574,6 +613,62 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
         if (item instanceof ShovelItem) return 3;
         if (item instanceof HoeItem) return 2;
         return 0;
+    }
+
+    /**
+     * Auto-equip the best armor from the companion's inventory.
+     * Scans all inventory slots for armor items and equips the highest-defense piece
+     * in each slot (head, chest, legs, feet). Old armor goes back to inventory.
+     */
+    public void equipBestArmor() {
+        EquipmentSlot[] armorSlots = {
+                EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET
+        };
+
+        for (EquipmentSlot slot : armorSlots) {
+            ItemStack currentArmor = this.getItemBySlot(slot);
+            int currentDefense = getArmorDefense(currentArmor, slot);
+            int bestSlotIdx = -1;
+            int bestDefense = currentDefense;
+
+            for (int i = 0; i < inventory.getContainerSize(); i++) {
+                ItemStack stack = inventory.getItem(i);
+                if (!stack.isEmpty() && stack.getItem() instanceof ArmorItem armor
+                        && armor.getEquipmentSlot() == slot) {
+                    int defense = getArmorDefense(stack, slot);
+                    if (defense > bestDefense) {
+                        bestDefense = defense;
+                        bestSlotIdx = i;
+                    }
+                }
+            }
+
+            if (bestSlotIdx >= 0) {
+                ItemStack newArmor = inventory.getItem(bestSlotIdx);
+                if (!currentArmor.isEmpty()) {
+                    inventory.setItem(bestSlotIdx, currentArmor);
+                } else {
+                    inventory.setItem(bestSlotIdx, ItemStack.EMPTY);
+                }
+                this.setItemSlot(slot, newArmor);
+            }
+        }
+    }
+
+    private int getArmorDefense(ItemStack stack, EquipmentSlot slot) {
+        if (stack.isEmpty() || !(stack.getItem() instanceof ArmorItem armor)) return 0;
+        if (armor.getEquipmentSlot() != slot) return 0;
+        // Use material tier as a simple ranking
+        return armor.getDefense();
+    }
+
+    /**
+     * Auto-equip best weapon AND best armor from inventory.
+     * Called periodically or after inventory changes.
+     */
+    public void autoEquipBestGear() {
+        equipBestWeapon();
+        equipBestArmor();
     }
 
     // ================================================================
@@ -891,6 +986,48 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
 
         // Clear saved state after restoring (one-time use)
         owner.getPersistentData().remove("mcai:companion_state");
+    }
+
+    /**
+     * Restore inventory and equipment from death data (kept in memory, not dropped).
+     * Called by SoulCrystalItem when resummoning after death.
+     */
+    public void restoreFromDeathData(CompoundTag deathData) {
+        if (deathData == null || deathData.isEmpty()) return;
+
+        // Restore inventory
+        if (deathData.contains("Inventory")) {
+            ListTag invList = deathData.getList("Inventory", 10);
+            for (int i = 0; i < invList.size(); i++) {
+                CompoundTag itemTag = invList.getCompound(i);
+                int slot = itemTag.getByte("Slot") & 255;
+                if (slot < inventory.getContainerSize()) {
+                    inventory.setItem(slot,
+                            ItemStack.parse(this.registryAccess(), itemTag)
+                                    .orElse(ItemStack.EMPTY));
+                }
+            }
+        }
+
+        // Restore equipment
+        if (deathData.contains("Equipment")) {
+            ListTag equipList = deathData.getList("Equipment", 10);
+            for (int i = 0; i < equipList.size(); i++) {
+                CompoundTag eqTag = equipList.getCompound(i);
+                String slotName = eqTag.getString("Slot");
+                EquipmentSlot slot = EquipmentSlot.byName(slotName);
+                ItemStack stack = ItemStack.parse(this.registryAccess(), eqTag)
+                        .orElse(ItemStack.EMPTY);
+                this.setItemSlot(slot, stack);
+            }
+        }
+
+        // Restore name
+        if (deathData.contains("Name")) {
+            setCompanionName(deathData.getString("Name"));
+        }
+
+        MCAi.LOGGER.info("Restored companion death data (inventory + equipment preserved)");
     }
 
     // ================================================================

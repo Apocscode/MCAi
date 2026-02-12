@@ -3,6 +3,7 @@ package com.apocscode.mcai.client;
 import com.apocscode.mcai.MCAi;
 import com.apocscode.mcai.ai.ConversationManager;
 import com.apocscode.mcai.network.ChatMessagePacket;
+import com.apocscode.mcai.network.WhistleCompanionPacket;
 import net.minecraft.client.Minecraft;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -93,5 +94,14 @@ public class ClientTickHandler {
         }
 
         wasKeyDown = isKeyDown;
+
+        // --- Whistle keybind (G) ---
+        if (ModKeybinds.WHISTLE.consumeClick()) {
+            PacketDistributor.sendToServer(new WhistleCompanionPacket());
+            mc.player.displayClientMessage(
+                    net.minecraft.network.chat.Component.literal("§b\uD83D\uDD14 §fWhistling for companion..."),
+                    true
+            );
+        }
     }
 }
