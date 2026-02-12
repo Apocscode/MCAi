@@ -32,7 +32,9 @@ public class SmeltItemsTool implements AiTool {
     @Override
     public String description() {
         return "Smelt items at a nearby furnace. Companion walks to furnace, inserts items+fuel, waits real time, collects output. " +
-                "Needs furnace within 32 blocks + fuel in companion inventory. Works for raw ores, sand, cobblestone, raw food.";
+                "Needs furnace within 32 blocks + fuel in companion inventory. " +
+                "You can specify the raw material (e.g. 'raw_iron') OR the desired output (e.g. 'iron_ingot') and the tool will find the right recipe. " +
+                "Works for raw ores, sand, cobblestone, raw food.";
     }
 
     @Override
@@ -45,8 +47,9 @@ public class SmeltItemsTool implements AiTool {
         JsonObject item = new JsonObject();
         item.addProperty("type", "string");
         item.addProperty("description",
-                "Raw material to smelt. Examples: 'raw_iron', 'raw_gold', 'sand', " +
-                        "'cobblestone', 'raw_copper', 'beef', 'porkchop'");
+                "Item to smelt — can be the raw material (e.g. 'raw_iron') OR the desired output (e.g. 'iron_ingot'). " +
+                        "The tool automatically finds the correct smelting recipe either way. " +
+                        "Examples: 'raw_iron', 'iron_ingot', 'raw_gold', 'gold_ingot', 'sand', 'cobblestone', 'beef'");
         props.add("item", item);
 
         JsonObject count = new JsonObject();
@@ -86,20 +89,36 @@ public class SmeltItemsTool implements AiTool {
             count = Math.max(1, Math.min(count, 64));
 
             // Resolve item
-            Item inputItem = resolveItem(itemName);
-            if (inputItem == null) {
+            Item resolvedItem = resolveItem(itemName);
+            if (resolvedItem == null) {
                 return "Unknown item: '" + itemName + "'. " +
                         "Try using the Minecraft ID like 'raw_iron', 'sand', 'cobblestone'.";
             }
 
-            // Verify a smelting recipe exists for this input
+            // Try as smelting INPUT first (e.g. 'raw_iron')
             RegistryAccess registryAccess = context.server().registryAccess();
             RecipeManager recipeManager = context.server().getRecipeManager();
-            RecipeHolder<?> smeltRecipe = findSmeltRecipeForInput(recipeManager, inputItem);
+            RecipeHolder<?> smeltRecipe = findSmeltRecipeForInput(recipeManager, resolvedItem);
+            Item inputItem = resolvedItem;
+
+            // If no recipe with this as input, try as OUTPUT (e.g. 'iron_ingot' → find raw_iron)
+            if (smeltRecipe == null) {
+                smeltRecipe = findSmeltRecipeForOutput(recipeManager, registryAccess, resolvedItem);
+                if (smeltRecipe != null) {
+                    // Extract the actual input item from the recipe
+                    List<Ingredient> ings = smeltRecipe.value().getIngredients();
+                    if (!ings.isEmpty()) {
+                        ItemStack[] stacks = ings.get(0).getItems();
+                        if (stacks.length > 0) {
+                            inputItem = stacks[0].getItem();
+                        }
+                    }
+                }
+            }
 
             if (smeltRecipe == null) {
-                return inputItem.getDescription().getString() + " cannot be smelted. " +
-                        "There's no smelting recipe for this item.";
+                return resolvedItem.getDescription().getString() + " cannot be smelted. " +
+                        "There's no smelting recipe for this item (as input or output).";
             }
 
             String outputName = smeltRecipe.value().getResultItem(registryAccess)
@@ -151,6 +170,26 @@ public class SmeltItemsTool implements AiTool {
             }
             List<Ingredient> ings = r.getIngredients();
             if (!ings.isEmpty() && ings.get(0).test(testStack)) {
+                return holder;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Reverse lookup: find a smelting recipe that PRODUCES the given item as OUTPUT.
+     * e.g. given iron_ingot, finds the raw_iron → iron_ingot recipe.
+     */
+    private RecipeHolder<?> findSmeltRecipeForOutput(RecipeManager recipeManager,
+                                                      RegistryAccess registryAccess, Item outputItem) {
+        for (RecipeHolder<?> holder : recipeManager.getRecipes()) {
+            Recipe<?> r = holder.value();
+            if (!(r instanceof SmeltingRecipe) && !(r instanceof BlastingRecipe)
+                    && !(r instanceof SmokingRecipe) && !(r instanceof CampfireCookingRecipe)) {
+                continue;
+            }
+            ItemStack result = r.getResultItem(registryAccess);
+            if (result.is(outputItem)) {
                 return holder;
             }
         }

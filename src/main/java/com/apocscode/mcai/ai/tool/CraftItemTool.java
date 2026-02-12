@@ -14,12 +14,14 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.*;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.BlockEntity;
 
 import javax.annotation.Nullable;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Smart crafting tool that behaves like a real player:
@@ -32,13 +34,37 @@ import java.util.Map;
  * 6. Craft the item
  *
  * Only uses Shaped and Shapeless recipes — smelting requires the smelt_items tool.
- * Balance: Crafting table recipes are instant (same as vanilla player behavior).
+ * Balance: 2x2 recipes (planks, sticks, etc.) can be crafted from inventory.
+ * 3x3 recipes require a crafting table within 8 blocks, OR a portable crafting
+ * item (e.g. Sophisticated Backpacks crafting upgrade, Crafting on a Stick).
  * Smelting is NOT bypassed — requires a real furnace, fuel, and game time.
  */
 public class CraftItemTool implements AiTool {
 
     private static final int MAX_RESOLVE_PASSES = 3;
     private static final int CHEST_SCAN_RADIUS = 16;
+    private static final int CRAFTING_TABLE_RADIUS = 8;
+
+    /**
+     * Modded items that grant portable 3x3 crafting.
+     * Checked by registry ID (namespace:path) in player + companion inventories.
+     */
+    private static final Set<String> PORTABLE_CRAFTING_ITEMS = Set.of(
+            "sophisticatedbackpacks:crafting_upgrade",
+            "crafting_on_a_stick:crafting_table",
+            "easy_villagers:auto_crafter",
+            "portable_crafting:portable_crafting_table"
+    );
+
+    /**
+     * Modded items matched by partial ID — if the item's registry path contains any of these.
+     * Catches variants like "iron_crafting_table_on_a_stick" etc.
+     */
+    private static final Set<String> PORTABLE_CRAFTING_PARTIALS = Set.of(
+            "portable_crafting",
+            "crafting_on_a_stick",
+            "crafting_upgrade"
+    );
 
     @Override
     public String name() {
@@ -49,7 +75,9 @@ public class CraftItemTool implements AiTool {
     public String description() {
         return "Smart crafting: checks player inventory, nearby chests, auto-pulls materials, " +
                 "resolves intermediates (logs→planks→sticks), then crafts. Like a real player would. " +
-                "Crafting-table recipes only. For smelting, use smelt_items.";
+                "2x2 recipes (planks, sticks, torches) can be crafted from inventory. " +
+                "3x3 recipes (pickaxes, armor, etc.) REQUIRE a crafting table within 8 blocks " +
+                "or a portable crafting item in inventory. For smelting, use smelt_items.";
     }
 
     @Override
@@ -165,6 +193,15 @@ public class CraftItemTool implements AiTool {
             if (maxCrafts == 0) {
                 return buildMissingReport(context, recipeManager, registryAccess,
                         targetItem, ingredients, craftsNeeded, craftLog);
+            }
+
+            // === PHASE 5.5: Check crafting station requirement ===
+            boolean needs3x3 = !recipe.canCraftInDimensions(2, 2);
+            if (needs3x3 && !hasCraftingAccess(context)) {
+                return craftLog.toString() + targetName + " requires a 3x3 crafting grid. " +
+                        "Place a crafting table within " + CRAFTING_TABLE_RADIUS + " blocks, " +
+                        "or have a portable crafting item (e.g. Sophisticated Backpacks crafting upgrade). " +
+                        "2x2 recipes like planks and sticks can still be crafted from inventory.";
             }
 
             // === PHASE 6: Execute the craft ===
@@ -306,6 +343,10 @@ public class CraftItemTool implements AiTool {
             if (subRecipe == null) continue;
 
             Recipe<?> sub = subRecipe.value();
+
+            // Skip 3x3 sub-recipes if no crafting table access
+            if (!sub.canCraftInDimensions(2, 2) && !hasCraftingAccess(context)) continue;
+
             int outputPerCraft = sub.getResultItem(registryAccess).getCount();
             List<Ingredient> subIngs = sub.getIngredients();
             int subCraftsNeeded = (int) Math.ceil((double) deficit / outputPerCraft);
@@ -399,6 +440,10 @@ public class CraftItemTool implements AiTool {
             if (subRecipe == null) continue;
 
             Recipe<?> sub = subRecipe.value();
+
+            // Skip 3x3 sub-recipes if no crafting table access
+            if (!sub.canCraftInDimensions(2, 2) && !hasCraftingAccess(context)) continue;
+
             int outputPerCraft = sub.getResultItem(registryAccess).getCount();
             List<Ingredient> subIngs = sub.getIngredients();
             int subCraftsNeeded = (int) Math.ceil((double) deficit / outputPerCraft);
@@ -679,6 +724,84 @@ public class CraftItemTool implements AiTool {
             if (ing.test(testStack)) return ing;
         }
         return null;
+    }
+
+    // ========== Crafting station requirement ==========
+
+    /**
+     * Checks if the player/companion has access to a 3x3 crafting grid:
+     * 1. Crafting table block within CRAFTING_TABLE_RADIUS blocks of the player
+     * 2. OR a known portable crafting item in player/companion inventory
+     */
+    private boolean hasCraftingAccess(ToolContext context) {
+        return hasCraftingTableNearby(context) || hasPortableCraftingItem(context);
+    }
+
+    /**
+     * Scans for a crafting table block within radius of the player.
+     */
+    private boolean hasCraftingTableNearby(ToolContext context) {
+        Level level = context.player().level();
+        BlockPos center = context.player().blockPosition();
+        int r = CRAFTING_TABLE_RADIUS;
+
+        for (int x = -r; x <= r; x++) {
+            for (int y = -r; y <= r; y++) {
+                for (int z = -r; z <= r; z++) {
+                    BlockPos pos = center.offset(x, y, z);
+                    if (level.getBlockState(pos).is(Blocks.CRAFTING_TABLE)) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Checks if the player or companion has a modded portable crafting item.
+     * Supports Sophisticated Backpacks crafting upgrade, Crafting on a Stick, etc.
+     * Uses registry ID matching (exact + partial) to be mod-agnostic.
+     */
+    private boolean hasPortableCraftingItem(ToolContext context) {
+        // Check player inventory
+        var playerInv = context.player().getInventory();
+        for (int i = 0; i < playerInv.getContainerSize(); i++) {
+            ItemStack stack = playerInv.getItem(i);
+            if (!stack.isEmpty() && isPortableCraftingItem(stack)) return true;
+        }
+
+        // Check companion inventory
+        SimpleContainer companionInv = getCompanionInventory(context);
+        if (companionInv != null) {
+            for (int i = 0; i < companionInv.getContainerSize(); i++) {
+                ItemStack stack = companionInv.getItem(i);
+                if (!stack.isEmpty() && isPortableCraftingItem(stack)) return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Checks if an ItemStack is a known portable crafting item by its registry ID.
+     */
+    private boolean isPortableCraftingItem(ItemStack stack) {
+        ResourceLocation id = BuiltInRegistries.ITEM.getKey(stack.getItem());
+        if (id == null) return false;
+
+        String fullId = id.toString();
+        String path = id.getPath();
+
+        // Exact match
+        if (PORTABLE_CRAFTING_ITEMS.contains(fullId)) return true;
+
+        // Partial match on path
+        for (String partial : PORTABLE_CRAFTING_PARTIALS) {
+            if (path.contains(partial)) return true;
+        }
+
+        return false;
     }
 
     // ========== Inventory helpers ==========
