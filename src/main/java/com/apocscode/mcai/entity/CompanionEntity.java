@@ -4,6 +4,7 @@ import com.apocscode.mcai.MCAi;
 import com.apocscode.mcai.config.AiConfig;
 import com.apocscode.mcai.entity.goal.*;
 import com.apocscode.mcai.inventory.CompanionInventoryMenu;
+import com.apocscode.mcai.item.SoulCrystalItem;
 import com.apocscode.mcai.network.OpenChatScreenPacket;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
@@ -31,7 +32,10 @@ import net.minecraft.world.level.Level;
 import net.neoforged.neoforge.network.PacketDistributor;
 
 import javax.annotation.Nullable;
+import java.lang.ref.WeakReference;
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * The AI Companion entity — a fully capable player-like mob.
@@ -63,6 +67,7 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
 
     private final SimpleContainer inventory = new SimpleContainer(INVENTORY_SIZE);
     private int eatCooldown = 0;
+    private boolean registeredLiving = false; // Tracks if we've registered in LIVING_COMPANIONS
 
     // Proactive chat system
     private final CompanionChat chat = new CompanionChat(this);
@@ -71,6 +76,41 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
     private double lastX, lastY, lastZ;
     private int stuckTicks = 0;
     private static final int STUCK_THRESHOLD = 100; // 5 seconds not moving while navigating
+
+    // ================================================================
+    // Living companion tracker — prevents duplicate summons
+    // ================================================================
+    private static final Map<UUID, WeakReference<CompanionEntity>> LIVING_COMPANIONS =
+            new ConcurrentHashMap<>();
+
+    /**
+     * Register a living companion for the given owner.
+     */
+    public static void registerLivingCompanion(UUID ownerUUID, CompanionEntity entity) {
+        LIVING_COMPANIONS.put(ownerUUID, new WeakReference<>(entity));
+    }
+
+    /**
+     * Unregister a living companion (on death, removal, or dismissal).
+     */
+    public static void unregisterLivingCompanion(UUID ownerUUID) {
+        LIVING_COMPANIONS.remove(ownerUUID);
+    }
+
+    /**
+     * Check if the given player already has a living companion in the world.
+     * Validates the entity is still alive and cleans stale entries.
+     */
+    public static boolean hasLivingCompanion(UUID ownerUUID) {
+        WeakReference<CompanionEntity> ref = LIVING_COMPANIONS.get(ownerUUID);
+        if (ref == null) return false;
+        CompanionEntity companion = ref.get();
+        if (companion == null || !companion.isAlive() || companion.isRemoved()) {
+            LIVING_COMPANIONS.remove(ownerUUID);
+            return false;
+        }
+        return true;
+    }
 
     public CompanionEntity(EntityType<? extends CompanionEntity> type, Level level) {
         super(type, level);
@@ -130,6 +170,10 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
         if (!this.level().isClientSide && player instanceof ServerPlayer serverPlayer) {
             if (ownerUUID == null) {
                 ownerUUID = player.getUUID();
+                // Persist companion name to owner's data for respawn
+                player.getPersistentData().putString("mcai:companion_name", companionName);
+                registerLivingCompanion(ownerUUID, this);
+                registeredLiving = true;
                 player.sendSystemMessage(Component.literal(
                         "§b[MCAi]§r " + companionName + " is now your companion!"));
                 chat.say(CompanionChat.Category.GREETING,
@@ -225,14 +269,34 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
                 }
             }
 
+            // Set respawn cooldown on the owner's soul crystal tracker
+            if (ownerUUID != null) {
+                SoulCrystalItem.setDeathCooldown(ownerUUID, this.level().getGameTime());
+                unregisterLivingCompanion(ownerUUID);
+            }
+
             Player owner = getOwner();
             if (owner != null) {
+                long cooldownSec = SoulCrystalItem.RESPAWN_COOLDOWN_TICKS / 20;
                 owner.sendSystemMessage(Component.literal(
                         "§c[MCAi]§r " + companionName +
-                                " was defeated! Their items dropped. Use a spawn egg to resummon."));
+                                " was defeated! Items dropped. Use your §dSoul Crystal§r to resummon in " +
+                                cooldownSec + " seconds."));
             }
         }
         super.die(source);
+    }
+
+    // ================================================================
+    // Entity lifecycle — track living companions
+    // ================================================================
+
+    @Override
+    public void remove(Entity.RemovalReason reason) {
+        if (!this.level().isClientSide && ownerUUID != null) {
+            unregisterLivingCompanion(ownerUUID);
+        }
+        super.remove(reason);
     }
 
     // ================================================================
@@ -325,6 +389,12 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
     public void tick() {
         super.tick();
         if (!this.level().isClientSide) {
+            // Register as living companion on first server tick (handles chunk reload)
+            if (!registeredLiving && ownerUUID != null) {
+                registerLivingCompanion(ownerUUID, this);
+                registeredLiving = true;
+            }
+
             if (eatCooldown > 0) eatCooldown--;
 
             // Tick proactive chat cooldowns
@@ -464,6 +534,13 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
         return ownerUUID;
     }
 
+    /**
+     * Set the owner UUID. Used by SoulCrystalItem when summoning.
+     */
+    public void setOwnerUUID(UUID uuid) {
+        this.ownerUUID = uuid;
+    }
+
     @Nullable
     public Player getOwner() {
         if (ownerUUID == null) return null;
@@ -477,6 +554,11 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
     public void setCompanionName(String name) {
         this.companionName = name;
         this.setCustomName(Component.literal(name));
+        // Persist name to owner's data so it survives death/respawn
+        Player owner = getOwner();
+        if (owner != null) {
+            owner.getPersistentData().putString("mcai:companion_name", name);
+        }
     }
 
     @Override

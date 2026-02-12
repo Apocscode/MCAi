@@ -2,6 +2,7 @@ package com.apocscode.mcai;
 
 import com.apocscode.mcai.entity.CompanionEntity;
 import com.apocscode.mcai.inventory.CompanionInventoryMenu;
+import com.apocscode.mcai.item.SoulCrystalItem;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.EntityType;
@@ -9,6 +10,7 @@ import net.minecraft.world.entity.MobCategory;
 import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.item.CreativeModeTab;
 import net.minecraft.world.item.Item;
+import net.minecraft.world.item.Rarity;
 import net.minecraft.world.item.SpawnEggItem;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.common.extensions.IMenuTypeExtension;
@@ -40,6 +42,13 @@ public class ModRegistry {
                     new SpawnEggItem(COMPANION.get(), 0x3498DB, 0x2ECC71,
                             new Item.Properties()));
 
+    // Soul Crystal — craftable summon item for survival mode
+    public static final DeferredHolder<Item, SoulCrystalItem> SOUL_CRYSTAL =
+            ITEMS.register("soul_crystal", () ->
+                    new SoulCrystalItem(new Item.Properties()
+                            .stacksTo(1)
+                            .rarity(Rarity.RARE)));
+
     // Menu type (companion inventory)
     public static final DeferredHolder<MenuType<?>, MenuType<CompanionInventoryMenu>> COMPANION_MENU =
             MENU_TYPES.register("companion_menu", () ->
@@ -53,6 +62,7 @@ public class ModRegistry {
                             .icon(() -> COMPANION_SPAWN_EGG.get().getDefaultInstance())
                             .displayItems((params, output) -> {
                                 output.accept(COMPANION_SPAWN_EGG.get());
+                                output.accept(SOUL_CRYSTAL.get());
                             })
                             .build());
 
