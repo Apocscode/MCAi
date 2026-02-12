@@ -85,6 +85,8 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
     private static final String TAG_INVENTORY = "CompanionInventory";
     private static final String TAG_BEHAVIOR_MODE = "BehaviorMode";
     private static final String TAG_HOME_POS = "HomePos";
+    private static final String TAG_HOME_CORNER1 = "HomeCorner1";
+    private static final String TAG_HOME_CORNER2 = "HomeCorner2";
     private static final String TAG_LOGISTICS = "LogisticsBlocks";
     private static final int MAX_TAGGED_BLOCKS_DEFAULT = 32;
 
@@ -101,6 +103,12 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
     // Home position — set by shift+clicking Soul Crystal
     @Nullable
     private BlockPos homePos;
+
+    // Home area corners — two-point bounding box set by Logistics Wand HOME_AREA mode
+    @Nullable
+    private BlockPos homeCorner1;
+    @Nullable
+    private BlockPos homeCorner2;
 
     // Guard position — center of patrol area in GUARD mode
     @Nullable
@@ -610,6 +618,10 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
                 if (!taggedBlocks.isEmpty()) {
                     syncTaggedBlocksToOwner();
                 }
+                // Sync home area to owner client
+                if (hasHomeArea()) {
+                    syncHomeAreaToOwner();
+                }
             }
 
             if (eatCooldown > 0) eatCooldown--;
@@ -973,11 +985,18 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
     }
 
     // ================================================================
-    // Home position
+    // Home position & Home Area
     // ================================================================
 
     @Nullable
     public BlockPos getHomePos() {
+        // If we have a home area, return its center; otherwise the legacy single point
+        if (homeCorner1 != null && homeCorner2 != null) {
+            return new BlockPos(
+                    (homeCorner1.getX() + homeCorner2.getX()) / 2,
+                    (homeCorner1.getY() + homeCorner2.getY()) / 2,
+                    (homeCorner1.getZ() + homeCorner2.getZ()) / 2);
+        }
         return homePos;
     }
 
@@ -986,7 +1005,58 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
     }
 
     public boolean hasHomePos() {
-        return homePos != null;
+        return homePos != null || (homeCorner1 != null && homeCorner2 != null);
+    }
+
+    // --- Home area (two-corner bounding box) ---
+
+    @Nullable
+    public BlockPos getHomeCorner1() {
+        return homeCorner1;
+    }
+
+    @Nullable
+    public BlockPos getHomeCorner2() {
+        return homeCorner2;
+    }
+
+    public void setHomeCorner1(@Nullable BlockPos pos) {
+        this.homeCorner1 = pos;
+    }
+
+    public void setHomeCorner2(@Nullable BlockPos pos) {
+        this.homeCorner2 = pos;
+        // When both corners are set, update legacy homePos to center
+        if (this.homeCorner1 != null && pos != null) {
+            this.homePos = getHomePos(); // cache center
+        }
+    }
+
+    public boolean hasHomeArea() {
+        return homeCorner1 != null && homeCorner2 != null;
+    }
+
+    /**
+     * Check if a position is inside the home area bounding box.
+     * Falls back to distance check from homePos if no area is defined.
+     */
+    public boolean isInHomeArea(BlockPos pos) {
+        if (homeCorner1 != null && homeCorner2 != null) {
+            int minX = Math.min(homeCorner1.getX(), homeCorner2.getX());
+            int minY = Math.min(homeCorner1.getY(), homeCorner2.getY());
+            int minZ = Math.min(homeCorner1.getZ(), homeCorner2.getZ());
+            int maxX = Math.max(homeCorner1.getX(), homeCorner2.getX());
+            int maxY = Math.max(homeCorner1.getY(), homeCorner2.getY());
+            int maxZ = Math.max(homeCorner1.getZ(), homeCorner2.getZ());
+            return pos.getX() >= minX && pos.getX() <= maxX
+                    && pos.getY() >= minY && pos.getY() <= maxY
+                    && pos.getZ() >= minZ && pos.getZ() <= maxZ;
+        }
+        // Legacy fallback: 20-block manhattan distance from single home point
+        if (homePos != null) {
+            return homePos.distManhattan(pos) <= 20;
+        }
+        return false;
     }
 
     // ================================================================
@@ -1077,6 +1147,24 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
         }
     }
 
+    /**
+     * Sync the home area corners to the owner client for outline rendering.
+     */
+    public void syncHomeAreaToOwner() {
+        if (this.level().isClientSide) return;
+        Player owner = getOwner();
+        if (owner instanceof net.minecraft.server.level.ServerPlayer sp) {
+            if (homeCorner1 != null && homeCorner2 != null) {
+                PacketDistributor.sendToPlayer(sp,
+                        new com.apocscode.mcai.network.SyncHomeAreaPacket(
+                                homeCorner1.asLong(), homeCorner2.asLong()));
+            } else {
+                PacketDistributor.sendToPlayer(sp,
+                        new com.apocscode.mcai.network.SyncHomeAreaPacket(0L, 0L));
+            }
+        }
+    }
+
     public void setCompanionName(String name) {
         this.companionName = name;
         this.setCustomName(Component.literal(name));
@@ -1138,6 +1226,13 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
         // Persist home position to owner data
         if (homePos != null) {
             owner.getPersistentData().putLong("mcai:home_pos", homePos.asLong());
+        }
+        // Persist home area corners
+        if (homeCorner1 != null) {
+            owner.getPersistentData().putLong("mcai:home_corner1", homeCorner1.asLong());
+        }
+        if (homeCorner2 != null) {
+            owner.getPersistentData().putLong("mcai:home_corner2", homeCorner2.asLong());
         }
         // Persist logistics tagged blocks
         if (!taggedBlocks.isEmpty()) {
@@ -1215,6 +1310,16 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
         if (owner.getPersistentData().contains("mcai:guard_pos")) {
             guardPos = BlockPos.of(owner.getPersistentData().getLong("mcai:guard_pos"));
             owner.getPersistentData().remove("mcai:guard_pos");
+        }
+
+        // Home area corners
+        if (owner.getPersistentData().contains("mcai:home_corner1")) {
+            homeCorner1 = BlockPos.of(owner.getPersistentData().getLong("mcai:home_corner1"));
+            owner.getPersistentData().remove("mcai:home_corner1");
+        }
+        if (owner.getPersistentData().contains("mcai:home_corner2")) {
+            homeCorner2 = BlockPos.of(owner.getPersistentData().getLong("mcai:home_corner2"));
+            owner.getPersistentData().remove("mcai:home_corner2");
         }
 
         // Memory
@@ -1300,6 +1405,13 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
         if (homePos != null) {
             tag.putLong(TAG_HOME_POS, homePos.asLong());
         }
+        // Home area corners
+        if (homeCorner1 != null) {
+            tag.putLong(TAG_HOME_CORNER1, homeCorner1.asLong());
+        }
+        if (homeCorner2 != null) {
+            tag.putLong(TAG_HOME_CORNER2, homeCorner2.asLong());
+        }
         // Guard position
         if (guardPos != null) {
             tag.putLong("GuardPos", guardPos.asLong());
@@ -1349,6 +1461,13 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
         }
         if (tag.contains(TAG_HOME_POS)) {
             homePos = BlockPos.of(tag.getLong(TAG_HOME_POS));
+        }
+        // Home area corners
+        if (tag.contains(TAG_HOME_CORNER1)) {
+            homeCorner1 = BlockPos.of(tag.getLong(TAG_HOME_CORNER1));
+        }
+        if (tag.contains(TAG_HOME_CORNER2)) {
+            homeCorner2 = BlockPos.of(tag.getLong(TAG_HOME_CORNER2));
         }
         // Guard position
         if (tag.contains("GuardPos")) {

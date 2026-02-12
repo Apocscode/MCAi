@@ -36,7 +36,7 @@ public class CraftingBlockHelper {
 
     private static final int SCAN_RADIUS = 8;
     /** If a placed block is within this distance of the companion's home, leave it permanently. */
-    private static final int HOME_RADIUS = 10;
+    // Home area check is delegated to CompanionEntity.isInHomeArea()
 
     /**
      * Represents a crafting station type with its block, item, and recipe.
@@ -247,13 +247,12 @@ public class CraftingBlockHelper {
     }
 
     /**
-     * Check if a position is within HOME_RADIUS of the companion's home position.
-     * Blocks placed near home are permanent — no pickup.
+     * Check if a position is within the companion's home area (bounding box) or
+     * within 20 blocks of the home point fallback. Blocks placed near home are permanent — no pickup.
      */
     public static boolean isNearHome(@Nullable CompanionEntity companion, BlockPos pos) {
         if (companion == null || !companion.hasHomePos()) return false;
-        BlockPos home = companion.getHomePos();
-        return home.distManhattan(pos) <= HOME_RADIUS;
+        return companion.isInHomeArea(pos);
     }
 
     // ========== Block placement ==========

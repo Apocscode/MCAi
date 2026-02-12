@@ -490,12 +490,12 @@ public class SmeltItemsTask extends CompanionTask {
     }
 
     /**
-     * Check if a position is near the companion's home (within 10 blocks).
+     * Check if a position is within the companion's home area.
      * Blocks placed near home stay permanently.
      */
     private boolean isNearHome(BlockPos pos) {
         if (!companion.hasHomePos()) return false;
-        return companion.getHomePos().distManhattan(pos) <= 10;
+        return companion.isInHomeArea(pos);
     }
 
     @Override

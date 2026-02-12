@@ -155,18 +155,14 @@ public class CompanionHudOverlay {
         if (!holdingWand) return;
 
         int modeOrd = SyncWandModePacket.getClientMode();
-        TaggedBlock.Role[] roles = TaggedBlock.Role.values();
-        TaggedBlock.Role mode = (modeOrd >= 0 && modeOrd < roles.length) ? roles[modeOrd] : TaggedBlock.Role.INPUT;
+        com.apocscode.mcai.item.WandMode[] modes = com.apocscode.mcai.item.WandMode.values();
+        com.apocscode.mcai.item.WandMode mode = (modeOrd >= 0 && modeOrd < modes.length) ? modes[modeOrd] : com.apocscode.mcai.item.WandMode.INPUT;
 
         // Get tag count from client cache
         int tagCount = LogisticsOutlineRenderer.getClientTagCount();
 
         String modeLabel = mode.getLabel();
-        int modeColor = switch (mode) {
-            case INPUT -> 0xFF5599FF;
-            case OUTPUT -> 0xFFFF8800;
-            case STORAGE -> 0xFF55FF55;
-        };
+        int modeColor = mode.getColor();
 
         // Position: from user-configurable store (drag with H key)
         int screenW = graphics.guiWidth();
@@ -192,11 +188,11 @@ public class CompanionHudOverlay {
         // Tag count (right, with guaranteed gap)
         graphics.drawString(mc.font, tagText, px + panelW - tagTextW - 4, py + 3, 0xAAAAAA, true);
 
-        // Mode indicator dots (show all 3, highlight active)
+        // Mode indicator dots (show all modes, highlight active)
         int dotY = py + 14;
         int dotX = px + 4;
-        for (TaggedBlock.Role r : roles) {
-            int dotColor = (r == mode) ? modeColor : 0xFF444444;
+        for (com.apocscode.mcai.item.WandMode m : modes) {
+            int dotColor = (m == mode) ? modeColor : 0xFF444444;
             graphics.fill(dotX, dotY, dotX + 8, dotY + 4, dotColor);
             dotX += 12;
         }

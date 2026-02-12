@@ -5,6 +5,7 @@ import com.apocscode.mcai.network.ChatResponsePacket;
 import com.apocscode.mcai.network.OpenChatScreenPacket;
 import com.apocscode.mcai.network.CycleWandModePacket;
 import com.apocscode.mcai.network.SetBehaviorModePacket;
+import com.apocscode.mcai.network.SyncHomeAreaPacket;
 import com.apocscode.mcai.network.SyncTaggedBlocksPacket;
 import com.apocscode.mcai.network.SyncWandModePacket;
 import com.apocscode.mcai.network.WhistleCompanionPacket;
@@ -67,6 +68,12 @@ public class ModNetworking {
                 SyncWandModePacket.TYPE,
                 SyncWandModePacket.STREAM_CODEC,
                 SyncWandModePacket::handle);
+
+        // Server → Client: sync home area corners for outline rendering
+        registrar.playToClient(
+                SyncHomeAreaPacket.TYPE,
+                SyncHomeAreaPacket.STREAM_CODEC,
+                SyncHomeAreaPacket::handle);
 
         // Client → Server: whistle to call companion
         registrar.playToServer(

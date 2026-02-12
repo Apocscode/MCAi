@@ -5,6 +5,7 @@ import com.apocscode.mcai.config.AiConfig;
 import com.apocscode.mcai.entity.CompanionEntity;
 import com.apocscode.mcai.item.LogisticsWandItem;
 import com.apocscode.mcai.logistics.TaggedBlock;
+import com.apocscode.mcai.network.SyncHomeAreaPacket;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.minecraft.client.Minecraft;
@@ -28,13 +29,15 @@ import java.util.UUID;
 import org.joml.Matrix4f;
 
 /**
- * Renders color-coded cube outlines around containers tagged with the Logistics Wand.
+ * Renders color-coded cube outlines around containers tagged with the Logistics Wand,
+ * and a green bounding box outline for the home area when defined.
  *
  * Only visible when the player is holding a Logistics Wand in either hand.
  * Colors:
  *   INPUT   = Blue   (0.33, 0.6, 1.0)
  *   OUTPUT  = Orange  (1.0, 0.53, 0.0)
  *   STORAGE = Green   (0.33, 1.0, 0.33)
+ *   HOME    = Green   (0.2, 0.8, 0.4) with thicker appearance
  */
 @EventBusSubscriber(modid = MCAi.MOD_ID, value = Dist.CLIENT, bus = EventBusSubscriber.Bus.GAME)
 public class LogisticsOutlineRenderer {
@@ -67,20 +70,16 @@ public class LogisticsOutlineRenderer {
                 || player.getOffhandItem().getItem() instanceof LogisticsWandItem;
         if (!holdingWand) return;
 
-        // Try to get tagged blocks from the client-side companion entity first,
-        // then fall back to our cache
-        List<TaggedBlock> taggedBlocks = findClientTaggedBlocks(mc, player);
-        if (taggedBlocks.isEmpty()) return;
-
         PoseStack poseStack = event.getPoseStack();
         Vec3 camera = event.getCamera().getPosition();
-
         var bufferSource = mc.renderBuffers().bufferSource();
         VertexConsumer lineConsumer = bufferSource.getBuffer(RenderType.lines());
 
         poseStack.pushPose();
         poseStack.translate(-camera.x, -camera.y, -camera.z);
 
+        // === Render tagged block outlines ===
+        List<TaggedBlock> taggedBlocks = findClientTaggedBlocks(mc, player);
         for (TaggedBlock tagged : taggedBlocks) {
             BlockPos pos = tagged.pos();
 
@@ -102,6 +101,37 @@ public class LogisticsOutlineRenderer {
                     box.minX, box.minY, box.minZ,
                     box.maxX, box.maxY, box.maxZ,
                     r, g, b, a);
+        }
+
+        // === Render home area bounding box ===
+        if (SyncHomeAreaPacket.hasClientHomeArea()) {
+            BlockPos c1 = SyncHomeAreaPacket.getClientCorner1();
+            BlockPos c2 = SyncHomeAreaPacket.getClientCorner2();
+            if (c1 != null && c2 != null) {
+                // Build AABB from the two corners, covering full blocks
+                double minX = Math.min(c1.getX(), c2.getX());
+                double minY = Math.min(c1.getY(), c2.getY());
+                double minZ = Math.min(c1.getZ(), c2.getZ());
+                double maxX = Math.max(c1.getX(), c2.getX()) + 1.0;
+                double maxY = Math.max(c1.getY(), c2.getY()) + 1.0;
+                double maxZ = Math.max(c1.getZ(), c2.getZ()) + 1.0;
+
+                // Green home area outline — slightly inflated so it doesn't clip into blocks
+                AABB homeBox = new AABB(minX, minY, minZ, maxX, maxY, maxZ).inflate(0.02);
+
+                // Render the main outline box (green)
+                LevelRenderer.renderLineBox(poseStack, lineConsumer,
+                        homeBox.minX, homeBox.minY, homeBox.minZ,
+                        homeBox.maxX, homeBox.maxY, homeBox.maxZ,
+                        0.2f, 0.85f, 0.4f, 0.9f);
+
+                // Render a second, slightly larger box for a "thicker" look
+                AABB outerBox = homeBox.inflate(0.01);
+                LevelRenderer.renderLineBox(poseStack, lineConsumer,
+                        outerBox.minX, outerBox.minY, outerBox.minZ,
+                        outerBox.maxX, outerBox.maxY, outerBox.maxZ,
+                        0.2f, 0.85f, 0.4f, 0.5f);
+            }
         }
 
         poseStack.popPose();
@@ -143,6 +173,35 @@ public class LogisticsOutlineRenderer {
 
             poseStack.popPose();
         }
+
+        // === Floating "Home Area" label above home box center ===
+        if (SyncHomeAreaPacket.hasClientHomeArea()) {
+            BlockPos c1 = SyncHomeAreaPacket.getClientCorner1();
+            BlockPos c2 = SyncHomeAreaPacket.getClientCorner2();
+            if (c1 != null && c2 != null) {
+                double cx = (c1.getX() + c2.getX()) / 2.0 + 0.5;
+                double cy = Math.max(c1.getY(), c2.getY()) + 1.8;
+                double cz = (c1.getZ() + c2.getZ()) / 2.0 + 0.5;
+
+                // Only if within 32 blocks
+                double distSq = (cx - camera.x) * (cx - camera.x) + (cy - camera.y) * (cy - camera.y) + (cz - camera.z) * (cz - camera.z);
+                if (distSq < 32 * 32) {
+                    poseStack.pushPose();
+                    poseStack.translate(cx - camera.x, cy - camera.y, cz - camera.z);
+                    poseStack.mulPose(mc.getEntityRenderDispatcher().cameraOrientation());
+                    poseStack.scale(-0.03F, -0.03F, 0.03F);
+
+                    Matrix4f matrix = poseStack.last().pose();
+                    String homeLabel = "Home Area";
+                    float halfWidth = font.width(homeLabel) / 2.0f;
+                    font.drawInBatch(homeLabel, -halfWidth, 0, 0xFF55FFAA, false, matrix,
+                            bufferSource, Font.DisplayMode.NORMAL, 0x40000000, 15728880);
+
+                    poseStack.popPose();
+                }
+            }
+        }
+
         bufferSource.endBatch();
     }
 

@@ -108,7 +108,7 @@ public class SoulCrystalItem extends Item {
         if (!level.isClientSide && level instanceof ServerLevel serverLevel) {
             UUID playerUUID = player.getUUID();
 
-            // Shift+right-click = set home position for the companion
+            // Shift+right-click = set home position for the companion (quick single-point home)
             if (player.isShiftKeyDown()) {
                 BlockPos pos = player.blockPosition();
                 // Save home to player persistent data (persists even without a living companion)
@@ -119,11 +119,15 @@ public class SoulCrystalItem extends Item {
                     CompanionEntity companion = CompanionEntity.getLivingCompanion(playerUUID);
                     if (companion != null) {
                         companion.setHomePos(pos);
+                        // Clear any existing home area — soul crystal sets single point
+                        companion.setHomeCorner1(null);
+                        companion.setHomeCorner2(null);
                     }
                 }
 
                 player.sendSystemMessage(Component.literal(
-                        "§b[MCAi]§r Home position set to §e" + pos.getX() + ", " + pos.getY() + ", " + pos.getZ() + "§r"));
+                        "§b[MCAi]§r Home position set to §e" + pos.getX() + ", " + pos.getY() + ", " + pos.getZ() +
+                        "§r §7(use Logistics Wand Home Area mode for bounding box)"));
                 player.getCooldowns().addCooldown(this, 10);
                 return InteractionResultHolder.sidedSuccess(stack, level.isClientSide);
             }
@@ -169,6 +173,13 @@ public class SoulCrystalItem extends Item {
                 // Restore home position from player persistent data
                 if (player.getPersistentData().contains("mcai:home_pos")) {
                     companion.setHomePos(BlockPos.of(player.getPersistentData().getLong("mcai:home_pos")));
+                }
+                // Restore home area corners from player persistent data
+                if (player.getPersistentData().contains("mcai:home_corner1")) {
+                    companion.setHomeCorner1(BlockPos.of(player.getPersistentData().getLong("mcai:home_corner1")));
+                }
+                if (player.getPersistentData().contains("mcai:home_corner2")) {
+                    companion.setHomeCorner2(BlockPos.of(player.getPersistentData().getLong("mcai:home_corner2")));
                 }
 
                 serverLevel.addFreshEntity(companion);

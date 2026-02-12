@@ -35,7 +35,7 @@ public record SyncWandModePacket(int mode) implements CustomPacketPayload {
         });
     }
 
-    /** Get the cached wand mode on client side (ordinal of TaggedBlock.Role) */
+    /** Get the cached wand mode on client side (ordinal of WandMode) */
     public static int getClientMode() {
         return clientMode;
     }

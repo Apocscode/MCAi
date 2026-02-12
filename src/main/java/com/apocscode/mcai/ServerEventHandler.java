@@ -22,8 +22,14 @@ public class ServerEventHandler {
     public static void onPlayerLogin(PlayerEvent.PlayerLoggedInEvent event) {
         if (event.getEntity() instanceof ServerPlayer sp) {
             // Sync wand mode to client on login
-            TaggedBlock.Role mode = LogisticsWandItem.getWandMode(sp);
+            com.apocscode.mcai.item.WandMode mode = LogisticsWandItem.getWandMode(sp);
             PacketDistributor.sendToPlayer(sp, new SyncWandModePacket(mode.ordinal()));
+
+            // Sync home area if companion has one
+            CompanionEntity companion = CompanionEntity.getLivingCompanion(sp.getUUID());
+            if (companion != null && companion.hasHomeArea()) {
+                companion.syncHomeAreaToOwner();
+            }
         }
     }
 
