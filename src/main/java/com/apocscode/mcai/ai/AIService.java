@@ -49,14 +49,14 @@ public class AIService {
         ToolRegistry.init();
 
         try {
-            MCAi.LOGGER.info("AI Service initialized (Ollama: {}, model: {}, tools: {})",
-                    AiConfig.OLLAMA_URL.get(), AiConfig.OLLAMA_MODEL.get(),
-                    ToolRegistry.getAll().keySet());
+            String backend = AiConfig.isGroqEnabled() ? "Groq (" + AiConfig.GROQ_MODEL.get() + ")"
+                    : "Ollama (" + AiConfig.OLLAMA_MODEL.get() + ")";
+            MCAi.LOGGER.info("AI Service initialized (backend: {}, tools: {})",
+                    backend, ToolRegistry.getAll().size());
             AiLogger.log(AiLogger.Category.SYSTEM, "INFO",
-                    "AIService initialized — model=" + AiConfig.OLLAMA_MODEL.get() +
+                    "AIService initialized — backend=" + backend +
                     ", tools=" + ToolRegistry.getAll().size());
         } catch (Exception e) {
-            // Config may not be loaded yet during mod construction — log defaults
             MCAi.LOGGER.info("AI Service initialized (config not yet loaded, {} tools registered)",
                     ToolRegistry.getAll().size());
         }
@@ -89,7 +89,9 @@ public class AIService {
                 long elapsed = System.currentTimeMillis() - startMs;
                 AiLogger.error("AI chat error after " + elapsed + "ms", e);
                 MCAi.LOGGER.error("AI chat error: {}", e.getMessage(), e);
-                return "I'm having trouble connecting to my brain. Make sure Ollama is running on localhost:11434. Error: " + e.getMessage();
+                return "I'm having trouble connecting to my brain. " +
+                        (AiConfig.isGroqEnabled() ? "Check your Groq API key." : "Make sure Ollama is running on localhost:11434.") +
+                        " Error: " + e.getMessage();
             }
         }, executor);
     }
@@ -131,10 +133,20 @@ public class AIService {
         messages.add(userMsg);
 
         // Agent loop — keep going until AI gives a text response or limit reached
+        boolean useGroq = AiConfig.isGroqEnabled();
         int maxIterations = AiConfig.MAX_TOOL_ITERATIONS.get();
         for (int iteration = 0; iteration < maxIterations; iteration++) {
-            JsonObject response = callOllama(messages, userMessage);
-            JsonObject assistantMessage = response.getAsJsonObject("message");
+            JsonObject response = useGroq ? callGroq(messages, userMessage) : callOllama(messages, userMessage);
+
+            // Extract assistant message — Groq wraps in choices[0].message, Ollama uses message directly
+            JsonObject assistantMessage;
+            if (useGroq) {
+                assistantMessage = response.getAsJsonArray("choices")
+                        .get(0).getAsJsonObject()
+                        .getAsJsonObject("message");
+            } else {
+                assistantMessage = response.getAsJsonObject("message");
+            }
 
             // Check if the AI wants to use tools
             if (assistantMessage.has("tool_calls") && !assistantMessage.get("tool_calls").isJsonNull()) {
@@ -153,14 +165,16 @@ public class AIService {
                         JsonObject function = toolCall.getAsJsonObject("function");
                         String toolName = function.get("name").getAsString();
 
-                        // Parse arguments — Ollama may return as string or object
+                        // Groq tool calls have an id that must be echoed back
+                        String toolCallId = toolCall.has("id") ? toolCall.get("id").getAsString() : null;
+
+                        // Parse arguments — may be string (Groq/OpenAI) or object (Ollama)
                         JsonObject toolArgs = new JsonObject();
                         if (function.has("arguments")) {
                             JsonElement argsEl = function.get("arguments");
                             if (argsEl.isJsonObject()) {
                                 toolArgs = argsEl.getAsJsonObject();
                             } else if (argsEl.isJsonPrimitive()) {
-                                // Sometimes Ollama returns args as a JSON string
                                 try {
                                     toolArgs = JsonParser.parseString(argsEl.getAsString()).getAsJsonObject();
                                 } catch (Exception e) {
@@ -175,10 +189,14 @@ public class AIService {
                         String result = executeTool(toolName, toolArgs, toolCtx);
                         long toolElapsed = System.currentTimeMillis() - toolStartMs;
 
-                        // Add tool result as a "tool" role message
+                        // Add tool result — Groq requires tool_call_id, Ollama just uses "tool" role
                         JsonObject toolResultMsg = new JsonObject();
                         toolResultMsg.addProperty("role", "tool");
                         toolResultMsg.addProperty("content", result);
+                        if (toolCallId != null) {
+                            toolResultMsg.addProperty("tool_call_id", toolCallId);
+                            toolResultMsg.addProperty("name", toolName);
+                        }
                         messages.add(toolResultMsg);
 
                         MCAi.LOGGER.info("Tool '{}' executed in {}ms, result length: {} chars",
@@ -453,6 +471,61 @@ public class AIService {
             String error = readStream(conn.getErrorStream());
             conn.disconnect();
             throw new IOException("Ollama returned HTTP " + responseCode + ": " + error);
+        }
+
+        String responseBody = readStream(conn.getInputStream());
+        conn.disconnect();
+
+        return JsonParser.parseString(responseBody).getAsJsonObject();
+    }
+
+    /**
+     * Call Groq cloud API (OpenAI-compatible) with tool support.
+     * Groq's 70B models handle all 30 tools reliably, so we send the full set.
+     * Returns the full response JSON object (OpenAI format with choices[]).
+     */
+    private static JsonObject callGroq(JsonArray messages, String userMessage) throws IOException {
+        // Build request — OpenAI chat completions format
+        JsonObject request = new JsonObject();
+        request.addProperty("model", AiConfig.GROQ_MODEL.get());
+        request.add("messages", messages);
+        request.addProperty("temperature", AiConfig.AI_TEMPERATURE.get());
+        request.addProperty("max_tokens", AiConfig.AI_MAX_TOKENS.get());
+        request.addProperty("stream", false);
+
+        // Send ALL tools — Groq's 70B+ models handle 30+ tools without issue
+        JsonArray tools = ToolRegistry.toOllamaToolsArray();
+        if (tools.size() > 0) {
+            request.add("tools", tools);
+            request.addProperty("tool_choice", "auto");
+        }
+
+        String model = AiConfig.GROQ_MODEL.get();
+        AiLogger.aiRequest(messages.size(), tools.size(), model);
+
+        // Send HTTP request
+        int timeoutMs = AiConfig.AI_TIMEOUT_MS.get();
+        String url = AiConfig.GROQ_URL.get();
+        HttpURLConnection conn = (HttpURLConnection) URI.create(url).toURL().openConnection();
+        conn.setRequestMethod("POST");
+        conn.setRequestProperty("Content-Type", "application/json");
+        conn.setRequestProperty("Authorization", "Bearer " + AiConfig.GROQ_API_KEY.get());
+        conn.setDoOutput(true);
+        conn.setConnectTimeout(timeoutMs);
+        conn.setReadTimeout(timeoutMs);
+
+        String requestBody = GSON.toJson(request);
+        MCAi.LOGGER.debug("Groq request: {} chars, model: {}", requestBody.length(), model);
+
+        try (OutputStream os = conn.getOutputStream()) {
+            os.write(requestBody.getBytes(StandardCharsets.UTF_8));
+        }
+
+        int responseCode = conn.getResponseCode();
+        if (responseCode != 200) {
+            String error = readStream(conn.getErrorStream());
+            conn.disconnect();
+            throw new IOException("Groq returned HTTP " + responseCode + ": " + error);
         }
 
         String responseBody = readStream(conn.getInputStream());

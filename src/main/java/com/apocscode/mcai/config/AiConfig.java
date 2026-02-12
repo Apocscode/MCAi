@@ -17,6 +17,11 @@ public class AiConfig {
     public static final ModConfigSpec.IntValue AI_MAX_TOKENS;
     public static final ModConfigSpec.IntValue MAX_TOOL_ITERATIONS;
 
+    // ---- Groq Cloud API ----
+    public static final ModConfigSpec.ConfigValue<String> GROQ_API_KEY;
+    public static final ModConfigSpec.ConfigValue<String> GROQ_MODEL;
+    public static final ModConfigSpec.ConfigValue<String> GROQ_URL;
+
     // ---- Whisper Voice ----
     public static final ModConfigSpec.ConfigValue<String> WHISPER_URL;
 
@@ -95,6 +100,25 @@ public class AiConfig {
                 .defineInRange("maxToolIterations", 10, 1, 20);
 
         builder.pop(); // connection
+
+        builder.comment("Groq cloud API settings — set an API key to use Groq instead of Ollama",
+                "Get a free key at https://console.groq.com",
+                "When groqApiKey is set (not empty), Groq is used as the AI backend",
+                "Groq's 70B models handle 30+ tools reliably and respond in 1-3 seconds").push("groq");
+
+        GROQ_API_KEY = builder
+                .comment("Groq API key (leave empty to use local Ollama instead)")
+                .define("groqApiKey", "");
+
+        GROQ_MODEL = builder
+                .comment("Groq model name (recommended: llama-3.3-70b-versatile)")
+                .define("groqModel", "llama-3.3-70b-versatile");
+
+        GROQ_URL = builder
+                .comment("Groq API endpoint URL")
+                .define("groqUrl", "https://api.groq.com/openai/v1/chat/completions");
+
+        builder.pop(); // groq
 
         builder.comment("Whisper voice input settings").push("whisper");
 
@@ -263,6 +287,19 @@ public class AiConfig {
     }
 
     // ---- Helper Methods ----
+
+    /**
+     * Check if Groq cloud API is configured (API key is set and non-empty).
+     * When true, AIService should use Groq instead of local Ollama.
+     */
+    public static boolean isGroqEnabled() {
+        try {
+            String key = GROQ_API_KEY.get();
+            return key != null && !key.isBlank();
+        } catch (Exception e) {
+            return false;
+        }
+    }
 
     /**
      * Check if a specific tool is enabled based on ability config toggles.
