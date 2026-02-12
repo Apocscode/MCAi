@@ -104,15 +104,15 @@ public class AiConfig {
         builder.comment("Groq cloud API settings — set an API key to use Groq instead of Ollama",
                 "Get a free key at https://console.groq.com",
                 "When groqApiKey is set (not empty), Groq is used as the AI backend",
-                "Groq's 70B models handle 30+ tools reliably and respond in 1-3 seconds").push("groq");
+                "Llama 4 Scout has best free-tier limits: 30K TPM, 500K TPD").push("groq");
 
         GROQ_API_KEY = builder
                 .comment("Groq API key (leave empty to use local Ollama instead)")
                 .define("groqApiKey", "");
 
         GROQ_MODEL = builder
-                .comment("Groq model name (recommended: llama-3.3-70b-versatile)")
-                .define("groqModel", "llama-3.3-70b-versatile");
+                .comment("Groq model name (recommended: meta-llama/llama-4-scout-17b-16e-instruct for best free-tier limits)")
+                .define("groqModel", "meta-llama/llama-4-scout-17b-16e-instruct");
 
         GROQ_URL = builder
                 .comment("Groq API endpoint URL")

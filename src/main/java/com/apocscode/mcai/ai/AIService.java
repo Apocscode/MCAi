@@ -146,7 +146,14 @@ public class AIService {
                     MCAi.LOGGER.info("Groq rate limited, falling back to Ollama for this request");
                     AiLogger.log(AiLogger.Category.AI_REQUEST, "WARN",
                             "Groq rate limited — falling back to Ollama");
-                    response = callOllama(messages, userMessage);
+                    try {
+                        response = callOllama(messages, userMessage);
+                    } catch (IOException ollamaEx) {
+                        // Both backends failed — give a friendly message
+                        MCAi.LOGGER.warn("Ollama fallback also failed: {}", ollamaEx.getMessage());
+                        return "I'm taking a breather — my cloud brain (Groq) hit its rate limit and local AI (Ollama) isn't running. " +
+                                "Try again in about 30 seconds, or start Ollama on your PC for unlimited local AI.";
+                    }
                 } else {
                     throw e;
                 }
