@@ -311,37 +311,54 @@ public class RecipeResolver {
         }
         visited.add(item);
 
-        // Try crafting recipe first (most common)
-        DependencyNode craftNode = tryCraftingRecipe(item, remaining, available, visited, depth);
+        boolean hasHeatRecipe = heatByOutput.containsKey(item);
 
-        // If crafting found a result but has UNKNOWN children, also try heat recipes.
-        // This handles items like iron_ingot: mods add crafting recipes (essence → ingot)
-        // but the correct path is smelting (raw_iron → iron_ingot via furnace).
+        // === Phase 1: Try heat (smelting) FIRST when a heat recipe exists ===
+        // Smelting recipes are simpler (1 input → 1 output) and avoid circular
+        // crafting chains. Example: iron_ingot should smelt from raw_iron, NOT craft
+        // from 9× iron_nugget (which itself needs iron_ingot → circular dependency).
+        if (hasHeatRecipe) {
+            DependencyNode heatNode = tryHeatRecipe(item, remaining, available, visited, depth);
+            if (heatNode != null && !hasDeepUnknown(heatNode)) {
+                visited.remove(item);
+                return heatNode;
+            }
+            // Heat recipe had UNKNOWN descendants — fall through to try crafting
+        }
+
+        // === Phase 2: Try crafting recipe ===
+        DependencyNode craftNode = tryCraftingRecipe(item, remaining, available, visited, depth);
         if (craftNode != null) {
-            boolean hasUnknown = craftNode.children.stream()
-                    .anyMatch(c -> c.type == StepType.UNKNOWN);
-            if (hasUnknown) {
-                DependencyNode heatNode = tryHeatRecipe(item, remaining, available, visited, depth);
-                if (heatNode != null) {
-                    // Heat recipe is fully resolvable — prefer it over broken crafting
-                    MCAi.LOGGER.info("RecipeResolver: preferring heat recipe over crafting for {} (crafting had UNKNOWN children)",
+            if (!hasDeepUnknown(craftNode)) {
+                // Clean crafting tree — use it
+                visited.remove(item);
+                return craftNode;
+            }
+            // Crafting has deep UNKNOWN descendants — try heat as fallback
+            if (hasHeatRecipe) {
+                DependencyNode heatFallback = tryHeatRecipe(item, remaining, available, visited, depth);
+                if (heatFallback != null) {
+                    MCAi.LOGGER.info("RecipeResolver: preferring heat over crafting for {} (crafting had deep UNKNOWN descendants)",
                             BuiltInRegistries.ITEM.getKey(item));
                     visited.remove(item);
-                    return heatNode;
+                    return heatFallback;
                 }
             }
+            // Accept crafting despite deep UNKNOWN (better than nothing)
             visited.remove(item);
             return craftNode;
         }
 
-        // Try smelting/blasting/smoking recipes
-        DependencyNode heatNode = tryHeatRecipe(item, remaining, available, visited, depth);
-        if (heatNode != null) {
-            visited.remove(item);
-            return heatNode;
+        // === Phase 3: Try heat recipe (for items without pre-indexed heat recipes) ===
+        if (!hasHeatRecipe) {
+            DependencyNode heatNode = tryHeatRecipe(item, remaining, available, visited, depth);
+            if (heatNode != null) {
+                visited.remove(item);
+                return heatNode;
+            }
         }
 
-        // Try stonecutting
+        // === Phase 4: Try stonecutting ===
         DependencyNode stonecutNode = tryStonecutRecipe(item, remaining, available, visited, depth);
         if (stonecutNode != null) {
             visited.remove(item);
@@ -352,6 +369,22 @@ public class RecipeResolver {
 
         // No recipe found — classify as raw material (mineable, choppable, etc.)
         return classifyRawMaterial(item, remaining);
+    }
+
+    // ========== Tree analysis helpers ==========
+
+    /**
+     * Recursively checks if any descendant node in the tree is UNKNOWN.
+     * Used to detect deeply nested circular dependencies that a shallow check would miss.
+     * Example: iron_ingot → CRAFT(9× iron_nugget → SMELT(iron_pickaxe → UNKNOWN))
+     */
+    private boolean hasDeepUnknown(DependencyNode node) {
+        if (node == null) return false;
+        if (node.type == StepType.UNKNOWN) return true;
+        for (DependencyNode child : node.children) {
+            if (hasDeepUnknown(child)) return true;
+        }
+        return false;
     }
 
     // ========== Recipe type handlers ==========
