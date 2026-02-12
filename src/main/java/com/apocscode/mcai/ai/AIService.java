@@ -332,7 +332,9 @@ public class AIService {
 
         // Send HTTP request
         int timeoutMs = AiConfig.AI_TIMEOUT_MS.get();
-        HttpURLConnection conn = (HttpURLConnection) URI.create(AiConfig.OLLAMA_URL.get()).toURL().openConnection();
+        // Force IPv4: Java may resolve "localhost" to IPv6 [::1] while Ollama binds IPv4 only
+        String url = AiConfig.OLLAMA_URL.get().replace("localhost", "127.0.0.1");
+        HttpURLConnection conn = (HttpURLConnection) URI.create(url).toURL().openConnection();
         conn.setRequestMethod("POST");
         conn.setRequestProperty("Content-Type", "application/json");
         conn.setDoOutput(true);

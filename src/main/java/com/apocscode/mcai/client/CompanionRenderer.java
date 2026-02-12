@@ -40,8 +40,20 @@ public class CompanionRenderer extends LivingEntityRenderer<CompanionEntity, Pla
     @Override
     public void render(CompanionEntity entity, float entityYaw, float partialTick,
                        PoseStack poseStack, MultiBufferSource buffer, int packedLight) {
-        // Set model crouching state
-        this.model.crouching = entity.isCrouching();
+        // Ensure ALL model parts are visible.
+        // PlayerModel has overlay layers (jacket, sleeves, pants, hat) that default
+        // to hidden because PlayerRenderer.setModelProperties() checks player skin
+        // settings — which don't exist for non-Player entities.
+        PlayerModel<CompanionEntity> m = this.getModel();
+        m.setAllVisible(true);
+        m.hat.visible = true;
+        m.jacket.visible = true;
+        m.leftSleeve.visible = true;
+        m.rightSleeve.visible = true;
+        m.leftPants.visible = true;
+        m.rightPants.visible = true;
+
+        m.crouching = entity.isCrouching();
         super.render(entity, entityYaw, partialTick, poseStack, buffer, packedLight);
     }
 }
