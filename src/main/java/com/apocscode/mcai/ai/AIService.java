@@ -106,6 +106,7 @@ public class AIService {
                                      ToolContext toolCtx, String companionName) throws IOException {
 
         // Build initial messages array
+        boolean useGroq = AiConfig.isGroqEnabled();
         JsonArray messages = new JsonArray();
 
         // System prompt
@@ -114,8 +115,9 @@ public class AIService {
         systemMsg.addProperty("content", buildSystemPrompt(playerContext, companionName));
         messages.add(systemMsg);
 
-        // Conversation history (last 20 messages to manage context window)
-        int startIdx = Math.max(0, history.size() - 20);
+        // Conversation history — fewer messages for Groq to stay within free-tier TPM limits
+        int historyLimit = useGroq ? 8 : 20;
+        int startIdx = Math.max(0, history.size() - historyLimit);
         for (int i = startIdx; i < history.size(); i++) {
             ConversationManager.ChatMessage msg = history.get(i);
             if (msg.isSystem()) continue; // Skip system messages like "Thinking..."
@@ -133,7 +135,6 @@ public class AIService {
         messages.add(userMsg);
 
         // Agent loop — keep going until AI gives a text response or limit reached
-        boolean useGroq = AiConfig.isGroqEnabled();
         int maxIterations = AiConfig.MAX_TOOL_ITERATIONS.get();
         for (int iteration = 0; iteration < maxIterations; iteration++) {
             JsonObject response = useGroq ? callGroq(messages, userMessage) : callOllama(messages, userMessage);
@@ -558,6 +559,23 @@ public class AIService {
                 continue;
             }
 
+            if (responseCode == 400) {
+                // Groq sometimes returns 400 tool_use_failed when the model generates
+                // tool calls in XML format (<function=name({args})>) instead of structured format.
+                // Parse the failed_generation and build a synthetic tool_calls response.
+                String error = readStream(conn.getErrorStream());
+                conn.disconnect();
+
+                JsonObject syntheticResponse = tryParseGroqFailedGeneration(error);
+                if (syntheticResponse != null) {
+                    MCAi.LOGGER.info("Recovered Groq tool_use_failed via failed_generation parsing");
+                    AiLogger.log(AiLogger.Category.AI_REQUEST, "WARN",
+                            "Groq 400 tool_use_failed — recovered via failed_generation parsing");
+                    return syntheticResponse;
+                }
+                throw new IOException("Groq returned HTTP 400: " + error);
+            }
+
             if (responseCode != 200) {
                 String error = readStream(conn.getErrorStream());
                 conn.disconnect();
@@ -572,62 +590,93 @@ public class AIService {
         throw new IOException("Groq rate limit exceeded after " + maxRetries + " retries");
     }
 
+    /**
+     * Parse Groq's failed_generation field to recover tool calls.
+     * Groq/Llama models sometimes generate: <function=tool_name({"key":"value"})></function>
+     * instead of proper tool_calls. We extract the name+args and build a synthetic response.
+     */
+    private static JsonObject tryParseGroqFailedGeneration(String errorBody) {
+        try {
+            JsonObject errorJson = JsonParser.parseString(errorBody).getAsJsonObject();
+            JsonObject errorObj = errorJson.getAsJsonObject("error");
+            if (errorObj == null) return null;
+
+            String code = errorObj.has("code") ? errorObj.get("code").getAsString() : "";
+            if (!"tool_use_failed".equals(code)) return null;
+
+            String failedGen = errorObj.has("failed_generation")
+                    ? errorObj.get("failed_generation").getAsString() : "";
+            if (failedGen.isEmpty()) return null;
+
+            // Parse: <function=tool_name({"key":"value"})></function>
+            Pattern p = Pattern.compile("<function=(\\w+)\\((.+?)\\)>?</function>", Pattern.DOTALL);
+            Matcher m = p.matcher(failedGen);
+            if (!m.find()) return null;
+
+            String toolName = m.group(1);
+            String argsStr = m.group(2).trim();
+
+            // Validate it's a real tool
+            if (ToolRegistry.get(toolName) == null) return null;
+
+            // Parse args JSON
+            JsonObject args;
+            try {
+                args = JsonParser.parseString(argsStr).getAsJsonObject();
+            } catch (Exception e) {
+                args = new JsonObject();
+            }
+
+            // Build synthetic OpenAI-format response with tool_calls
+            JsonObject toolCall = new JsonObject();
+            toolCall.addProperty("id", "recovered_" + System.currentTimeMillis());
+            toolCall.addProperty("type", "function");
+            JsonObject function = new JsonObject();
+            function.addProperty("name", toolName);
+            function.addProperty("arguments", GSON.toJson(args));
+            toolCall.add("function", function);
+
+            JsonArray toolCalls = new JsonArray();
+            toolCalls.add(toolCall);
+
+            JsonObject message = new JsonObject();
+            message.addProperty("role", "assistant");
+            message.add("tool_calls", toolCalls);
+
+            JsonObject choice = new JsonObject();
+            choice.addProperty("index", 0);
+            choice.add("message", message);
+            choice.addProperty("finish_reason", "tool_calls");
+
+            JsonArray choices = new JsonArray();
+            choices.add(choice);
+
+            JsonObject response = new JsonObject();
+            response.add("choices", choices);
+
+            MCAi.LOGGER.info("Recovered tool call from failed_generation: {}({})", toolName, argsStr);
+            return response;
+        } catch (Exception e) {
+            MCAi.LOGGER.warn("Failed to parse Groq failed_generation: {}", e.getMessage());
+            return null;
+        }
+    }
+
     private static String buildSystemPrompt(String playerContext, String companionName) {
         return """
-                You are %s, an AI companion in Minecraft. You are an entity in the game world next to the player.
+                You are %s, a Minecraft AI companion next to the player. Helpful, concise, friendly. Under 3 sentences.
                 
-                Personality: Helpful, concise, friendly. Keep responses under 3 sentences. Your name is %s.
+                RULES:
+                - When asked to DO something, CALL the tool. Never explain syntax.
+                - "how to make X" / "recipe for X" → get_recipe (info only)
+                - "make X" / "craft X" / "I need X" → craft_item (action)
+                - If craft_item says missing materials: follow the ACTION NEEDED hints exactly. Gather, then re-craft. NEVER say "you need to get materials".
+                - Use plan param to chain steps. On [TASK_COMPLETE], execute next step.
+                - craft_item resolves logs→planks→sticks. Use smelt_items for smelting.
+                - ACT first, explain briefly after. Be autonomous.
                 
-                CRITICAL RULE: When the player asks you to DO something (craft, mine, build, fetch, etc.), you MUST call the appropriate tool function. NEVER describe or explain tool syntax — just call the tool directly. Act, don't explain.
-                
-                INTENT DETECTION:
-                - "how do I make X" / "how to craft X" / "recipe for X" → INFORMATIONAL. Call get_recipe. Do NOT craft.
-                - "make me X" / "can you make X" / "craft X" / "I need X" → ACTION. Call craft_item.
-                - If unclear, assume ACTION.
-                
-                AUTONOMOUS RESOURCE GATHERING — THIS IS CRITICAL:
-                When craft_item reports missing ingredients, you MUST gather them yourself. Act like a real player:
-                1. Read the "ACTION NEEDED" hints in the craft result — they tell you exactly which tool to call.
-                2. Call the suggested tool (gather_blocks, chop_trees, mine_ores, etc.) with a plan param so the next step auto-continues.
-                3. Example flow for "make a stone axe":
-                   - craft_item("stone_axe") → missing cobblestone + sticks
-                   - gather_blocks({"block":"cobblestone", "maxBlocks":3, "plan":"gather oak_log 1, then craft stone_axe"})
-                   - [TASK_COMPLETE] → gather_blocks({"block":"oak_log", "maxBlocks":1, "plan":"craft stone_axe"})
-                   - [TASK_COMPLETE] → craft_item("stone_axe") → success!
-                4. NEVER tell the player "you don't have materials" — go get them.
-                5. For items needing smelting: gather raw materials, then call smelt_items, then craft.
-                
-                Key tool patterns:
-                - "make/craft X" → craft_item. If missing materials, gather them first (see above).
-                - "get/bring me X" → find_and_fetch_item
-                - "mine/gather X" → gather_blocks or mine_ores
-                - "chop trees" → chop_trees
-                - "smelt X" → smelt_items
-                - "what's around" → scan_surroundings
-                - "what do I have" → get_inventory
-                - "recipe for X" → get_recipe
-                - "make it day" → execute_command("time set day")
-                - "rename to X" → rename_companion
-                - "remember X" → companion_memory
-                - "guard here" → guard_area
-                - "build a wall" → build_structure
-                - "go fish" → go_fishing
-                - "trade with villager" → villager_trade
-                - "deliver X to Y" → deliver_items
-                - Use 'plan' param to chain: gather_blocks({"plan":"craft stone_axe after gathering"})
-                - When [TASK_COMPLETE] arrives, execute the next plan step.
-                - craft_item auto-resolves logs→planks→sticks but does NOT smelt. Use smelt_items for smelting.
-                
-                Current game state:
-                """.formatted(companionName, companionName) + playerContext + """
-                
-                Rules:
-                - ACT first, explain after. If the player says "make an axe", call craft_item immediately.
-                - If craft fails with missing materials, GATHER THEM. Never give up or ask the player to get materials.
-                - After tool results, give a brief natural response — don't dump raw output.
-                - Only use tools when genuinely helpful. Simple greetings don't need tools.
-                - You are autonomous. Complete the full task from start to finish, like a real player would.
-                """;
+                Current state:
+                """.formatted(companionName) + playerContext;
     }
 
     private static String readStream(InputStream stream) throws IOException {
