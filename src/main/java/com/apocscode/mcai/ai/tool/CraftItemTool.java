@@ -237,10 +237,15 @@ public class CraftItemTool implements AiTool {
     /**
      * Scans nearby containers for missing crafting materials and pulls them into the player's inventory.
      * For each ingredient type, checks how many we need vs have, then fetches the deficit from chests.
+     * If a direct ingredient isn't in any chest, recursively checks for sub-recipe materials
+     * (e.g., sticks not found → look for planks → look for logs).
      * Returns the total number of material types successfully fetched.
      */
     private int fetchMaterialsFromContainers(ToolContext context, List<Ingredient> ingredients,
                                               int craftsNeeded, StringBuilder log) {
+        RecipeManager recipeManager = context.server().getRecipeManager();
+        RegistryAccess registryAccess = context.server().registryAccess();
+
         Map<Item, Integer> grouped = getGroupedNeeds(ingredients, craftsNeeded);
         int typesFetched = 0;
 
@@ -256,8 +261,7 @@ public class CraftItemTool implements AiTool {
 
             int deficit = totalNeeded - have;
 
-            // Try to fetch this ingredient from nearby containers
-            // We need to check all variant items that the ingredient accepts
+            // Try to fetch this ingredient directly from nearby containers
             int totalFetchedForIng = 0;
             for (ItemStack variant : matchingIng.getItems()) {
                 if (totalFetchedForIng >= deficit) break;
@@ -271,8 +275,76 @@ public class CraftItemTool implements AiTool {
                    .append(" from nearby chest. ");
                 typesFetched++;
             }
+
+            // If we still don't have enough, try to fetch SUB-recipe materials from chests
+            // e.g., sticks not in chest → fetch logs (which auto-resolve will convert to planks → sticks)
+            have = countInInventory(context, matchingIng);
+            if (have < totalNeeded) {
+                int subFetched = fetchSubRecipeMaterials(context, recipeManager, registryAccess,
+                        matchingIng, totalNeeded - have, log, 0);
+                if (subFetched > 0) typesFetched++;
+            }
         }
         return typesFetched;
+    }
+
+    /**
+     * Recursively fetches sub-recipe raw materials from nearby chests.
+     * e.g., need sticks → recipe needs planks → recipe needs logs → fetch logs from chest.
+     * Returns number of base materials fetched. Max depth 3 to prevent infinite loops.
+     */
+    private int fetchSubRecipeMaterials(ToolContext context, RecipeManager recipeManager,
+                                         RegistryAccess registryAccess, Ingredient ingredient,
+                                         int deficit, StringBuilder log, int depth) {
+        if (depth > MAX_RESOLVE_PASSES) return 0;
+        int totalFetched = 0;
+
+        for (ItemStack variant : ingredient.getItems()) {
+            Item targetItem = variant.getItem();
+            RecipeHolder<?> subRecipe = findCraftingTableRecipe(recipeManager, registryAccess, targetItem);
+            if (subRecipe == null) continue;
+
+            Recipe<?> sub = subRecipe.value();
+            int outputPerCraft = sub.getResultItem(registryAccess).getCount();
+            List<Ingredient> subIngs = sub.getIngredients();
+            int subCraftsNeeded = (int) Math.ceil((double) deficit / outputPerCraft);
+
+            // For each sub-ingredient, try to fetch from chests
+            for (Ingredient subIng : subIngs) {
+                if (subIng.isEmpty()) continue;
+
+                int subHave = countInInventory(context, subIng);
+                int subNeed = subCraftsNeeded;
+                if (subHave >= subNeed) continue;
+
+                int subDeficit = subNeed - subHave;
+
+                // Try direct fetch from containers
+                int fetched = 0;
+                for (ItemStack subVariant : subIng.getItems()) {
+                    if (fetched >= subDeficit) break;
+                    int got = fetchFromNearbyContainers(context, subVariant.getItem(), subDeficit - fetched);
+                    fetched += got;
+                }
+
+                if (fetched > 0) {
+                    String itemName = subIng.getItems()[0].getItem().getDescription().getString();
+                    log.append("Pulled ").append(fetched).append("x ").append(itemName)
+                       .append(" from nearby chest (for sub-recipe). ");
+                    totalFetched += fetched;
+                }
+
+                // If still short, recurse deeper (logs for planks for sticks)
+                subHave = countInInventory(context, subIng);
+                if (subHave < subNeed) {
+                    totalFetched += fetchSubRecipeMaterials(context, recipeManager, registryAccess,
+                            subIng, subNeed - subHave, log, depth + 1);
+                }
+            }
+
+            if (totalFetched > 0) return totalFetched; // Found materials for at least one variant
+        }
+        return totalFetched;
     }
 
     // ========== Auto-resolve intermediate crafting recipes ==========

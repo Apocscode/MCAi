@@ -3,6 +3,7 @@ package com.apocscode.mcai.client;
 import com.apocscode.mcai.MCAi;
 import com.apocscode.mcai.ai.ConversationManager;
 import com.apocscode.mcai.network.ChatMessagePacket;
+import com.apocscode.mcai.network.StopInteractingPacket;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
@@ -146,6 +147,11 @@ public class CompanionChatScreen extends Screen {
             graphics.drawString(this.font, "§8[V = push-to-talk]", PADDING, this.height - PADDING - INPUT_HEIGHT - 14, 0x444444, false);
         }
 
+        // Persistent hint (bottom-right, subtle): remind about ! commands
+        String hintText = "§8! = commands";
+        int hintW = this.font.width(hintText);
+        graphics.drawString(this.font, hintText, this.width - PADDING - hintW, this.height - PADDING - INPUT_HEIGHT - 14, 0x444444, false);
+
         // Chat area
         int chatTop = 24;
         int chatBottom = this.height - PADDING - INPUT_HEIGHT - (isRecordingVoice ? 24 : 8);
@@ -153,6 +159,45 @@ public class CompanionChatScreen extends Screen {
 
         // Draw message history
         List<ConversationManager.ChatMessage> messages = ConversationManager.getMessages();
+
+        // Show help/welcome panel when conversation is empty
+        if (messages.isEmpty()) {
+            int helpY = chatTop + 16;
+            int helpX = PADDING + 12;
+            int lineH = 12;
+
+            graphics.drawCenteredString(this.font, "§e§lWelcome to MCAi Chat!", this.width / 2, helpY, 0xFFFF55);
+            helpY += lineH + 6;
+
+            graphics.drawString(this.font, "§7Type a message below to talk to your companion.", helpX, helpY, 0xAAAAAA, false);
+            helpY += lineH + 8;
+
+            graphics.drawString(this.font, "§f§lQuick Commands §7(prefix with §f!§7):", helpX, helpY, 0xFFFFFF, false);
+            helpY += lineH + 2;
+            graphics.drawString(this.font, "§a!follow §7- Follow you", helpX + 8, helpY, 0xAAAAAA, false);
+            helpY += lineH;
+            graphics.drawString(this.font, "§a!stay   §7- Stay in place", helpX + 8, helpY, 0xAAAAAA, false);
+            helpY += lineH;
+            graphics.drawString(this.font, "§a!auto   §7- Autonomous mode", helpX + 8, helpY, 0xAAAAAA, false);
+            helpY += lineH;
+            graphics.drawString(this.font, "§a!come   §7- Teleport to you", helpX + 8, helpY, 0xAAAAAA, false);
+            helpY += lineH;
+            graphics.drawString(this.font, "§a!status §7- Health & task info", helpX + 8, helpY, 0xAAAAAA, false);
+            helpY += lineH;
+            graphics.drawString(this.font, "§a!cancel §7- Cancel all tasks", helpX + 8, helpY, 0xAAAAAA, false);
+            helpY += lineH;
+            graphics.drawString(this.font, "§a!equip  §7- Auto-equip best gear", helpX + 8, helpY, 0xAAAAAA, false);
+            helpY += lineH;
+            graphics.drawString(this.font, "§a!help   §7- Show all commands", helpX + 8, helpY, 0xAAAAAA, false);
+            helpY += lineH + 10;
+
+            graphics.drawString(this.font, "§f§lGame Chat §7(press T):", helpX, helpY, 0xFFFFFF, false);
+            helpY += lineH + 2;
+            graphics.drawString(this.font, "§7Type §f!command§7 in normal chat too!", helpX + 8, helpY, 0xAAAAAA, false);
+            helpY += lineH;
+            graphics.drawString(this.font, "§7e.g. §f!come§7, §f!follow§7, §f!status", helpX + 8, helpY, 0xAAAAAA, false);
+        }
+
         int y = chatBottom;
 
         // Render from bottom up
@@ -274,6 +319,8 @@ public class CompanionChatScreen extends Screen {
             WhisperService.cancelRecording();
             isRecordingVoice = false;
         }
+        // Tell server the owner is done interacting — unfreeze companion
+        PacketDistributor.sendToServer(new StopInteractingPacket(entityId));
         super.onClose();
     }
 

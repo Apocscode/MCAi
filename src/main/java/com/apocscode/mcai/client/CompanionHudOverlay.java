@@ -171,7 +171,14 @@ public class CompanionHudOverlay {
         // Position: bottom-center, above hotbar
         int screenW = graphics.guiWidth();
         int screenH = graphics.guiHeight();
-        int panelW = 110;
+
+        // Calculate panel width dynamically based on content
+        String modeText = "Mode: " + modeLabel;
+        String tagText = tagCount + " tagged";
+        int modeTextW = mc.font.width(modeText);
+        int tagTextW = mc.font.width(tagText);
+        int contentW = modeTextW + tagTextW + 16; // 4px padding each side + 8px gap
+        int panelW = Math.max(140, contentW);
         int panelH = 22;
         int px = (screenW - panelW) / 2;
         int py = screenH - 58;
@@ -179,14 +186,11 @@ public class CompanionHudOverlay {
         // Background
         graphics.fill(px, py, px + panelW, py + panelH, 0x90000000);
 
-        // Mode label
-        String modeText = "Mode: " + modeLabel;
+        // Mode label (left)
         graphics.drawString(mc.font, modeText, px + 4, py + 3, modeColor, true);
 
-        // Tag count
-        String tagText = tagCount + " tagged";
-        int tagWidth = mc.font.width(tagText);
-        graphics.drawString(mc.font, tagText, px + panelW - tagWidth - 4, py + 3, 0xAAAAAA, true);
+        // Tag count (right, with guaranteed gap)
+        graphics.drawString(mc.font, tagText, px + panelW - tagTextW - 4, py + 3, 0xAAAAAA, true);
 
         // Mode indicator dots (show all 3, highlight active)
         int dotY = py + 14;

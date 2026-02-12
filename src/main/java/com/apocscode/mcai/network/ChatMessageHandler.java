@@ -52,19 +52,61 @@ public class ChatMessageHandler {
         }
 
         // Call AI asynchronously — NEVER block the server thread
-        final String finalName = companionName;
-        AIService.chat(message, serverPlayer, ConversationManager.getHistoryForAI(), finalName)
+        sendToAI(message, serverPlayer, companionName, false);
+    }
+
+    /**
+     * Handle a message from the vanilla game chat (T key) prefixed with "!".
+     * Called by ServerEventHandler when a player types !command in normal chat.
+     * Responses are sent as system messages (not via the companion chat GUI packet).
+     */
+    public static void handleFromGameChat(String message, ServerPlayer player, CompanionEntity companion) {
+        if (message == null || message.isBlank()) return;
+
+        if (message.length() > 500) {
+            message = message.substring(0, 500);
+        }
+
+        MCAi.LOGGER.info("Game chat from {}: {}", player.getName().getString(), message);
+
+        // Quick commands (prefixed with !)
+        if (message.startsWith("!")) {
+            String response = handleQuickCommand(message.substring(1).trim(), companion, player);
+            player.sendSystemMessage(net.minecraft.network.chat.Component.literal(
+                    "§b[" + companion.getCompanionName() + "]§r " + response));
+            return;
+        }
+
+        // Natural language — send to AI, respond in game chat
+        sendToAI(message, player, companion.getCompanionName(), true);
+    }
+
+    /**
+     * Send a message to the AI service and deliver the response.
+     * @param useGameChat If true, respond via sendSystemMessage; if false, via ChatResponsePacket.
+     */
+    private static void sendToAI(String message, ServerPlayer player, String companionName, boolean useGameChat) {
+        AIService.chat(message, player, ConversationManager.getHistoryForAI(), companionName)
                 .thenAccept(response -> {
-                    // Send response back to client
-                    serverPlayer.getServer().execute(() -> {
-                        PacketDistributor.sendToPlayer(serverPlayer, new ChatResponsePacket(response));
+                    player.getServer().execute(() -> {
+                        if (useGameChat) {
+                            player.sendSystemMessage(net.minecraft.network.chat.Component.literal(
+                                    "§b[" + companionName + "]§r " + response));
+                        } else {
+                            PacketDistributor.sendToPlayer(player, new ChatResponsePacket(response));
+                        }
                     });
                 })
                 .exceptionally(ex -> {
                     MCAi.LOGGER.error("AI response failed", ex);
-                    serverPlayer.getServer().execute(() -> {
-                        PacketDistributor.sendToPlayer(serverPlayer,
-                                new ChatResponsePacket("Sorry, I had an error: " + ex.getMessage()));
+                    player.getServer().execute(() -> {
+                        String errMsg = "Sorry, I had an error: " + ex.getMessage();
+                        if (useGameChat) {
+                            player.sendSystemMessage(net.minecraft.network.chat.Component.literal(
+                                    "§c[" + companionName + "]§r " + errMsg));
+                        } else {
+                            PacketDistributor.sendToPlayer(player, new ChatResponsePacket(errMsg));
+                        }
                     });
                     return null;
                 });

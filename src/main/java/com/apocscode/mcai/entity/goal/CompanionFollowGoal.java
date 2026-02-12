@@ -28,6 +28,8 @@ public class CompanionFollowGoal extends Goal {
 
     @Override
     public boolean canUse() {
+        // Don't follow while owner is interacting with companion UI
+        if (companion.isOwnerInteracting()) return false;
         // Only follow in FOLLOW mode
         if (companion.getBehaviorMode() != CompanionEntity.BehaviorMode.FOLLOW) return false;
         owner = companion.getOwner();
@@ -39,6 +41,7 @@ public class CompanionFollowGoal extends Goal {
 
     @Override
     public boolean canContinueToUse() {
+        if (companion.isOwnerInteracting()) return false;
         if (owner == null || !owner.isAlive()) return false;
         double dist = companion.distanceToSqr(owner);
         return dist > 4.0D; // Stop when within 2 blocks

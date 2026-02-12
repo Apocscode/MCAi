@@ -121,6 +121,11 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
     // Leveling system — XP and stat bonuses
     private final CompanionLevelSystem levelSystem = new CompanionLevelSystem();
 
+    // Owner interaction freeze — companion stops moving while owner has UI open
+    private boolean ownerInteracting = false;
+    private long interactionStartTick = 0;
+    private static final int INTERACTION_TIMEOUT_TICKS = 6000; // 5 minutes safety timeout
+
     // Stuck detection
     private double lastX, lastY, lastZ;
     private int stuckTicks = 0;
@@ -230,6 +235,42 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
     }
 
     // ================================================================
+    // Owner interaction freeze — stops movement while player has UI open
+    // ================================================================
+
+    /**
+     * Set whether the owner is currently interacting with this companion
+     * (inventory or chat screen open). When true, the companion freezes movement.
+     */
+    public void setOwnerInteracting(boolean interacting) {
+        this.ownerInteracting = interacting;
+        if (interacting) {
+            this.interactionStartTick = this.tickCount;
+            this.getNavigation().stop();
+        }
+    }
+
+    /**
+     * Returns true if the owner is interacting with the companion (UI open).
+     * Includes safety timeout and distance check to auto-clear stale flags.
+     */
+    public boolean isOwnerInteracting() {
+        if (!ownerInteracting) return false;
+        // Safety timeout
+        if (this.tickCount - interactionStartTick > INTERACTION_TIMEOUT_TICKS) {
+            ownerInteracting = false;
+            return false;
+        }
+        // Auto-clear if owner moved far away (disconnected, teleported, etc.)
+        Player owner = getOwner();
+        if (owner == null || !owner.isAlive() || this.distanceToSqr(owner) > 1024) { // 32 blocks
+            ownerInteracting = false;
+            return false;
+        }
+        return true;
+    }
+
+    // ================================================================
     // Attributes — now has attack damage for combat
     // ================================================================
 
@@ -262,11 +303,11 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
         this.goalSelector.addGoal(6, new CompanionFollowGoal(this, 1.2D, 4.0F, teleportDist));
         this.goalSelector.addGoal(7, new CompanionLookAtPlayerGoal(this, 8.0F));
         this.goalSelector.addGoal(8, new RandomLookAroundGoal(this));
-        // Wander only in AUTO mode
+        // Wander only in AUTO mode, not while owner is interacting
         this.goalSelector.addGoal(9, new WaterAvoidingRandomStrollGoal(this, 0.6D) {
             @Override
             public boolean canUse() {
-                return getBehaviorMode() == BehaviorMode.AUTO && super.canUse();
+                return !isOwnerInteracting() && getBehaviorMode() == BehaviorMode.AUTO && super.canUse();
             }
         });
         // Guard mode — patrol and defend area
@@ -302,6 +343,9 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
                 chat.say(CompanionChat.Category.GREETING,
                         "Hey there! I'm ready to help. Right-click me for inventory, use the Chat button inside!");
             }
+
+            // Freeze companion movement while owner has UI open
+            setOwnerInteracting(true);
 
             // Always open inventory — chat is accessed via the Chat button in the GUI
             serverPlayer.openMenu(this, buf -> buf.writeInt(this.getId()));
@@ -524,6 +568,11 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
     public void tick() {
         super.tick();
         if (!this.level().isClientSide) {
+            // Freeze all movement if owner is interacting with companion UI
+            if (isOwnerInteracting()) {
+                this.getNavigation().stop();
+            }
+
             // Register as living companion on first server tick (handles chunk reload)
             if (!registeredLiving && ownerUUID != null) {
                 registerLivingCompanion(ownerUUID, this);

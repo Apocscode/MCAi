@@ -3,6 +3,7 @@ package com.apocscode.mcai.client;
 import com.apocscode.mcai.entity.CompanionEntity;
 import com.apocscode.mcai.inventory.CompanionInventoryMenu;
 import com.apocscode.mcai.network.SetBehaviorModePacket;
+import com.apocscode.mcai.network.StopInteractingPacket;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
@@ -37,6 +38,7 @@ public class CompanionInventoryScreen extends AbstractContainerScreen<CompanionI
     private static final int MODE_AUTO_COLOR   = 0xFF55FFFF; // Cyan
 
     private Button stayBtn, followBtn, autoBtn;
+    private boolean switchingToChat = false;
 
     public CompanionInventoryScreen(CompanionInventoryMenu menu, Inventory playerInv, Component title) {
         super(menu, playerInv, title);
@@ -56,6 +58,7 @@ public class CompanionInventoryScreen extends AbstractContainerScreen<CompanionI
                 btn -> {
                     CompanionEntity companion = this.menu.getCompanion();
                     if (companion != null && this.minecraft != null) {
+                        switchingToChat = true; // Don't send stop-interacting when closing for chat
                         this.minecraft.setScreen(new CompanionChatScreen(companion.getId()));
                     }
                 })
@@ -160,12 +163,11 @@ public class CompanionInventoryScreen extends AbstractContainerScreen<CompanionI
 
     @Override
     protected void renderLabels(GuiGraphics g, int mouseX, int mouseY) {
-        // Companion name title (already set via menu.getDisplayName())
-        // Draw at titleLabelX, titleLabelY
+        // Companion name title
         g.drawString(this.font, this.title, this.titleLabelX, this.titleLabelY, LABEL_COLOR, false);
 
-        // Player inventory label
-        g.drawString(this.font, this.playerInventoryTitle, this.inventoryLabelX, this.inventoryLabelY, LABEL_COLOR, false);
+        // Player inventory label intentionally omitted — context is obvious
+        // and the label was overlapping the companion inventory slots.
     }
 
     @Override
@@ -204,5 +206,17 @@ public class CompanionInventoryScreen extends AbstractContainerScreen<CompanionI
         g.fill(x + 17, y + 1, x + 18, y + 17, BORDER_LIGHT);
         // Inner area
         g.fill(x + 1, y + 1, x + 17, y + 17, SLOT_BG);
+    }
+
+    @Override
+    public void removed() {
+        super.removed();
+        // If closing inventory without switching to chat, unfreeze companion
+        if (!switchingToChat) {
+            CompanionEntity companion = this.menu.getCompanion();
+            if (companion != null) {
+                PacketDistributor.sendToServer(new StopInteractingPacket(companion.getId()));
+            }
+        }
     }
 }

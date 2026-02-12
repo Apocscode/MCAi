@@ -8,6 +8,7 @@ import com.apocscode.mcai.network.SetBehaviorModePacket;
 import com.apocscode.mcai.network.SyncTaggedBlocksPacket;
 import com.apocscode.mcai.network.SyncWandModePacket;
 import com.apocscode.mcai.network.WhistleCompanionPacket;
+import com.apocscode.mcai.network.StopInteractingPacket;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
@@ -72,5 +73,11 @@ public class ModNetworking {
                 WhistleCompanionPacket.TYPE,
                 WhistleCompanionPacket.STREAM_CODEC,
                 WhistleCompanionPacket::handle);
+
+        // Client → Server: owner done interacting (unfreeze companion)
+        registrar.playToServer(
+                StopInteractingPacket.TYPE,
+                StopInteractingPacket.STREAM_CODEC,
+                StopInteractingPacket::handle);
     }
 }
