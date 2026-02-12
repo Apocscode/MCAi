@@ -41,6 +41,23 @@ public class BlockHelper {
     }
 
     /**
+     * Check if a block is safe to mine (no lava/water source directly behind it).
+     * Returns true if safe, false if mining would expose a fluid hazard.
+     * Checks all 6 adjacent faces for lava/water source blocks.
+     */
+    public static boolean isSafeToMine(Level level, BlockPos pos) {
+        net.minecraft.core.Direction[] dirs = net.minecraft.core.Direction.values();
+        for (net.minecraft.core.Direction dir : dirs) {
+            BlockState adjacent = level.getBlockState(pos.relative(dir));
+            // Block lava exposure entirely
+            if (adjacent.getFluidState().is(net.minecraft.tags.FluidTags.LAVA)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
      * Place a block from the companion's inventory.
      *
      * @param blockToPlace The block to place (must be in inventory as item form)

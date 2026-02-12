@@ -68,6 +68,14 @@ public class DigDownTool implements AiTool {
             int startY = pos.getY() - 1;
             int endY = startY - depth + 1;
 
+            // Safety: clamp to world minimum (don't mine into void)
+            int worldMin = companion.level().getMinBuildHeight();
+            if (endY < worldMin) {
+                endY = worldMin;
+                depth = startY - endY + 1;
+                if (depth <= 0) return "Already at the bottom of the world. Can't dig further down.";
+            }
+
             BlockPos from, to;
             if (width == 1) {
                 from = new BlockPos(pos.getX(), endY, pos.getZ());

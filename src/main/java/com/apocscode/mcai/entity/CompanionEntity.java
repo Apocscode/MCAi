@@ -199,6 +199,15 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
         } catch (Exception ignored) {}
         // Sync custom name so the nametag above the entity matches
         this.setCustomName(Component.literal(this.companionName));
+
+        // === Pathfinding safety — avoid hazardous blocks ===
+        // Without these, the companion walks into lava, fire, and off cliffs
+        this.setPathfindingMalus(net.minecraft.world.level.pathfinder.PathType.LAVA, -1.0F);
+        this.setPathfindingMalus(net.minecraft.world.level.pathfinder.PathType.DAMAGE_FIRE, -1.0F);
+        this.setPathfindingMalus(net.minecraft.world.level.pathfinder.PathType.DAMAGE_OTHER, -1.0F);
+        this.setPathfindingMalus(net.minecraft.world.level.pathfinder.PathType.DANGER_FIRE, 8.0F);
+        this.setPathfindingMalus(net.minecraft.world.level.pathfinder.PathType.DANGER_OTHER, 8.0F);
+        this.setPathfindingMalus(net.minecraft.world.level.pathfinder.PathType.WATER, 4.0F);
     }
 
     @Override
@@ -693,6 +702,64 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
                             "I'm low on health and have no food. Could you give me something to eat?");
                 }
             }
+
+            // === HAZARD MONITOR — detect and respond to environmental dangers ===
+            if (this.tickCount % 10 == 0) { // Every 0.5 seconds
+                hazardCheck();
+            }
+        }
+    }
+
+    /**
+     * Environmental hazard detection and emergency response.
+     * Checks for lava, fire, void, and suffocation every 0.5 seconds.
+     */
+    private void hazardCheck() {
+        // --- VOID: Emergency teleport if below world minimum ---
+        if (this.getY() < this.level().getMinBuildHeight() + 2) {
+            Player owner = getOwner();
+            if (owner != null) {
+                this.moveTo(owner.getX(), owner.getY(), owner.getZ(), this.getYRot(), this.getXRot());
+                this.getNavigation().stop();
+                taskManager.cancelAll();
+                chat.warn(CompanionChat.Category.STUCK,
+                        "I almost fell into the void! Teleported back to you.");
+                MCAi.LOGGER.warn("Companion void rescue — teleported to owner from Y={}", (int)this.getY());
+            }
+            return;
+        }
+
+        // --- LAVA / FIRE: Cancel tasks and flee to owner ---
+        if (this.isOnFire() || this.isInLava()) {
+            // Stop whatever we're doing
+            this.getNavigation().stop();
+            taskManager.cancelAll();
+
+            // Try to flee to owner
+            Player owner = getOwner();
+            if (owner != null && this.distanceTo(owner) < 64) {
+                this.getNavigation().moveTo(owner.getX(), owner.getY(), owner.getZ(), 1.5D);
+            }
+
+            // Warn (rate-limited by chat system)
+            if (this.isInLava()) {
+                chat.warn(CompanionChat.Category.STUCK,
+                        "I'm in lava! Trying to get out!");
+            } else {
+                chat.warn(CompanionChat.Category.STUCK,
+                        "I'm on fire!");
+            }
+            return;
+        }
+
+        // --- SUFFOCATION: Detect if trapped inside solid blocks ---
+        BlockPos headPos = this.blockPosition().above();
+        if (this.level().getBlockState(headPos).isSuffocating(this.level(), headPos)
+                && this.level().getBlockState(this.blockPosition()).isSuffocating(this.level(), this.blockPosition())) {
+            // Trapped in solid blocks — mine our way out
+            com.apocscode.mcai.task.BlockHelper.breakBlock(this, headPos);
+            com.apocscode.mcai.task.BlockHelper.breakBlock(this, this.blockPosition());
+            MCAi.LOGGER.warn("Companion suffocation rescue — broke blocks at {} and {}", this.blockPosition(), headPos);
         }
     }
 

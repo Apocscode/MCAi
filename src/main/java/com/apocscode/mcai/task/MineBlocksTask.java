@@ -96,6 +96,13 @@ public class MineBlocksTask extends CompanionTask {
         }
 
         if (isInReach(currentTarget, 3.0)) {
+            // Safety: skip blocks that would expose lava
+            if (!BlockHelper.isSafeToMine(companion.level(), currentTarget)) {
+                targets.poll();
+                currentTarget = null;
+                stuckTimer = 0;
+                return; // Skip this block silently
+            }
             companion.equipBestToolForBlock(companion.level().getBlockState(currentTarget));
             BlockHelper.breakBlock(companion, currentTarget);
             blocksMined++;

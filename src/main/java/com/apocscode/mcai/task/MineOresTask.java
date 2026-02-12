@@ -85,6 +85,13 @@ public class MineOresTask extends CompanionTask {
         }
 
         if (isInReach(currentTarget, 3.5)) {
+            // Safety: skip ores that would expose lava
+            if (!BlockHelper.isSafeToMine(companion.level(), currentTarget)) {
+                targets.poll();
+                currentTarget = null;
+                stuckTimer = 0;
+                return; // Skip this ore
+            }
             companion.equipBestToolForBlock(companion.level().getBlockState(currentTarget));
             BlockHelper.breakBlock(companion, currentTarget);
             targets.poll();
