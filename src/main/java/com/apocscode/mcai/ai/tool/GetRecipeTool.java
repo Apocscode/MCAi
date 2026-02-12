@@ -91,6 +91,7 @@ public class GetRecipeTool implements AiTool {
             for (RecipeHolder<?> holder : recipeManager.getRecipes()) {
                 Recipe<?> recipe = holder.value();
                 ItemStack result = recipe.getResultItem(context.server().registryAccess());
+                if (result == null || result.isEmpty()) continue;
 
                 if (result.getItem() == item) {
                     foundRecipe = true;

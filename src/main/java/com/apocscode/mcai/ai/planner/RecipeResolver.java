@@ -200,7 +200,9 @@ public class RecipeResolver {
         for (RecipeHolder<?> holder : recipeManager.getRecipes()) {
             Recipe<?> r = holder.value();
             if (!(r instanceof ShapedRecipe) && !(r instanceof ShapelessRecipe)) continue;
-            if (r.getResultItem(registryAccess).getItem() != item) continue;
+            ItemStack resultStack = r.getResultItem(registryAccess);
+            if (resultStack == null || resultStack.isEmpty()) continue;
+            if (resultStack.getItem() != item) continue;
             best = holder;
             break;
         }
@@ -231,7 +233,9 @@ public class RecipeResolver {
 
         for (RecipeHolder<?> holder : recipeManager.getRecipes()) {
             Recipe<?> r = holder.value();
-            if (r.getResultItem(registryAccess).getItem() != item) continue;
+            ItemStack resultStack = r.getResultItem(registryAccess);
+            if (resultStack == null || resultStack.isEmpty()) continue;
+            if (resultStack.getItem() != item) continue;
 
             if (r instanceof SmeltingRecipe) {
                 best = holder;
@@ -274,9 +278,11 @@ public class RecipeResolver {
         for (RecipeHolder<?> holder : recipeManager.getRecipes()) {
             Recipe<?> r = holder.value();
             if (!(r instanceof StonecutterRecipe)) continue;
-            if (r.getResultItem(registryAccess).getItem() != item) continue;
+            ItemStack resultStack = r.getResultItem(registryAccess);
+            if (resultStack == null || resultStack.isEmpty()) continue;
+            if (resultStack.getItem() != item) continue;
 
-            int outputPerCraft = r.getResultItem(registryAccess).getCount();
+            int outputPerCraft = resultStack.getCount();
             int craftsNeeded = (int) Math.ceil((double) count / outputPerCraft);
 
             DependencyNode node = new DependencyNode(item, count, StepType.STONECUT, holder);
