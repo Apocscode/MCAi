@@ -166,6 +166,8 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
         try {
             this.companionName = AiConfig.DEFAULT_COMPANION_NAME.get();
         } catch (Exception ignored) {}
+        // Sync custom name so the nametag above the entity matches
+        this.setCustomName(Component.literal(this.companionName));
     }
 
     @Override
