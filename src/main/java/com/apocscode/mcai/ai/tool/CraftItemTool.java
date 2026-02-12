@@ -1,10 +1,13 @@
 package com.apocscode.mcai.ai.tool;
 
 import com.apocscode.mcai.MCAi;
+import com.apocscode.mcai.entity.CompanionEntity;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.Container;
+import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.*;
@@ -13,9 +16,9 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Crafts items using the player's inventory resources.
- * Finds the recipe, checks if the player has the ingredients,
- * consumes them, and gives the result — all in one step.
+ * Crafts items using materials from both the player's AND companion's inventory.
+ * Finds the recipe, checks if sufficient ingredients exist across both inventories,
+ * consumes them (player first, then companion), and gives the result.
  *
  * Works with shaped, shapeless, and smelting recipes from vanilla + mods.
  * For smelting recipes, gives the result directly (simulates having a furnace).
@@ -29,10 +32,11 @@ public class CraftItemTool implements AiTool {
 
     @Override
     public String description() {
-        return "Craft an item using materials from the player's inventory. " +
-                "Automatically looks up the recipe, checks ingredients, " +
-                "consumes materials, and gives the crafted item. " +
+        return "Craft an item using materials from both the player's AND companion's inventory. " +
+                "Automatically looks up the recipe, checks ingredients across both inventories, " +
+                "consumes materials (player first, then companion), and gives the crafted item. " +
                 "Supports crafting multiple batches. " +
+                "The companion can gather resources and then craft with them directly. " +
                 "Use when the player says 'craft me a pickaxe' or 'make 16 torches'.";
     }
 
@@ -192,42 +196,88 @@ public class CraftItemTool implements AiTool {
         });
     }
 
+    /**
+     * Gets the companion's inventory, or null if no companion exists.
+     */
+    private SimpleContainer getCompanionInventory(ToolContext context) {
+        CompanionEntity companion = CompanionEntity.getLivingCompanion(context.player().getUUID());
+        return companion != null ? companion.getCompanionInventory() : null;
+    }
+
     private int calculateMaxCrafts(ToolContext context, List<Ingredient> ingredients) {
         int maxCrafts = Integer.MAX_VALUE;
 
         for (Ingredient ing : ingredients) {
             if (ing.isEmpty()) continue;
 
+            // Count from both player and companion inventories
             int available = countInInventory(context, ing);
-            // Each craft needs 1 of this ingredient
             maxCrafts = Math.min(maxCrafts, available);
         }
 
         return maxCrafts == Integer.MAX_VALUE ? 0 : maxCrafts;
     }
 
+    /**
+     * Counts matching items across both player and companion inventories.
+     */
     private int countInInventory(ToolContext context, Ingredient ingredient) {
         int count = 0;
-        var inv = context.player().getInventory();
-        for (int i = 0; i < inv.getContainerSize(); i++) {
-            ItemStack stack = inv.getItem(i);
+
+        // Count in player inventory
+        var playerInv = context.player().getInventory();
+        for (int i = 0; i < playerInv.getContainerSize(); i++) {
+            ItemStack stack = playerInv.getItem(i);
             if (!stack.isEmpty() && ingredient.test(stack)) {
                 count += stack.getCount();
             }
         }
+
+        // Count in companion inventory
+        SimpleContainer companionInv = getCompanionInventory(context);
+        if (companionInv != null) {
+            for (int i = 0; i < companionInv.getContainerSize(); i++) {
+                ItemStack stack = companionInv.getItem(i);
+                if (!stack.isEmpty() && ingredient.test(stack)) {
+                    count += stack.getCount();
+                }
+            }
+        }
+
         return count;
     }
 
+    /**
+     * Consumes ingredient from player inventory first, then companion inventory.
+     */
     private void consumeIngredient(ToolContext context, Ingredient ingredient, int amount) {
         int remaining = amount;
-        var inv = context.player().getInventory();
-        for (int i = 0; i < inv.getContainerSize() && remaining > 0; i++) {
-            ItemStack stack = inv.getItem(i);
+
+        // Consume from player inventory first
+        var playerInv = context.player().getInventory();
+        for (int i = 0; i < playerInv.getContainerSize() && remaining > 0; i++) {
+            ItemStack stack = playerInv.getItem(i);
             if (!stack.isEmpty() && ingredient.test(stack)) {
                 int toRemove = Math.min(stack.getCount(), remaining);
                 stack.shrink(toRemove);
-                if (stack.isEmpty()) inv.setItem(i, ItemStack.EMPTY);
+                if (stack.isEmpty()) playerInv.setItem(i, ItemStack.EMPTY);
                 remaining -= toRemove;
+            }
+        }
+
+        // If still need more, consume from companion inventory
+        if (remaining > 0) {
+            SimpleContainer companionInv = getCompanionInventory(context);
+            if (companionInv != null) {
+                for (int i = 0; i < companionInv.getContainerSize() && remaining > 0; i++) {
+                    ItemStack stack = companionInv.getItem(i);
+                    if (!stack.isEmpty() && ingredient.test(stack)) {
+                        int toRemove = Math.min(stack.getCount(), remaining);
+                        stack.shrink(toRemove);
+                        if (stack.isEmpty()) companionInv.setItem(i, ItemStack.EMPTY);
+                        remaining -= toRemove;
+                    }
+                }
             }
         }
     }
