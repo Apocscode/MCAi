@@ -26,6 +26,8 @@ public class OllamaManager {
     private static String ollamaPath = null;
     private static String ollamaVersion = null;
     private static boolean running = false;
+    private static boolean weStartedIt = false;  // true if WE launched the process
+    private static Process ollamaProcess = null;  // reference to the process we started
 
     // Common install locations on Windows
     private static final List<String> SEARCH_PATHS = List.of(
@@ -179,8 +181,8 @@ public class OllamaManager {
             // Don't inherit IO — let it run silently in background
             pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
             pb.redirectError(ProcessBuilder.Redirect.DISCARD);
-            pb.start();
-            // Don't hold a reference — it runs as an independent process
+            ollamaProcess = pb.start();
+            weStartedIt = true;
         } catch (Exception e) {
             MCAi.LOGGER.warn("Failed to start Ollama serve: {}", e.getMessage());
         }
@@ -216,5 +218,40 @@ public class OllamaManager {
 
     public static String getOllamaPath() {
         return ollamaPath;
+    }
+
+    /**
+     * Shut down the Ollama process if we started it.
+     * Called when the game/server is stopping.
+     */
+    public static void shutdown() {
+        if (!weStartedIt) {
+            MCAi.LOGGER.info("Ollama was not started by MCAi — leaving it running");
+            return;
+        }
+
+        MCAi.LOGGER.info("Shutting down Ollama (started by MCAi)...");
+
+        // Try graceful destroy first, then force
+        if (ollamaProcess != null && ollamaProcess.isAlive()) {
+            ollamaProcess.destroy();
+            try {
+                // Wait up to 5 seconds for graceful exit
+                boolean exited = ollamaProcess.waitFor(5, java.util.concurrent.TimeUnit.SECONDS);
+                if (!exited) {
+                    ollamaProcess.destroyForcibly();
+                    MCAi.LOGGER.info("Force-killed Ollama process");
+                } else {
+                    MCAi.LOGGER.info("Ollama stopped gracefully");
+                }
+            } catch (InterruptedException e) {
+                ollamaProcess.destroyForcibly();
+                Thread.currentThread().interrupt();
+            }
+        }
+
+        running = false;
+        weStartedIt = false;
+        ollamaProcess = null;
     }
 }

@@ -1,5 +1,6 @@
 package com.apocscode.mcai;
 
+import com.apocscode.mcai.ai.OllamaManager;
 import com.apocscode.mcai.entity.CompanionEntity;
 import com.apocscode.mcai.item.LogisticsWandItem;
 import com.apocscode.mcai.logistics.TaggedBlock;
@@ -10,6 +11,7 @@ import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.ServerChatEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
+import net.neoforged.neoforge.event.server.ServerStoppingEvent;
 import net.neoforged.neoforge.network.PacketDistributor;
 
 /**
@@ -57,5 +59,10 @@ public class ServerEventHandler {
 
         // Route through the chat handler — responses appear as system messages in game chat
         ChatMessageHandler.handleFromGameChat(raw, player, companion);
+    }
+
+    @SubscribeEvent
+    public static void onServerStopping(ServerStoppingEvent event) {
+        OllamaManager.shutdown();
     }
 }
