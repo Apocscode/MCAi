@@ -64,7 +64,7 @@ public class CompanionHudOverlay {
     private static void renderCompanionStatus(GuiGraphics graphics, Minecraft mc, CompanionEntity companion) {
 
         int panelWidth = 120;
-        int panelHeight = 38;
+        int panelHeight = 48;
         String taskStatus = companion.getTaskStatus();
         if (!taskStatus.isEmpty()) {
             panelHeight += 10;
@@ -129,9 +129,15 @@ public class CompanionHudOverlay {
         int distWidth = mc.font.width(distText);
         graphics.drawString(mc.font, distText, barX + barWidth - distWidth, modeY, 0xAAAAAA, true);
 
+        // --- Coordinates ---
+        int coordY = modeY + 10;
+        net.minecraft.core.BlockPos cPos = companion.blockPosition();
+        String coordText = cPos.getX() + " " + cPos.getY() + " " + cPos.getZ();
+        graphics.drawString(mc.font, coordText, barX, coordY, 0x88BBFF, true);
+
         // --- Task status (if any) ---
         if (!taskStatus.isEmpty()) {
-            int taskY = modeY + 10;
+            int taskY = coordY + 10;
             // Truncate if too long
             if (mc.font.width(taskStatus) > barWidth) {
                 while (mc.font.width(taskStatus + "..") > barWidth && taskStatus.length() > 3) {

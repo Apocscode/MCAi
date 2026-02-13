@@ -6,6 +6,10 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.block.state.BlockState;
 
+import net.minecraft.tags.FluidTags;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Blocks;
+
 import javax.annotation.Nullable;
 import java.util.ArrayDeque;
 import java.util.Deque;
@@ -89,7 +93,7 @@ public class StripMineTask extends CompanionTask {
         if (targetY >= 0 && currentY > targetY) {
             descendTarget = currentY - targetY;
             phase = Phase.DIG_DOWN;
-            say("Digging down " + descendTarget + " blocks to Y=" + targetY + " before tunneling " +
+            say("Digging stairs down " + descendTarget + " blocks to Y=" + targetY + " before tunneling " +
                     direction.getName() + "...");
         } else {
             descendTarget = 0;
@@ -110,7 +114,7 @@ public class StripMineTask extends CompanionTask {
     }
 
     // ================================================================
-    // Phase: Dig down to target Y-level
+    // Phase: Dig down to target Y-level via staircase
     // ================================================================
 
     private void tickDigDown() {
@@ -122,31 +126,64 @@ public class StripMineTask extends CompanionTask {
             return;
         }
 
-        BlockPos below = companion.blockPosition().below();
+        BlockPos pos = companion.blockPosition();
+        Level level = companion.level();
 
-        // Safety checks
-        if (below.getY() <= companion.level().getMinBuildHeight()) {
+        // Safety: world bottom
+        if (pos.getY() <= level.getMinBuildHeight() + 2) {
             phase = Phase.TUNNEL;
-            say("Hit world bottom at Y=" + below.getY() + ". Starting tunnel here.");
+            say("Near world bottom at Y=" + pos.getY() + ". Starting tunnel here.");
             return;
         }
 
-        if (!BlockHelper.isSafeToMine(companion.level(), below)) {
-            // Lava below — stop descending, tunnel at current level
+        // Staircase pattern: dig 1 forward + 1 down each step
+        // This creates walkable stairs the companion can climb back up
+        BlockPos ahead = pos.relative(direction);       // one step forward
+        BlockPos aheadBelow = ahead.below();             // the step-down position (new feet)
+        BlockPos aheadHead = ahead;                      // head clearance at step-down = current feet level forward
+        BlockPos aheadAbove = ahead.above();             // extra clearance above
+
+        // Safety: check for lava at the step-down position
+        if (!BlockHelper.isSafeToMine(level, aheadBelow)) {
+            // Seal with cobblestone and tunnel here instead
+            BlockHelper.placeBlock(companion, aheadBelow, Blocks.COBBLESTONE);
             phase = Phase.TUNNEL;
-            say("Lava detected below! Tunneling at current Y=" + companion.blockPosition().getY() + " instead.");
+            say("Lava detected below stairs! Sealed and tunneling at Y=" + pos.getY() + " instead.");
             return;
         }
 
-        // Mine the block below, then the one below that (2-high space for companion to fall)
-        BlockState belowState = companion.level().getBlockState(below);
+        // Dig: clear ahead (2 high for walking), then below-ahead for the step down
+        // Clear above (3 blocks high from step-down) to ensure the companion fits while descending
+        BlockState aboveState = level.getBlockState(aheadAbove);
+        if (!aboveState.isAir()) {
+            checkAndQueueOre(aheadAbove, aboveState);
+            companion.equipBestToolForBlock(aboveState);
+            BlockHelper.breakBlock(companion, aheadAbove);
+        }
+
+        BlockState headState = level.getBlockState(aheadHead);
+        if (!headState.isAir()) {
+            checkAndQueueOre(aheadHead, headState);
+            companion.equipBestToolForBlock(headState);
+            BlockHelper.breakBlock(companion, aheadHead);
+        }
+
+        BlockState belowState = level.getBlockState(aheadBelow);
         if (!belowState.isAir()) {
-            // Check for ores while digging down
-            checkAndQueueOre(below, belowState);
+            checkAndQueueOre(aheadBelow, belowState);
             companion.equipBestToolForBlock(belowState);
-            BlockHelper.breakBlock(companion, below);
+            BlockHelper.breakBlock(companion, aheadBelow);
         }
 
+        // Ensure solid floor under the new step (2 below current feet level)
+        BlockPos floorCheck = aheadBelow.below();
+        BlockState floorState = level.getBlockState(floorCheck);
+        if (floorState.isAir() || floorState.getFluidState().is(FluidTags.LAVA)) {
+            BlockHelper.placeBlock(companion, floorCheck, Blocks.COBBLESTONE);
+        }
+
+        // Navigate to the new lower position
+        navigateTo(aheadBelow);
         descendProgress++;
     }
 

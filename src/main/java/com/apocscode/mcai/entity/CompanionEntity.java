@@ -317,9 +317,7 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
         this.goalSelector.addGoal(3, new CompanionCookFoodGoal(this));   // Cook raw food at furnace/campfire
         this.goalSelector.addGoal(4, new CompanionFarmGoal(this));       // Harvest mature crops
         this.goalSelector.addGoal(5, new CompanionPickupItemGoal(this));   // Actively seek dropped items
-        float teleportDist;
-        try { teleportDist = AiConfig.FOLLOW_TELEPORT_DISTANCE.get().floatValue(); } catch (Exception e) { teleportDist = 32.0F; }
-        this.goalSelector.addGoal(6, new CompanionFollowGoal(this, 1.2D, 4.0F, teleportDist));
+        this.goalSelector.addGoal(6, new CompanionFollowGoal(this, 1.2D, 4.0F));
         this.goalSelector.addGoal(7, new CompanionLookAtPlayerGoal(this, 8.0F));
         this.goalSelector.addGoal(8, new RandomLookAroundGoal(this));
         // Wander only in AUTO mode, not while owner is interacting
@@ -685,13 +683,26 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
             }
 
             // === Leash teleport — emergency failsafe ===
+            // Only teleports when companion is truly idle:
+            //   - No active task (mining, building, etc.)
+            //   - No active need (hungry, in combat, on fire, etc.)
+            // Player must use the whistle (G key) to recall during tasks/needs.
             if (this.tickCount % 40 == 0 && getBehaviorMode() != BehaviorMode.STAY) {
                 Player leashOwner = getOwner();
                 double leashDist;
                 try { leashDist = AiConfig.LEASH_DISTANCE.get(); } catch (Exception e) { leashDist = 48.0; }
-                if (leashOwner != null && this.distanceTo(leashOwner) > leashDist) {
-                    this.moveTo(leashOwner.getX(), leashOwner.getY(), leashOwner.getZ(),
-                            this.getYRot(), this.getXRot());
+                if (leashOwner != null && this.distanceTo(leashOwner) > leashDist
+                        && taskManager.isIdle() && !hasActiveNeed()) {
+                    // Find safe ground near the owner instead of blind teleport
+                    BlockPos ownerPos = leashOwner.blockPosition();
+                    BlockPos safePos = findSafeTeleportPos(ownerPos, 3);
+                    if (safePos != null) {
+                        this.moveTo(safePos.getX() + 0.5, safePos.getY(),
+                                safePos.getZ() + 0.5, this.getYRot(), this.getXRot());
+                    } else {
+                        this.moveTo(leashOwner.getX(), leashOwner.getY(), leashOwner.getZ(),
+                                this.getYRot(), this.getXRot());
+                    }
                     this.getNavigation().stop();
                 }
             }
@@ -710,6 +721,56 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
                 hazardCheck();
             }
         }
+    }
+
+    /**
+     * Check if the companion has an active "need" that should prevent leash teleporting.
+     * Needs include: low health + seeking food, active combat target, on fire/in lava.
+     */
+    private boolean hasActiveNeed() {
+        // In combat
+        if (this.getTarget() != null && this.getTarget().isAlive()) return true;
+
+        // On fire or in lava — hazardCheck handles this, don't teleport on top of it
+        if (this.isOnFire() || this.isInLava()) return true;
+
+        // Hungry — health below 75% means companion may be eating or seeking food
+        float healthPct = this.getHealth() / this.getMaxHealth();
+        if (healthPct < 0.75f) return true;
+
+        return false;
+    }
+
+    /**
+     * Find a safe teleport position near a target BlockPos.
+     * Searches a small area around the target, checking both horizontally and vertically
+     * for positions where isSafeToStand is true.
+     *
+     * @param target         The target position (e.g., owner's feet)
+     * @param horizontalRange How many blocks around the target to check
+     * @return A safe BlockPos, or null if none found
+     */
+    @Nullable
+    private BlockPos findSafeTeleportPos(BlockPos target, int horizontalRange) {
+        // Check target first
+        if (com.apocscode.mcai.task.BlockHelper.isSafeToStand(this.level(), target)) return target;
+
+        for (int dx = -horizontalRange; dx <= horizontalRange; dx++) {
+            for (int dz = -horizontalRange; dz <= horizontalRange; dz++) {
+                if (dx == 0 && dz == 0) continue;
+                BlockPos candidate = target.offset(dx, 0, dz);
+                // Search vertically (down 4, up 4)
+                for (int dy = 0; dy <= 4; dy++) {
+                    if (com.apocscode.mcai.task.BlockHelper.isSafeToStand(this.level(), candidate.below(dy))) {
+                        return candidate.below(dy);
+                    }
+                    if (dy > 0 && com.apocscode.mcai.task.BlockHelper.isSafeToStand(this.level(), candidate.above(dy))) {
+                        return candidate.above(dy);
+                    }
+                }
+            }
+        }
+        return null;
     }
 
     /**
