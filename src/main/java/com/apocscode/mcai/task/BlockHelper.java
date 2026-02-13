@@ -1,10 +1,12 @@
 package com.apocscode.mcai.task;
 
 import com.apocscode.mcai.entity.CompanionEntity;
+import com.apocscode.mcai.logistics.TaggedBlock;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundSource;
+import net.minecraft.world.Container;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
@@ -195,6 +197,8 @@ public class BlockHelper {
                 count += armor.getCount();
             }
         }
+        // Also count items in tagged STORAGE chests
+        count += countInTaggedStorage(companion, stack -> stack.getItem() == item);
         return count;
     }
 
@@ -220,6 +224,29 @@ public class BlockHelper {
         if (!mainHand.isEmpty() && predicate.test(mainHand.getItem())) count += mainHand.getCount();
         ItemStack offHand = companion.getOffhandItem();
         if (!offHand.isEmpty() && predicate.test(offHand.getItem())) count += offHand.getCount();
+        // Also count items in tagged STORAGE chests
+        count += countInTaggedStorage(companion, stack2 -> predicate.test(stack2.getItem()));
+        return count;
+    }
+
+    /**
+     * Count items matching a predicate in all tagged STORAGE containers.
+     */
+    public static int countInTaggedStorage(CompanionEntity companion,
+                                            java.util.function.Predicate<ItemStack> predicate) {
+        int count = 0;
+        var storageBlocks = companion.getTaggedBlocks(TaggedBlock.Role.STORAGE);
+        for (var tb : storageBlocks) {
+            var be = companion.level().getBlockEntity(tb.pos());
+            if (be instanceof Container container) {
+                for (int i = 0; i < container.getContainerSize(); i++) {
+                    ItemStack stack = container.getItem(i);
+                    if (!stack.isEmpty() && predicate.test(stack)) {
+                        count += stack.getCount();
+                    }
+                }
+            }
+        }
         return count;
     }
 

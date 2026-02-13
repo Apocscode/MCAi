@@ -46,10 +46,10 @@ public class GatherBlocksTask extends CompanionTask {
         List<BlockPos> found = BlockHelper.scanForBlocks(companion, targetBlock, radius, maxBlocks);
         targets.addAll(found);
         if (targets.isEmpty()) {
-            MCAi.LOGGER.warn("GatherBlocksTask: no {} blocks found within r={} — completing with 0 gathered",
+            MCAi.LOGGER.warn("GatherBlocksTask: no {} blocks found within r={}",
                     targetBlock.getName().getString(), radius);
             say("Couldn't find any " + targetBlock.getName().getString() + " nearby.");
-            complete();
+            fail("No " + targetBlock.getName().getString() + " found within radius " + radius);
             return;
         }
         totalBlocks = targets.size();

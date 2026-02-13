@@ -675,7 +675,11 @@ public class AIService {
         // Build request
         JsonObject request = new JsonObject();
         request.addProperty("model", AiConfig.OLLAMA_MODEL.get());
-        request.add("messages", messages);
+
+        // Ollama expects tool_calls.arguments as JSON objects (not strings) and doesn't use
+        // tool_call_id. When messages come from the agent loop after cloud AI calls, arguments
+        // are normalized to strings (OpenAI format). Sanitize them for Ollama compatibility.
+        request.add("messages", sanitizeMessagesForOllama(messages));
         request.addProperty("stream", false);
 
         // Attach only relevant tools — dynamic selection keeps count manageable for small models
@@ -721,6 +725,76 @@ public class AIService {
         conn.disconnect();
 
         return JsonParser.parseString(responseBody).getAsJsonObject();
+    }
+
+    /**
+     * Sanitize the messages array for Ollama compatibility.
+     * Cloud/OpenAI format uses tool_calls.arguments as a JSON STRING and includes tool_call_id.
+     * Ollama expects arguments as a JSON OBJECT and doesn't use tool_call_id.
+     * Sending stringified arguments to Ollama causes HTTP 400: "Value looks like object,
+     * but can't find closing '}' symbol".
+     */
+    private static JsonArray sanitizeMessagesForOllama(JsonArray messages) {
+        JsonArray sanitized = new JsonArray();
+        for (JsonElement el : messages) {
+            JsonObject msg = el.getAsJsonObject();
+
+            // Convert assistant messages with tool_calls
+            if (msg.has("tool_calls") && !msg.get("tool_calls").isJsonNull()) {
+                JsonObject cleanMsg = new JsonObject();
+                cleanMsg.addProperty("role", "assistant");
+                if (msg.has("content") && !msg.get("content").isJsonNull()) {
+                    cleanMsg.addProperty("content", msg.get("content").getAsString());
+                } else {
+                    cleanMsg.addProperty("content", "");
+                }
+
+                JsonArray cleanCalls = new JsonArray();
+                for (JsonElement tcEl : msg.getAsJsonArray("tool_calls")) {
+                    JsonObject tc = tcEl.getAsJsonObject();
+                    JsonObject cleanTc = new JsonObject();
+                    cleanTc.addProperty("type", "function");
+
+                    JsonObject func = tc.getAsJsonObject("function");
+                    JsonObject cleanFunc = new JsonObject();
+                    cleanFunc.addProperty("name", func.get("name").getAsString());
+
+                    // Convert arguments from string back to JSON object
+                    if (func.has("arguments")) {
+                        JsonElement argsEl = func.get("arguments");
+                        if (argsEl.isJsonPrimitive() && argsEl.getAsJsonPrimitive().isString()) {
+                            try {
+                                cleanFunc.add("arguments",
+                                        JsonParser.parseString(argsEl.getAsString()).getAsJsonObject());
+                            } catch (Exception e) {
+                                cleanFunc.add("arguments", new JsonObject());
+                            }
+                        } else {
+                            cleanFunc.add("arguments", argsEl);
+                        }
+                    } else {
+                        cleanFunc.add("arguments", new JsonObject());
+                    }
+                    cleanTc.add("function", cleanFunc);
+                    cleanCalls.add(cleanTc);
+                }
+                cleanMsg.add("tool_calls", cleanCalls);
+                sanitized.add(cleanMsg);
+            }
+            // Convert tool result messages — strip tool_call_id (Ollama doesn't use it)
+            else if (msg.has("role") && "tool".equals(msg.get("role").getAsString())) {
+                JsonObject cleanMsg = new JsonObject();
+                cleanMsg.addProperty("role", "tool");
+                cleanMsg.addProperty("content",
+                        msg.has("content") ? msg.get("content").getAsString() : "");
+                sanitized.add(cleanMsg);
+            }
+            // Pass other messages through unchanged
+            else {
+                sanitized.add(msg);
+            }
+        }
+        return sanitized;
     }
 
     /**
@@ -791,12 +865,16 @@ public class AIService {
                 conn.disconnect();
 
                 // Detect daily TPD (tokens per day) limit — retrying is pointless
-                boolean isDailyLimit = error.contains("tokens per day") || error.contains("per day");
-                if (isDailyLimit) {
-                    MCAi.LOGGER.warn("Cloud AI daily token limit (TPD) exhausted: {}", model);
+                boolean isDailyLimit = error.contains("tokens per day") || error.contains("per day")
+                        || error.contains("daily") || error.contains("rate_limit_exceeded");
+                // OpenRouter free tier rate limits are effectively per-IP/per-model and don't clear quickly
+                boolean isOpenRouterRateLimit = url.contains("openrouter.ai");
+                if (isDailyLimit || isOpenRouterRateLimit) {
+                    MCAi.LOGGER.warn("Cloud AI rate limit (fast-fail) for {}: {}",
+                            model, error.length() > 200 ? error.substring(0, 200) : error);
                     AiLogger.log(AiLogger.Category.AI_REQUEST, "WARN",
-                            "Cloud AI daily TPD limit hit — skipping retries, falling back immediately");
-                    throw new IOException("429 daily TPD limit exhausted for " + model);
+                            "Cloud AI rate limit hit — skipping retries, falling back immediately");
+                    throw new IOException("429 rate limit for " + model + " (fast-fail)");
                 }
 
                 if (attempt < maxRetries) {

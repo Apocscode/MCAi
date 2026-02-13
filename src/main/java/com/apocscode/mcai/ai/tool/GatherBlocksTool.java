@@ -96,10 +96,10 @@ public class GatherBlocksTool implements AiTool {
             if (blockItem != null && blockItem != net.minecraft.world.item.Items.AIR) {
                 int have = BlockHelper.countItem(companion, blockItem);
                 if (have >= maxBlocks) {
-                    MCAi.LOGGER.info("GatherBlocks: SKIPPING — already have {}x {} (need {})",
+                    MCAi.LOGGER.info("GatherBlocks: SKIPPING — already have {}x {} in inventory+storage (need {})",
                             have, blockItem.getDescription().getString(), maxBlocks);
                     return "Already have " + have + "x " + blockItem.getDescription().getString() +
-                            " (need " + maxBlocks + "). Skipping gather — proceed to next step.";
+                            " in inventory/storage (need " + maxBlocks + "). Skipping gather — proceed to next step.";
                 }
             }
 

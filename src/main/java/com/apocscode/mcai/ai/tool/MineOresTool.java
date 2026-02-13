@@ -170,10 +170,10 @@ public class MineOresTool implements AiTool {
                 if (dropItem != null) {
                     int have = BlockHelper.countItem(companion, dropItem);
                     if (have >= maxOres) {
-                        MCAi.LOGGER.info("MineOres: SKIPPING — already have {}x {} (need {})",
+                        MCAi.LOGGER.info("MineOres: SKIPPING — already have {}x {} in inventory+storage (need {})",
                                 have, dropItem.getDescription().getString(), maxOres);
                         return "Already have " + have + "x " + dropItem.getDescription().getString() +
-                                " (need " + maxOres + "). Skipping mining — proceed to next step.";
+                                " in inventory/storage (need " + maxOres + "). Skipping mining — proceed to next step.";
                     }
                 }
             }

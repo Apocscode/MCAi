@@ -1382,6 +1382,18 @@ public class CraftItemTool implements AiTool {
             }
         }
 
+        // Log what we found for debugging
+        if (!available.isEmpty()) {
+            StringBuilder avLog = new StringBuilder("buildAvailableMap: ");
+            available.forEach((item, cnt) -> {
+                if (cnt > 0) {
+                    avLog.append(BuiltInRegistries.ITEM.getKey(item).getPath())
+                         .append("=").append(cnt).append(", ");
+                }
+            });
+            MCAi.LOGGER.info("{}", avLog);
+        }
+
         return available;
     }
 

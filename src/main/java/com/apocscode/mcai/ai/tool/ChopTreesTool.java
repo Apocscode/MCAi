@@ -71,8 +71,8 @@ public class ChopTreesTool implements AiTool {
                 return id.contains("log") || id.contains("wood") || id.contains("stem") || id.contains("hyphae");
             });
             if (logsHave >= maxLogs) {
-                MCAi.LOGGER.info("ChopTrees: SKIPPING — already have {} logs (need {})", logsHave, maxLogs);
-                return "Already have " + logsHave + " logs in inventory (need " + maxLogs +
+                MCAi.LOGGER.info("ChopTrees: SKIPPING — already have {} logs in inventory+storage (need {})", logsHave, maxLogs);
+                return "Already have " + logsHave + " logs in inventory/storage (need " + maxLogs +
                         "). Skipping chop — proceed to next step.";
             }
 
