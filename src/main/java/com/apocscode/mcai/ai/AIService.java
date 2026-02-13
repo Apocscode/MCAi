@@ -792,13 +792,35 @@ public class AIService {
                 TOOL ROUTING — read the user's intent and pick the RIGHT tool:
                   "dig down N" / "shaft" / "go underground" → dig_down(depth=N) — vertical shaft only
                   "mine area" / "clear area" / "flatten" → mine_area — rectangular volume
-                  "mine iron" / "get ore" / "mine diamonds" → mine_ores — auto-finds ore blocks nearby
+                  "mine iron" / "get ore" / "mine diamonds" → mine_ores(ore="iron") — scan nearby for specific ore
+                  "strip mine" / "tunnel for ore" / "find diamonds underground" → strip_mine(ore="diamond") — dig tunnel at optimal Y
                   "chop trees" / "get wood" / "get logs" → chop_trees
                   "get me X from chest" / "bring X" / "fetch X" → find_and_fetch_item
                   "gather sand/dirt/cobble" → gather_blocks(block="sand")
                   "smelt X" / "cook X" → smelt_items
                   "what's nearby" / "scan" / "look around" → scan_surroundings
                   NEVER use mine_area for "dig down" — mine_area is horizontal. dig_down is vertical.
+                
+                MINING STRATEGY (critical — follow this decision tree):
+                  1. Player says "mine iron/diamond/etc" → FIRST call mine_ores(ore="iron") to scan nearby.
+                  2. If mine_ores says "no ores found" or warns about wrong Y-level:
+                     → Use strip_mine(ore="iron") to tunnel at the optimal Y. It auto-descends to the best depth.
+                  3. If companion has wrong tool tier (e.g. no stone pick for iron):
+                     → Craft the required pickaxe FIRST, THEN mine. Don't send them to mine without tools.
+                  4. For "find diamonds" or similar → strip_mine(ore="diamond") is usually best since
+                     diamonds are rare and deep (Y=-59). Simple scanning won't find enough.
+                  5. ALWAYS specify the ore= parameter when the player asks for a specific ore type.
+                
+                ORE Y-LEVELS (Minecraft 1.21 Overworld):
+                  Coal:    Y=0 to 320,  best Y=96.  Any pickaxe.
+                  Copper:  Y=-16 to 112, best Y=48.  Any pickaxe.
+                  Iron:    Y=-64 to 320, best Y=16.  Stone pickaxe+.
+                  Lapis:   Y=-64 to 64,  best Y=0.   Stone pickaxe+.
+                  Gold:    Y=-64 to 32,  best Y=-16.  Iron pickaxe+.
+                  Redstone:Y=-64 to 16,  best Y=-59.  Iron pickaxe+.
+                  Diamond: Y=-64 to 16,  best Y=-59.  Iron pickaxe+.
+                  Emerald: Y=-16 to 320, best Y=232.  Iron pickaxe+. Mountains only.
+                  When companion is too high/low for the target ore, use strip_mine to auto-descend.
                 
                 MINECRAFT GAME KNOWLEDGE:
                 

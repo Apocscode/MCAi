@@ -132,6 +132,7 @@ public class ToolRegistry {
         register(new MineOresTool());
         register(new MineAreaTool());
         register(new GatherBlocksTool());
+        register(new StripMineTool());
         register(new TransferItemsTool());
         register(new SmeltItemsTool());
         register(new TaskStatusTool());

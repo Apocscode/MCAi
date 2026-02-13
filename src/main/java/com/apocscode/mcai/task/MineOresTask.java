@@ -4,18 +4,23 @@ import com.apocscode.mcai.entity.CompanionEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.state.BlockState;
 
+import javax.annotation.Nullable;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
 
 /**
  * Task: Mine ores nearby.
- * Scans for ore blocks and mines them.
+ * Supports targeted ore type (e.g. only iron) or all ores.
+ * Uses OreGuide for ore identification and tool-tier checks.
  */
 public class MineOresTask extends CompanionTask {
 
     private final int radius;
     private final int maxOres;
+    @Nullable
+    private final OreGuide.Ore targetOre; // null = mine all ores
     private final Deque<BlockPos> targets = new ArrayDeque<>();
     private BlockPos currentTarget;
     private int stuckTimer = 0;
@@ -24,17 +29,25 @@ public class MineOresTask extends CompanionTask {
     private int consecutiveSkips = 0;
     private static final int MAX_SCAN_ATTEMPTS = 3;
     private static final int STUCK_TIMEOUT_TICKS = 60; // 3 seconds per block
-    private static final int MAX_CONSECUTIVE_SKIPS = 3; // give up after 3 unreachable ores
+    private static final int MAX_CONSECUTIVE_SKIPS = 3;
 
+    /** Constructor for mining all ore types. */
     public MineOresTask(CompanionEntity companion, int radius, int maxOres) {
+        this(companion, radius, maxOres, null);
+    }
+
+    /** Constructor with optional targeted ore type. */
+    public MineOresTask(CompanionEntity companion, int radius, int maxOres, @Nullable OreGuide.Ore targetOre) {
         super(companion);
         this.radius = radius;
         this.maxOres = maxOres > 0 ? maxOres : 999;
+        this.targetOre = targetOre;
     }
 
     @Override
     public String getTaskName() {
-        return "Mine ores (r=" + radius + ")";
+        String oreLabel = targetOre != null ? targetOre.name + " ore" : "ores";
+        return "Mine " + oreLabel + " (r=" + radius + ")";
     }
 
     @Override
@@ -46,17 +59,31 @@ public class MineOresTask extends CompanionTask {
     protected void start() {
         scanForOres();
         if (targets.isEmpty()) {
-            say("No ores found nearby.");
+            String oreLabel = targetOre != null ? targetOre.name + " ore" : "ores";
+            int currentY = companion.blockPosition().getY();
+            String yHint = "";
+            if (targetOre != null) {
+                if (currentY < targetOre.minY || currentY > targetOre.maxY) {
+                    yHint = " I'm at Y=" + currentY + " but " + targetOre.name +
+                            " generates between Y=" + targetOre.minY + " and Y=" + targetOre.maxY +
+                            ". Best at Y=" + targetOre.bestY + ".";
+                } else {
+                    yHint = " I'm at Y=" + currentY + " (right range, but none visible in " + radius + " block radius).";
+                }
+            }
+            say("No " + oreLabel + " found nearby." + yHint);
             complete();
             return;
         }
-        say("Found " + targets.size() + " ore blocks to mine!");
+        String oreLabel = targetOre != null ? targetOre.name + " ore" : "ore";
+        say("Found " + targets.size() + " " + oreLabel + " blocks to mine!");
     }
 
     @Override
     protected void tick() {
         if (oresMined >= maxOres) {
-            say("Mined " + oresMined + " ores!");
+            String oreLabel = targetOre != null ? targetOre.name + " ore" : "ores";
+            say("Mined " + oresMined + " " + oreLabel + "!");
             complete();
             return;
         }
@@ -64,11 +91,15 @@ public class MineOresTask extends CompanionTask {
         if (targets.isEmpty()) {
             scanAttempts++;
             if (scanAttempts > MAX_SCAN_ATTEMPTS) {
+                String oreLabel = targetOre != null ? targetOre.name + " ore" : "ores";
+                say("Finished mining. Got " + oresMined + " " + oreLabel + ".");
                 complete();
                 return;
             }
             scanForOres();
             if (targets.isEmpty()) {
+                String oreLabel = targetOre != null ? targetOre.name + " ore" : "ores";
+                say("No more " + oreLabel + " found. Mined " + oresMined + " total.");
                 complete();
                 return;
             }
@@ -91,9 +122,9 @@ public class MineOresTask extends CompanionTask {
                 targets.poll();
                 currentTarget = null;
                 stuckTimer = 0;
-                return; // Skip this ore
+                return;
             }
-            // Tool-tier check: skip ores we can't properly harvest (e.g. iron ore needs stone pickaxe+)
+            // Tool-tier check: skip ores the companion can't harvest
             BlockState targetState = companion.level().getBlockState(currentTarget);
             if (!companion.canHarvestBlock(targetState)) {
                 targets.poll();
@@ -101,11 +132,15 @@ public class MineOresTask extends CompanionTask {
                 stuckTimer = 0;
                 consecutiveSkips++;
                 if (consecutiveSkips >= MAX_CONSECUTIVE_SKIPS) {
-                    say("I don't have the right tools to mine these ores. Need a better pickaxe.");
+                    OreGuide.Ore ore = OreGuide.identifyOre(targetState);
+                    String tierHint = ore != null
+                            ? " Need " + ore.tierName() + " pickaxe or better."
+                            : " Need a better pickaxe.";
+                    say("I don't have the right tools to mine these ores." + tierHint);
                     complete();
                     return;
                 }
-                return; // Skip — wrong tool tier
+                return;
             }
             companion.equipBestToolForBlock(targetState);
             BlockHelper.breakBlock(companion, currentTarget);
@@ -123,7 +158,7 @@ public class MineOresTask extends CompanionTask {
                 stuckTimer = 0;
                 consecutiveSkips++;
                 if (consecutiveSkips >= MAX_CONSECUTIVE_SKIPS) {
-                    say("Can't reach any more ores. Mined " + oresMined + " ores.");
+                    say("Can't reach any more ores. Mined " + oresMined + ".");
                     complete();
                     return;
                 }
@@ -138,7 +173,43 @@ public class MineOresTask extends CompanionTask {
 
     private void scanForOres() {
         targets.clear();
-        List<BlockPos> found = BlockHelper.scanForOres(companion, radius, maxOres - oresMined);
+        List<BlockPos> found;
+        if (targetOre != null) {
+            found = scanForSpecificOre(companion, targetOre, radius, maxOres - oresMined);
+        } else {
+            found = BlockHelper.scanForOres(companion, radius, maxOres - oresMined);
+        }
         targets.addAll(found);
+    }
+
+    /**
+     * Scan for a specific ore type within radius.
+     */
+    private static List<BlockPos> scanForSpecificOre(CompanionEntity companion, OreGuide.Ore ore,
+                                                      int radius, int maxResults) {
+        BlockPos center = companion.blockPosition();
+        List<BlockPos> results = new ArrayList<>();
+
+        for (int x = -radius; x <= radius; x++) {
+            for (int y = -radius; y <= radius; y++) {
+                for (int z = -radius; z <= radius; z++) {
+                    BlockPos pos = center.offset(x, y, z);
+                    BlockState state = companion.level().getBlockState(pos);
+                    if (ore.matches(state)) {
+                        results.add(pos);
+                    }
+                }
+            }
+        }
+
+        // Sort by distance (mine closest first)
+        results.sort((a, b) -> {
+            double distA = companion.distanceToSqr(a.getX() + 0.5, a.getY() + 0.5, a.getZ() + 0.5);
+            double distB = companion.distanceToSqr(b.getX() + 0.5, b.getY() + 0.5, b.getZ() + 0.5);
+            return Double.compare(distA, distB);
+        });
+
+        if (results.size() > maxResults) return results.subList(0, maxResults);
+        return results;
     }
 }
