@@ -825,6 +825,7 @@ public class AIService {
                   "mine area" / "clear area" / "flatten" → mine_area — rectangular volume
                   "mine iron" / "get ore" / "mine diamonds" → mine_ores(ore="iron") — scan nearby for specific ore
                   "strip mine" / "tunnel for ore" / "find diamonds underground" → strip_mine(ore="diamond") — dig tunnel at optimal Y
+                  "create a mine" / "set up a mine" / "build a mine" / "permanent mine" → create_mine(ore="diamond") — full mine with shaft, hub room, branch tunnels
                   "chop trees" / "get wood" / "get logs" → chop_trees
                   "get me X from chest" / "bring X" / "fetch X" → find_and_fetch_item
                   "gather sand/dirt/cobble" → gather_blocks(block="sand")
@@ -837,11 +838,14 @@ public class AIService {
                   1. Player says "mine iron/diamond/etc" → FIRST call mine_ores(ore="iron") to scan nearby.
                   2. If mine_ores says "no ores found" or warns about wrong Y-level:
                      → Use strip_mine(ore="iron") to tunnel at the optimal Y. It auto-descends to the best depth.
-                  3. mine_ores and strip_mine will AUTO-CRAFT the required pickaxe if the companion doesn't have one.
+                  3. Player says "create a mine" / "set up a mine" / "build a real mine" / "long-term mine":
+                     → Use create_mine(ore="diamond") — builds shaft + hub room + branch mine tunnels.
+                     → create_mine is for BIG operations. It takes several minutes. Use strip_mine for quick tunnels.
+                  4. mine_ores and strip_mine will AUTO-CRAFT the required pickaxe if the companion doesn't have one.
                      You do NOT need to manually craft a pickaxe first — the tools handle the full chain automatically.
-                  4. For "find diamonds" or similar → strip_mine(ore="diamond") is usually best since
+                  5. For "find diamonds" or similar → strip_mine(ore="diamond") is usually best since
                      diamonds are rare and deep (Y=-59). Simple scanning won't find enough.
-                  5. ALWAYS specify the ore= parameter when the player asks for a specific ore type.
+                  6. ALWAYS specify the ore= parameter when the player asks for a specific ore type.
                 
                 KILL MOB — kill_mob() supports ALL mobs including modded ones:
                   - Vanilla: kill_mob(mob="zombie"), kill_mob(mob="cow", count=3)

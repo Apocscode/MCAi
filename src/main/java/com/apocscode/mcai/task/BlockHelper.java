@@ -2,13 +2,16 @@ package com.apocscode.mcai.task;
 
 import com.apocscode.mcai.entity.CompanionEntity;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.FarmBlock;
+import net.minecraft.world.level.block.WallTorchBlock;
 import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.ArrayList;
@@ -313,5 +316,110 @@ public class BlockHelper {
 
         if (results.size() > maxResults) return results.subList(0, maxResults);
         return results;
+    }
+
+    // ================================================================
+    // Torch placement (for mining system)
+    // ================================================================
+
+    /**
+     * Place a torch at the given position. Tries floor torch first,
+     * then wall torch on an adjacent solid face if the floor isn't solid.
+     * Consumes a torch from the companion's inventory.
+     *
+     * @return true if a torch was placed
+     */
+    public static boolean placeTorch(CompanionEntity companion, BlockPos pos) {
+        Level level = companion.level();
+        if (level.isClientSide) return false;
+
+        // Must have torches in inventory
+        if (countItem(companion, Items.TORCH) <= 0) return false;
+
+        // Try standing torch on solid ground
+        BlockPos below = pos.below();
+        BlockState belowState = level.getBlockState(below);
+        BlockState currentState = level.getBlockState(pos);
+        if (!currentState.canBeReplaced()) return false;
+
+        if (belowState.isFaceSturdy(level, below, Direction.UP)) {
+            // Place standing torch
+            level.setBlock(pos, Blocks.TORCH.defaultBlockState(), 3);
+            removeItem(companion, Items.TORCH, 1);
+            playTorchSound(level, pos);
+            return true;
+        }
+
+        // Try wall torch — check each horizontal direction for a solid wall
+        for (Direction dir : new Direction[]{Direction.NORTH, Direction.SOUTH, Direction.EAST, Direction.WEST}) {
+            BlockPos wallPos = pos.relative(dir);
+            BlockState wallState = level.getBlockState(wallPos);
+            if (wallState.isFaceSturdy(level, wallPos, dir.getOpposite())) {
+                // Wall torch faces AWAY from the wall it's attached to
+                BlockState torchState = Blocks.WALL_TORCH.defaultBlockState()
+                        .setValue(WallTorchBlock.FACING, dir.getOpposite());
+                level.setBlock(pos, torchState, 3);
+                removeItem(companion, Items.TORCH, 1);
+                playTorchSound(level, pos);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static void playTorchSound(Level level, BlockPos pos) {
+        var sound = Blocks.TORCH.defaultBlockState().getSoundType();
+        level.playSound(null, pos, sound.getPlaceSound(), SoundSource.BLOCKS,
+                (sound.getVolume() + 1.0F) / 2.0F, sound.getPitch() * 0.8F);
+    }
+
+    // ================================================================
+    // Inventory capacity helpers (for mining system)
+    // ================================================================
+
+    /**
+     * Check if companion inventory is nearly full (>= threshold % of slots used).
+     *
+     * @param thresholdPercent 0.0 to 1.0 — e.g. 0.8 for 80% full
+     * @return true if inventory usage is at or above the threshold
+     */
+    public static boolean isInventoryNearlyFull(CompanionEntity companion, double thresholdPercent) {
+        var inv = companion.getCompanionInventory();
+        int totalSlots = inv.getContainerSize();
+        int usedSlots = 0;
+        for (int i = 0; i < totalSlots; i++) {
+            if (!inv.getItem(i).isEmpty()) usedSlots++;
+        }
+        return (double) usedSlots / totalSlots >= thresholdPercent;
+    }
+
+    /**
+     * Check if a position is safe to stand on (solid below, not in lava/fire).
+     */
+    public static boolean isSafeToStand(Level level, BlockPos feetPos) {
+        BlockState feet = level.getBlockState(feetPos);
+        BlockState head = level.getBlockState(feetPos.above());
+        BlockState below = level.getBlockState(feetPos.below());
+
+        // Feet and head must be passable (air, torch, etc.)
+        boolean feetClear = feet.isAir() || !feet.blocksMotion();
+        boolean headClear = head.isAir() || !head.blocksMotion();
+
+        // Ground below must be solid
+        boolean solidGround = below.isFaceSturdy(level, feetPos.below(), Direction.UP);
+
+        // No lava at feet level
+        boolean noLava = !feet.getFluidState().is(net.minecraft.tags.FluidTags.LAVA)
+                && !head.getFluidState().is(net.minecraft.tags.FluidTags.LAVA);
+
+        return feetClear && headClear && solidGround && noLava;
+    }
+
+    /**
+     * Check if a block is a falling block (sand, gravel, concrete powder).
+     */
+    public static boolean isFallingBlock(Level level, BlockPos pos) {
+        Block block = level.getBlockState(pos).getBlock();
+        return block instanceof net.minecraft.world.level.block.FallingBlock;
     }
 }

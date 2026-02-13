@@ -42,6 +42,9 @@ public class ToolRegistry {
         // Digging down specifically
         kw("dig down,shaft,tunnel,dig straight,vertical,below",
                 "dig_down", "mine_area");
+        // Create mine — permanent mine with shaft, hub, branches
+        kw("create mine,build mine,set up mine,start mine,long term mine,permanent mine,mining operation,mine base,real mine,full mine",
+                "create_mine", "mine_ores", "strip_mine");
         // Trees / wood
         kw("chop,tree,log,wood,plank,oak,birch,spruce",
                 "chop_trees", "gather_blocks");
@@ -150,6 +153,7 @@ public class ToolRegistry {
         register(new MemoryTool());
         register(new EmoteTool());
         register(new DigDownTool());
+        register(new CreateMineTool());
         MCAi.LOGGER.info("Registered {} AI tools: {}", tools.size(), tools.keySet());
     }
 
