@@ -1,6 +1,6 @@
 {
     "name": "Commands & Controls",
-    "description": "Quick commands, keybinds, and HUD overlay info.",
+    "description": "Quick commands, keybinds, bookmarks, HUD overlay, and configuration.",
     "icon": "minecraft:command_block",
-    "sortnum": 5
+    "sortnum": 6
 }

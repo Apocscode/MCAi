@@ -1,0 +1,13 @@
+{
+    "name": "Bookmarks",
+    "icon": "minecraft:filled_map",
+    "category": "mcai:commands",
+    "sortnum": 2,
+    "pages": [
+        {
+            "type": "patchouli:text",
+            "title": "Location Bookmarks",
+            "text": "Save named locations your companion can remember and navigate to.$(br2)$(bold)Commands:$(br)$(li)$(thing)\"Remember this spot as 'base'\"$() — Save current location$(li)$(thing)\"What bookmarks do you have?\"$() — List all saved$(li)$(thing)\"Go to 'base'\"$() — Navigate to a bookmark$(li)$(thing)\"Forget the 'base' bookmark\"$() — Delete$(br2)Bookmarks persist across sessions via NBT data. Use them with the $(bold)deliver_items$() tool to send your companion on delivery runs to named places.$(br2)Tip: Bookmark your mine entrances, farms, and trading halls!"
+        }
+    ]
+}

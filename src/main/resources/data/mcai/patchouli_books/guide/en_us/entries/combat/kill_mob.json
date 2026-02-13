@@ -1,0 +1,13 @@
+{
+    "name": "Hunt Mobs",
+    "icon": "minecraft:diamond_sword",
+    "category": "mcai:combat",
+    "sortnum": 3,
+    "pages": [
+        {
+            "type": "patchouli:text",
+            "title": "Kill Mob",
+            "text": "Send your companion to hunt and kill specific mobs.$(br2)$(li)$(bold)Vanilla mobs:$() $(thing)\"Kill 5 zombies\"$(li)$(bold)Modded mobs:$() $(thing)\"Kill the blaze\"$() — auto-detects modded entity IDs$(li)Specify a count or leave open-ended$(li)Companion searches for the target mob in range$(li)Engages in melee combat, auto-equips best weapon$(br2)Earns $(bold)10 XP$() per kill.$(br2)The companion will hunt until the requested count is reached, or you tell it to stop."
+        }
+    ]
+}

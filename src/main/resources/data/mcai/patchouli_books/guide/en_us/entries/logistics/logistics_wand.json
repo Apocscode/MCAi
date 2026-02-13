@@ -7,12 +7,12 @@
         {
             "type": "patchouli:spotlight",
             "item": "mcai:logistics_wand",
-            "text": "The $(item)Logistics Wand$() lets you designate containers for automated item management."
+            "text": "The $(item)Logistics Wand$() lets you designate containers for automated item management and define your companion's home area."
         },
         {
             "type": "patchouli:text",
-            "title": "How to Use",
-            "text": "$(li)$(bold)Shift+Scroll$() — Cycle wand mode (Input / Output / Storage)$(li)$(bold)Shift+Right-click$() container — Tag it with current mode$(li)$(bold)Shift+Right-click$() tagged container — Remove tag$(br2)When holding the wand, tagged containers show colored outlines and floating labels:$(br2)$(#5599FF)Blue$() = Input$(br)$(#FF8800)Orange$() = Output$(br)$(#55FF55)Green$() = Storage"
+            "title": "Wand Modes",
+            "text": "$(li)$(bold)Shift+Scroll$() — Cycle wand mode$(li)$(bold)Shift+Right-click$() container — Tag/untag it$(br2)Modes:$(br2)$(#5599FF)INPUT$() (Blue) — Item source$(br)$(#FF8800)OUTPUT$() (Orange) — Item destination$(br)$(#55FF55)STORAGE$() (Green) — General storage$(br)$(#55FFAA)HOME AREA$() (Cyan) — Click two corners to define the companion's home zone.$(br2)Tagged containers show colored outlines and floating labels when holding the wand."
         }
     ]
 }

@@ -1,0 +1,13 @@
+{
+    "name": "Emotes",
+    "icon": "minecraft:firework_rocket",
+    "category": "mcai:ai_chat",
+    "sortnum": 3,
+    "pages": [
+        {
+            "type": "patchouli:text",
+            "title": "Companion Emotes",
+            "text": "Your companion can express emotions with particle effects and sounds.$(br2)Available emotes:$(br2)$(li)$(bold)Wave$() — Friendly greeting$(li)$(bold)Celebrate$() — Firework particles$(li)$(bold)Sad$() — Blue dripping particles$(li)$(bold)Angry$() — Red fire particles$(li)$(bold)Love$() — Heart particles$(li)$(bold)Thinking$() — Enchanted particles$(li)$(bold)Sneeze$() — Cloud particles$(br2)The AI triggers emotes naturally during conversation, or you can ask directly: \"Do a celebration!\""
+        }
+    ]
+}

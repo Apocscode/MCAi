@@ -1,0 +1,18 @@
+{
+    "name": "Delivery & Trading",
+    "icon": "minecraft:ender_pearl",
+    "category": "mcai:automation",
+    "sortnum": 4,
+    "pages": [
+        {
+            "type": "patchouli:text",
+            "title": "Deliver Items",
+            "text": "Send your companion to deliver items to a bookmarked location or specific coordinates.$(br2)$(li)$(bold)deliver_items$() — Companion walks to the destination and drops items$(li)Works with bookmarked locations: $(thing)\"Deliver 32 cobblestone to my base\"$(li)Or coordinates: $(thing)\"Deliver the iron ingots to 100, 64, 200\"$(br2)Earns $(bold)15 XP$() per delivery.$(br2)Tip: Bookmark important locations first with $(thing)\"Remember this spot as 'my base'\"$() for easy reference."
+        },
+        {
+            "type": "patchouli:text",
+            "title": "Villager Trading",
+            "text": "The companion can interact with nearby villagers:$(br2)$(bold)List trades:$()$(br)$(thing)\"What trades are available?\"$(br)→ Shows all villager trades within range$(br2)$(bold)Execute a trade:$()$(br)$(thing)\"Trade 10 emeralds for a diamond pickaxe\"$(br)→ Companion walks to the villager and trades$(br2)Earns $(bold)10 XP$() per trade. The companion uses items from its own inventory for payment."
+        }
+    ]
+}

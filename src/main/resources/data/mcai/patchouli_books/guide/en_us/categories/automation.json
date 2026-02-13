@@ -1,6 +1,6 @@
 {
     "name": "Automation",
-    "description": "Queue tasks like farming, mining, chopping trees, and gathering blocks.",
+    "description": "Queue tasks like farming, crafting, smelting, building, fishing, and more. Your companion handles multi-step chains autonomously.",
     "icon": "minecraft:iron_pickaxe",
-    "sortnum": 2
+    "sortnum": 3
 }

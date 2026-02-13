@@ -1,0 +1,13 @@
+{
+    "name": "Building",
+    "icon": "minecraft:bricks",
+    "category": "mcai:automation",
+    "sortnum": 2,
+    "pages": [
+        {
+            "type": "patchouli:text",
+            "title": "Build Structures",
+            "text": "The companion can build basic structures from blocks in its inventory.$(br2)Structure types:$(br2)$(li)$(bold)Wall$() — Vertical wall of specified dimensions$(li)$(bold)Floor$() — Flat platform$(li)$(bold)Platform$() — Elevated floor$(li)$(bold)Shelter$() — Basic enclosed room$(li)$(bold)Column$() — Vertical pillar$(br2)Example: $(thing)\"Build a 5×3 cobblestone wall\"$(br)$(thing)\"Build a shelter from oak planks\"$(br2)The companion uses blocks from its inventory. Give it the building materials first!"
+        }
+    ]
+}

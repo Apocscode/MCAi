@@ -1,0 +1,6 @@
+{
+    "name": "Mining",
+    "description": "From quick ore scanning to permanent mines with staircase shafts, hub rooms, and systematic branch mining.",
+    "icon": "minecraft:diamond_pickaxe",
+    "sortnum": 2
+}

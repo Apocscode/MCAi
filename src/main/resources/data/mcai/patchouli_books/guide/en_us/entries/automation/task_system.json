@@ -7,12 +7,12 @@
         {
             "type": "patchouli:text",
             "title": "Task Queue",
-            "text": "Ask your companion to perform tasks via AI chat. Tasks are queued and executed in order.$(br2)Available tasks:$(br2)$(li)$(bold)Farm Area$() — Harvest, hoe, and replant crops$(li)$(bold)Mine Blocks$() — Clear blocks in an area$(li)$(bold)Mine Ores$() — Find and mine ore blocks$(li)$(bold)Chop Trees$() — Cut down nearby trees$(li)$(bold)Gather Blocks$() — Collect specific block types"
+            "text": "Ask your companion to perform tasks via AI chat. Tasks are queued and executed in order.$(br2)Available tasks:$(br2)$(li)$(bold)Farm Area$() — Harvest, hoe, and replant crops$(li)$(bold)Mine Ores$() — Find and mine ore blocks$(li)$(bold)Strip Mine$() — Tunnel at optimal Y-level$(li)$(bold)Create Mine$() — Full mine with shaft, hub, branches$(li)$(bold)Chop Trees$() — Cut down nearby trees$(li)$(bold)Gather Blocks$() — Collect specific block types"
         },
         {
             "type": "patchouli:text",
-            "title": "Task Progress",
-            "text": "The companion reports progress every 10 seconds.$(br2)Use $(thing)!status$() to check current task and queue.$(br2)Use $(thing)!cancel$() to stop all tasks.$(br2)Progress percentage is shown in the HUD overlay and in chat messages."
+            "title": "More Tasks",
+            "text": "$(li)$(bold)Craft Item$() — Autonomous multi-step crafting$(li)$(bold)Smelt Items$() — Auto-furnace operation$(li)$(bold)Build Structure$() — Walls, floors, shelters$(li)$(bold)Go Fishing$() — Fish at nearby water$(li)$(bold)Deliver Items$() — Deliver to a location$(li)$(bold)Kill Mob$() — Hunt specific mobs$(li)$(bold)Guard Area$() — Patrol and defend$(br2)Use $(thing)!status$() to check progress, $(thing)!cancel$() to stop. Tasks chain via continuations for multi-step plans."
         }
     ]
 }

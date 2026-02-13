@@ -1,0 +1,13 @@
+{
+    "name": "Fishing",
+    "icon": "minecraft:fishing_rod",
+    "category": "mcai:automation",
+    "sortnum": 3,
+    "pages": [
+        {
+            "type": "patchouli:text",
+            "title": "Go Fishing",
+            "text": "Send your companion to fish at a nearby water source.$(br2)$(li)The companion finds a suitable fishing spot$(li)Casts the line and waits for a bite$(li)Catches fish, treasure, and junk items$(li)Earns $(bold)3 XP$() per catch$(br2)Example: $(thing)\"Go fishing\"$() or $(thing)\"Catch me some fish\"$(br2)Make sure the companion has a fishing rod in its inventory!"
+        }
+    ]
+}

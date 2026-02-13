@@ -1,0 +1,18 @@
+{
+    "name": "Strip Mining",
+    "icon": "minecraft:stone_pickaxe",
+    "category": "mcai:mining",
+    "sortnum": 1,
+    "pages": [
+        {
+            "type": "patchouli:text",
+            "title": "Strip Mine Tool",
+            "text": "The strip mine tool digs a 1×2 tunnel at the optimal Y-level for your target ore.$(br2)$(bold)How it works:$(br)$(li)Descends to the best Y-level for the target ore$(li)Tunnels horizontally in the specified direction$(li)Scans walls, ceiling, and floor for ores$(li)Side-trips to mine any ores found within 2 blocks$(li)Stops when target count is reached or tunnel length limit$(br2)Example: $(thing)\"Strip mine for iron, 48 blocks east\"$() → descends to Y=16 and tunnels 48 blocks east."
+        },
+        {
+            "type": "patchouli:text",
+            "title": "Parameters",
+            "text": "$(bold)ore$() — Target ore type (iron, diamond, gold, etc.)$(br)$(bold)length$() — Tunnel length, 4-64 blocks (default: 32)$(br)$(bold)count$() — Stop after N ores found (0 = tunnel full length)$(br)$(bold)direction$() — north/south/east/west (default: facing direction)$(br)$(bold)plan$() — What to do after mining (e.g. \"smelt the iron then craft an iron pickaxe\")$(br2)The companion auto-crafts a correct-tier pickaxe before mining if needed."
+        }
+    ]
+}

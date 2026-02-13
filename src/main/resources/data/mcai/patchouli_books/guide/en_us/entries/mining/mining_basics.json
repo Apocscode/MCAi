@@ -1,0 +1,18 @@
+{
+    "name": "Mining Basics & Ore Guide",
+    "icon": "minecraft:iron_ore",
+    "category": "mcai:mining",
+    "sortnum": 0,
+    "pages": [
+        {
+            "type": "patchouli:text",
+            "title": "Mining Tools",
+            "text": "Three mining strategies, from simple to complex:$(br2)$(bold)1. Mine Ores$() — Scan nearby for visible ores and mine them. Good for exposed caves or mountains.$(br)$(thing)\"Mine some iron\"$(br2)$(bold)2. Strip Mine$() — Dig a tunnel at the optimal Y-level. Finds ores in walls as it goes. Quick and targeted.$(br)$(thing)\"Strip mine for diamonds\"$(br2)$(bold)3. Create Mine$() — Build a permanent mine with shaft, hub room, and branch tunnels. Maximum coverage.$(br)$(thing)\"Create a diamond mine\""
+        },
+        {
+            "type": "patchouli:text",
+            "title": "Ore Y-Levels (1.21)",
+            "text": "Optimal Y-levels for each ore:$(br2)$(li)$(bold)Coal$(): Y=96 (Any pick)$(li)$(bold)Copper$(): Y=48 (Any pick)$(li)$(bold)Iron$(): Y=16 (Stone pick+)$(li)$(bold)Lapis$(): Y=0 (Stone pick+)$(li)$(bold)Gold$(): Y=-16 (Iron pick+)$(li)$(bold)Redstone$(): Y=-59 (Iron pick+)$(li)$(bold)Diamond$(): Y=-59 (Iron pick+)$(li)$(bold)Emerald$(): Y=232 (Iron pick+, Mountains)$(br2)The companion automatically goes to the best Y-level and auto-crafts the required pickaxe tier."
+        }
+    ]
+}

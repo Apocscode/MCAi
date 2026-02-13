@@ -1,0 +1,13 @@
+{
+    "name": "Guard Mode",
+    "icon": "minecraft:shield",
+    "category": "mcai:combat",
+    "sortnum": 2,
+    "pages": [
+        {
+            "type": "patchouli:text",
+            "title": "Guard Area",
+            "text": "Set your companion to guard a specific area.$(br2)$(li)Patrols a $(bold)16-block radius$() around the guard point$(li)Automatically engages hostile mobs that enter the area$(li)Returns to the center after combat$(li)Stays vigilant — continuously scans for threats$(br2)Activate via:$(br)$(li)Chat: $(thing)\"Guard this area\"$(li)Behavior mode: Set to $(bold)GUARD$() in the inventory screen$(li)Logistics wand: Set a $(bold)HOME_AREA$() to define boundaries$(br2)Combine with HOME_AREA boundaries for precise guard zones."
+        }
+    ]
+}

@@ -6,13 +6,13 @@
     "pages": [
         {
             "type": "patchouli:text",
-            "title": "Three Modes",
-            "text": "Your companion has three behavior modes:$(br2)$(bold)FOLLOW$() — Follows you around. Teleports if too far away.$(br2)$(bold)STAY$() — Stands still at their current position.$(br2)$(bold)AUTO$() — Autonomously performs tasks: farming, logistics, wandering, and combat."
+            "title": "Four Modes",
+            "text": "Your companion has four behavior modes:$(br2)$(bold)FOLLOW$() — Follows you around. Teleports if too far away.$(br2)$(bold)STAY$() — Stands still at their current position.$(br2)$(bold)AUTO$() — Autonomously performs tasks: farming, logistics, cooking, hunting, and item pickup.$(br2)$(bold)GUARD$() — Patrols a 16-block radius and engages hostile mobs."
         },
         {
             "type": "patchouli:text",
             "title": "Switching Modes",
-            "text": "Use these methods to change modes:$(br2)$(li)Quick commands: $(thing)!follow$(), $(thing)!stay$(), $(thing)!auto$()$(li)Chat with the AI: \"Switch to follow mode\"$(li)The HUD overlay shows the current mode as a colored badge."
+            "text": "Use these methods to change modes:$(br2)$(li)Quick commands: $(thing)!follow$(), $(thing)!stay$(), $(thing)!auto$()$(li)Chat with the AI: \"Switch to follow mode\"$(li)Inventory screen buttons (Stay / Follow / Auto)$(li)The HUD overlay shows the current mode as a colored badge.$(br2)Guard mode is activated via the $(thing)guard_area$() AI tool."
         }
     ]
 }

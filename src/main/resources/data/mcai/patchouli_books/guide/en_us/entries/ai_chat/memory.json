@@ -1,0 +1,18 @@
+{
+    "name": "Companion Memory",
+    "icon": "minecraft:book",
+    "category": "mcai:ai_chat",
+    "sortnum": 2,
+    "pages": [
+        {
+            "type": "patchouli:text",
+            "title": "Persistent Memory",
+            "text": "Your companion can remember facts between conversations.$(br2)$(bold)How to use$(br)Just tell the companion naturally:$(br)$(li)\"Remember that my base is at 100, 64, 200\"$(li)\"What do you know about my base?\"$(li)\"Forget where my base is\"$(br2)The companion stores up to $(bold)100 key-value facts$() and keeps an $(bold)event log$() of the last 50 significant events."
+        },
+        {
+            "type": "patchouli:text",
+            "title": "Memory Details",
+            "text": "Memory operations:$(br2)$(li)$(bold)Remember$() — Store a fact (key → value)$(li)$(bold)Recall$() — Look up a specific memory$(li)$(bold)Forget$() — Delete a memory$(li)$(bold)List All$() — View all stored memories$(li)$(bold)Log Event$() — Record a timestamped event$(br2)Memories persist via NBT — they survive game restarts and deaths. The AI automatically decides when to store or recall information."
+        }
+    ]
+}

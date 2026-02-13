@@ -1,6 +1,6 @@
 {
     "name": "Logistics",
-    "description": "Use the Logistics Wand to tag containers and automate item sorting.",
+    "description": "Use the Logistics Wand to tag containers, define home areas, and automate item sorting.",
     "icon": "mcai:logistics_wand",
-    "sortnum": 3
+    "sortnum": 4
 }

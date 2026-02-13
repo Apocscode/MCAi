@@ -1,0 +1,18 @@
+{
+    "name": "Crafting & Smelting",
+    "icon": "minecraft:crafting_table",
+    "category": "mcai:automation",
+    "sortnum": 1,
+    "pages": [
+        {
+            "type": "patchouli:text",
+            "title": "Autonomous Crafting",
+            "text": "The $(bold)craft_item$() tool is fully autonomous. It handles the entire chain from nothing:$(br2)$(li)Checks companion inventory + nearby chests$(li)Auto-crafts all intermediate items$(li)Auto-gathers missing raw materials$(li)Auto-crafts required tools first$(li)Auto-hunts mobs for drops (leather, string)$(li)Auto-smelts ores at a furnace$(br2)Example: $(thing)\"Craft an iron pickaxe\"$() from nothing → chop trees → craft planks → craft sticks → craft wood pick → mine stone → craft stone pick → mine iron → smelt → craft iron pickaxe."
+        },
+        {
+            "type": "patchouli:text",
+            "title": "Smelting",
+            "text": "The $(bold)smelt_items$() tool handles furnace automation:$(br2)$(li)Finds a nearby furnace (or auto-crafts + places one)$(li)Inserts items and fuel$(li)Waits for smelting to complete$(li)Collects the output$(li)Auto-gathers fuel (chops trees) if needed$(br2)Smelting is also built into the crafting chain — if a recipe needs ingots, the companion will smelt raw ore automatically.$(br2)Say $(thing)\"Smelt my raw iron\"$() or just $(thing)\"Make iron ingots\"$()."
+        }
+    ]
+}

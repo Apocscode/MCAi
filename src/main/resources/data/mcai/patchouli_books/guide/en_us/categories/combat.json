@@ -1,6 +1,6 @@
 {
     "name": "Combat & Survival",
-    "description": "Auto-equip gear, fight hostile mobs, eat food, and handle death gracefully.",
+    "description": "Auto-equip gear, fight hostile mobs, guard areas, hunt specific targets, eat food, and handle death.",
     "icon": "minecraft:iron_sword",
-    "sortnum": 4
+    "sortnum": 5
 }
