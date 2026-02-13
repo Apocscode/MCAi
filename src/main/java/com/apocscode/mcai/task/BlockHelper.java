@@ -35,8 +35,26 @@ public class BlockHelper {
         BlockState state = level.getBlockState(pos);
         if (state.isAir() || state.getBlock() == Blocks.BEDROCK) return false;
 
-        // Break with drops
-        level.destroyBlock(pos, true, companion);
+        // Collect drops directly into companion inventory (avoids ground-drop race condition)
+        if (level instanceof ServerLevel serverLevel) {
+            List<ItemStack> drops = Block.getDrops(state, serverLevel, pos,
+                    level.getBlockEntity(pos), companion, companion.getMainHandItem());
+
+            // Break WITHOUT spawning item entities
+            level.destroyBlock(pos, false, companion);
+
+            // Insert each drop into companion inventory
+            var inv = companion.getCompanionInventory();
+            for (ItemStack drop : drops) {
+                ItemStack remainder = inv.addItem(drop);
+                if (!remainder.isEmpty()) {
+                    // Inventory full — spawn remainder on ground as fallback
+                    Block.popResource(level, pos, remainder);
+                }
+            }
+        } else {
+            level.destroyBlock(pos, true, companion);
+        }
         return true;
     }
 

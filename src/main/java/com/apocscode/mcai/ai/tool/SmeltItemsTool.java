@@ -190,9 +190,13 @@ public class SmeltItemsTool implements AiTool {
     /**
      * Reverse lookup: find a smelting recipe that PRODUCES the given item as OUTPUT.
      * e.g. given iron_ingot, finds the raw_iron → iron_ingot recipe.
+     * Prefers recipes with raw_ inputs (actual drops) over ore block inputs.
      */
     private RecipeHolder<?> findSmeltRecipeForOutput(RecipeManager recipeManager,
                                                       RegistryAccess registryAccess, Item outputItem) {
+        RecipeHolder<?> bestMatch = null;
+        boolean bestIsRaw = false;
+
         for (RecipeHolder<?> holder : recipeManager.getRecipes()) {
             try {
                 Recipe<?> r = holder.value();
@@ -203,13 +207,26 @@ public class SmeltItemsTool implements AiTool {
                 }
                 ItemStack result = RecipeResolver.safeGetResult(r, registryAccess);
                 if (!result.isEmpty() && result.is(outputItem)) {
-                    return holder;
+                    // Check if the input is a raw_ item (preferred — actual mining drops)
+                    boolean isRaw = false;
+                    List<Ingredient> ings = r.getIngredients();
+                    if (!ings.isEmpty()) {
+                        ItemStack[] stacks = ings.get(0).getItems();
+                        if (stacks.length > 0) {
+                            ResourceLocation inputId = BuiltInRegistries.ITEM.getKey(stacks[0].getItem());
+                            isRaw = inputId.getPath().startsWith("raw_");
+                        }
+                    }
+                    if (bestMatch == null || (isRaw && !bestIsRaw)) {
+                        bestMatch = holder;
+                        bestIsRaw = isRaw;
+                    }
                 }
             } catch (Exception e) {
                 continue;
             }
         }
-        return null;
+        return bestMatch;
     }
 
     private Item resolveItem(String query) {
