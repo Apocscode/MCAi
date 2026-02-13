@@ -190,6 +190,17 @@ public class CraftItemTool implements AiTool {
             int maxCrafts = calculateMaxCrafts(context, ingredients);
 
             if (maxCrafts == 0) {
+                // Log what's missing so we can diagnose repeat-plan loops
+                StringBuilder missing = new StringBuilder("craft_item(").append(finalQuery)
+                        .append("): maxCrafts=0 after autoResolve. Inventory per ingredient: ");
+                for (Ingredient ing : ingredients) {
+                    if (ing.isEmpty()) continue;
+                    int have = countInInventory(context, ing);
+                    String name = ing.getItems().length > 0
+                            ? ing.getItems()[0].getItem().getDescription().getString() : "?";
+                    missing.append(name).append("=").append(have).append(", ");
+                }
+                MCAi.LOGGER.warn("{}", missing);
                 return autoCraftPlan(context, recipeManager, registryAccess,
                         targetItem, finalCount, ingredients, craftsNeeded, craftLog);
             }

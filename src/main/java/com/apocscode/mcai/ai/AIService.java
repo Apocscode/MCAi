@@ -785,31 +785,50 @@ public class AIService {
             }
 
             int responseCode = conn.getResponseCode();
-            if (responseCode == 429 && attempt < maxRetries) {
-                // Rate limited — parse retry delay from response, default 15s
+            if (responseCode == 429) {
+                // Rate limited — parse error and check if it's a daily limit
                 String error = readStream(conn.getErrorStream());
                 conn.disconnect();
 
-                long waitMs = 15_000;
-                try {
-                    // Try to extract "Please try again in X.XXs" from error
-                    java.util.regex.Matcher retryMatcher = Pattern.compile(
-                            "try again in ([\\d.]+)s").matcher(error);
-                    if (retryMatcher.find()) {
-                        waitMs = (long) (Double.parseDouble(retryMatcher.group(1)) * 1000) + 1000;
-                    }
-                } catch (Exception ignored) {}
-
-                MCAi.LOGGER.info("Cloud AI rate limited (429), retrying in {}ms (attempt {}/{})",
-                        waitMs, attempt + 1, maxRetries);
-                AiLogger.log(AiLogger.Category.AI_REQUEST, "WARN",
-                        "Cloud AI rate limited, waiting " + waitMs + "ms before retry " + (attempt + 1));
-
-                try { Thread.sleep(waitMs); } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                    throw new IOException("Interrupted while waiting for rate limit retry");
+                // Detect daily TPD (tokens per day) limit — retrying is pointless
+                boolean isDailyLimit = error.contains("tokens per day") || error.contains("per day");
+                if (isDailyLimit) {
+                    MCAi.LOGGER.warn("Cloud AI daily token limit (TPD) exhausted: {}", model);
+                    AiLogger.log(AiLogger.Category.AI_REQUEST, "WARN",
+                            "Cloud AI daily TPD limit hit — skipping retries, falling back immediately");
+                    throw new IOException("429 daily TPD limit exhausted for " + model);
                 }
-                continue;
+
+                if (attempt < maxRetries) {
+                    // Per-minute/per-request rate limit — worth retrying
+                    long waitMs = 15_000;
+                    try {
+                        // Parse "try again in Xm Y.Zs" or "try again in Y.Zs"
+                        java.util.regex.Matcher retryMatcher = Pattern.compile(
+                                "try again in (?:(\\d+)m)?([\\d.]+)s").matcher(error);
+                        if (retryMatcher.find()) {
+                            long minutes = retryMatcher.group(1) != null
+                                    ? Long.parseLong(retryMatcher.group(1)) : 0;
+                            double seconds = Double.parseDouble(retryMatcher.group(2));
+                            waitMs = (minutes * 60_000) + (long) (seconds * 1000) + 1000;
+                            // Cap at 30s — don't wait minutes for rate limits
+                            waitMs = Math.min(waitMs, 30_000);
+                        }
+                    } catch (Exception ignored) {}
+
+                    MCAi.LOGGER.info("Cloud AI rate limited (429), retrying in {}ms (attempt {}/{})",
+                            waitMs, attempt + 1, maxRetries);
+                    AiLogger.log(AiLogger.Category.AI_REQUEST, "WARN",
+                            "Cloud AI rate limited, waiting " + waitMs + "ms before retry " + (attempt + 1));
+
+                    try { Thread.sleep(waitMs); } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        throw new IOException("Interrupted while waiting for rate limit retry");
+                    }
+                    continue;
+                }
+                // All retries exhausted
+                throw new IOException("429 rate limit exceeded after " + maxRetries + " retries for " + model);
             }
 
             if (responseCode == 400) {
@@ -840,7 +859,7 @@ public class AIService {
             return JsonParser.parseString(responseBody).getAsJsonObject();
         }
 
-        throw new IOException("Cloud AI rate limit exceeded after " + maxRetries + " retries");
+        throw new IOException("429 Cloud AI rate limit exceeded after " + maxRetries + " retries");
     }
 
     /**

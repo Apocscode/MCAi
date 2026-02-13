@@ -1,5 +1,6 @@
 package com.apocscode.mcai.task;
 
+import com.apocscode.mcai.MCAi;
 import com.apocscode.mcai.entity.CompanionEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.Block;
@@ -45,6 +46,8 @@ public class GatherBlocksTask extends CompanionTask {
         List<BlockPos> found = BlockHelper.scanForBlocks(companion, targetBlock, radius, maxBlocks);
         targets.addAll(found);
         if (targets.isEmpty()) {
+            MCAi.LOGGER.warn("GatherBlocksTask: no {} blocks found within r={} — completing with 0 gathered",
+                    targetBlock.getName().getString(), radius);
             say("Couldn't find any " + targetBlock.getName().getString() + " nearby.");
             complete();
             return;
@@ -56,6 +59,8 @@ public class GatherBlocksTask extends CompanionTask {
     @Override
     protected void tick() {
         if (blocksGathered >= maxBlocks || targets.isEmpty()) {
+            MCAi.LOGGER.info("GatherBlocksTask: completed — gathered {}/{} {} blocks",
+                    blocksGathered, maxBlocks, targetBlock.getName().getString());
             complete();
             return;
         }
