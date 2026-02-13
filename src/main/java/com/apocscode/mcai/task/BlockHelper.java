@@ -199,6 +199,31 @@ public class BlockHelper {
     }
 
     /**
+     * Count items in the companion's inventory matching a predicate.
+     * Useful for tag-based checks (e.g., count all log-type items).
+     *
+     * @param companion The companion entity
+     * @param predicate Returns true for items to count
+     * @return Total count of matching items
+     */
+    public static int countItemMatching(CompanionEntity companion,
+                                         java.util.function.Predicate<net.minecraft.world.item.Item> predicate) {
+        var inv = companion.getCompanionInventory();
+        int count = 0;
+        for (int i = 0; i < inv.getContainerSize(); i++) {
+            ItemStack stack = inv.getItem(i);
+            if (!stack.isEmpty() && predicate.test(stack.getItem())) {
+                count += stack.getCount();
+            }
+        }
+        ItemStack mainHand = companion.getMainHandItem();
+        if (!mainHand.isEmpty() && predicate.test(mainHand.getItem())) count += mainHand.getCount();
+        ItemStack offHand = companion.getOffhandItem();
+        if (!offHand.isEmpty() && predicate.test(offHand.getItem())) count += offHand.getCount();
+        return count;
+    }
+
+    /**
      * Remove a specific number of items from the companion's inventory.
      *
      * @return number actually removed

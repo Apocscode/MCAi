@@ -2,12 +2,15 @@ package com.apocscode.mcai.ai.tool;
 
 import com.apocscode.mcai.MCAi;
 import com.apocscode.mcai.entity.CompanionEntity;
+import com.apocscode.mcai.task.BlockHelper;
 import com.apocscode.mcai.task.CompanionTask;
 import com.apocscode.mcai.task.MineOresTask;
 import com.apocscode.mcai.task.OreGuide;
 import com.apocscode.mcai.task.TaskContinuation;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.PickaxeItem;
 
@@ -161,6 +164,20 @@ public class MineOresTool implements AiTool {
                 }
             }
 
+            // Pre-check: skip if companion already has enough of the target ore drop
+            if (targetOre != null) {
+                net.minecraft.world.item.Item dropItem = resolveOreDrop(targetOre.name);
+                if (dropItem != null) {
+                    int have = BlockHelper.countItem(companion, dropItem);
+                    if (have >= maxOres) {
+                        MCAi.LOGGER.info("MineOres: SKIPPING — already have {}x {} (need {})",
+                                have, dropItem.getDescription().getString(), maxOres);
+                        return "Already have " + have + "x " + dropItem.getDescription().getString() +
+                                " (need " + maxOres + "). Skipping mining — proceed to next step.";
+                    }
+                }
+            }
+
             // Create task — pass ore target for filtered scanning
             MineOresTask task = new MineOresTask(companion, radius, maxOres, targetOre);
 
@@ -232,5 +249,29 @@ public class MineOresTool implements AiTool {
             case 4 -> "netherite_pickaxe";
             default -> "wooden_pickaxe";
         };
+    }
+
+    /**
+     * Resolve the item a player receives when mining a given ore type.
+     * E.g., "iron" → raw_iron, "coal" → coal, "diamond" → diamond.
+     */
+    private net.minecraft.world.item.Item resolveOreDrop(String oreName) {
+        String dropId = switch (oreName.toLowerCase()) {
+            case "iron" -> "raw_iron";
+            case "copper" -> "raw_copper";
+            case "gold" -> "raw_gold";
+            case "coal" -> "coal";
+            case "diamond" -> "diamond";
+            case "emerald" -> "emerald";
+            case "lapis", "lapis_lazuli" -> "lapis_lazuli";
+            case "redstone" -> "redstone";
+            case "quartz", "nether_quartz" -> "quartz";
+            case "ancient_debris" -> "ancient_debris";
+            default -> "raw_" + oreName.toLowerCase();
+        };
+        net.minecraft.world.item.Item item = BuiltInRegistries.ITEM.get(
+                ResourceLocation.withDefaultNamespace(dropId));
+        if (item == null || item == net.minecraft.world.item.Items.AIR) return null;
+        return item;
     }
 }

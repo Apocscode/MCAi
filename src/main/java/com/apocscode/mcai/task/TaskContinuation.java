@@ -27,10 +27,8 @@ public record TaskContinuation(
         return "[TASK_COMPLETE] " + taskResult +
                 "\n\nOriginal plan: " + planContext +
                 "\nNext steps: " + nextSteps +
-                "\n\nIMPORTANT: Before executing each step, call get_inventory to check what you already have. " +
-                "SKIP any gather/chop/mine steps where you already have enough of that material. " +
-                "For example, if the next step says to chop trees but you already have 10+ logs, skip it. " +
-                "Call each tool with the parameters shown. " +
+                "\n\nFollow the next steps above. Call each tool with the parameters shown. " +
+                "Each tool automatically skips if you already have enough materials. " +
                 "craft_item will auto-pull materials from your inventory and nearby chests.";
     }
 

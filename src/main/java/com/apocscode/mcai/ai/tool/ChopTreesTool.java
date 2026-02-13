@@ -1,6 +1,8 @@
 package com.apocscode.mcai.ai.tool;
 
+import com.apocscode.mcai.MCAi;
 import com.apocscode.mcai.entity.CompanionEntity;
+import com.apocscode.mcai.task.BlockHelper;
 import com.apocscode.mcai.task.ChopTreesTask;
 import com.apocscode.mcai.task.TaskContinuation;
 import com.google.gson.JsonObject;
@@ -61,6 +63,18 @@ public class ChopTreesTool implements AiTool {
             int maxLogs = args.has("maxLogs") ? args.get("maxLogs").getAsInt() : 64;
 
             radius = Math.min(radius, 32);
+
+            // Pre-check: skip if companion already has enough log-type items
+            // Logs include any item whose ID contains "log", "wood", "stem", or "hyphae"
+            int logsHave = BlockHelper.countItemMatching(companion, item -> {
+                String id = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(item).getPath();
+                return id.contains("log") || id.contains("wood") || id.contains("stem") || id.contains("hyphae");
+            });
+            if (logsHave >= maxLogs) {
+                MCAi.LOGGER.info("ChopTrees: SKIPPING — already have {} logs (need {})", logsHave, maxLogs);
+                return "Already have " + logsHave + " logs in inventory (need " + maxLogs +
+                        "). Skipping chop — proceed to next step.";
+            }
 
             ChopTreesTask task = new ChopTreesTask(companion, radius, maxLogs);
 

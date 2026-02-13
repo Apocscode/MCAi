@@ -1,6 +1,8 @@
 package com.apocscode.mcai.ai.tool;
 
+import com.apocscode.mcai.MCAi;
 import com.apocscode.mcai.entity.CompanionEntity;
+import com.apocscode.mcai.task.BlockHelper;
 import com.apocscode.mcai.task.GatherBlocksTask;
 import com.apocscode.mcai.task.TaskContinuation;
 import com.google.gson.JsonObject;
@@ -87,6 +89,18 @@ public class GatherBlocksTool implements AiTool {
             Block targetBlock = resolveBlock(blockName);
             if (targetBlock == null) {
                 return "Unknown block: '" + blockName + "'. Try using the Minecraft ID like 'sand', 'oak_log', 'cobblestone'.";
+            }
+
+            // Pre-check: skip if companion already has enough of this block item
+            net.minecraft.world.item.Item blockItem = targetBlock.asItem();
+            if (blockItem != null && blockItem != net.minecraft.world.item.Items.AIR) {
+                int have = BlockHelper.countItem(companion, blockItem);
+                if (have >= maxBlocks) {
+                    MCAi.LOGGER.info("GatherBlocks: SKIPPING — already have {}x {} (need {})",
+                            have, blockItem.getDescription().getString(), maxBlocks);
+                    return "Already have " + have + "x " + blockItem.getDescription().getString() +
+                            " (need " + maxBlocks + "). Skipping gather — proceed to next step.";
+                }
             }
 
             GatherBlocksTask task = new GatherBlocksTask(companion, targetBlock, radius, maxBlocks);
