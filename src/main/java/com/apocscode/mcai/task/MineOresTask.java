@@ -72,7 +72,7 @@ public class MineOresTask extends CompanionTask {
                 }
             }
             say("No " + oreLabel + " found nearby." + yHint);
-            complete();
+            fail("No " + oreLabel + " found within " + radius + " blocks");
             return;
         }
         String oreLabel = targetOre != null ? targetOre.name + " ore" : "ore";
@@ -92,15 +92,25 @@ public class MineOresTask extends CompanionTask {
             scanAttempts++;
             if (scanAttempts > MAX_SCAN_ATTEMPTS) {
                 String oreLabel = targetOre != null ? targetOre.name + " ore" : "ores";
-                say("Finished mining. Got " + oresMined + " " + oreLabel + ".");
-                complete();
+                if (oresMined == 0) {
+                    say("Could not find any " + oreLabel + " after " + MAX_SCAN_ATTEMPTS + " scans.");
+                    fail("No " + oreLabel + " found after " + MAX_SCAN_ATTEMPTS + " scans");
+                } else {
+                    say("Finished mining. Got " + oresMined + " " + oreLabel + ".");
+                    complete();
+                }
                 return;
             }
             scanForOres();
             if (targets.isEmpty()) {
                 String oreLabel = targetOre != null ? targetOre.name + " ore" : "ores";
-                say("No more " + oreLabel + " found. Mined " + oresMined + " total.");
-                complete();
+                if (oresMined == 0) {
+                    say("No " + oreLabel + " found nearby.");
+                    fail("No " + oreLabel + " found within " + radius + " blocks");
+                } else {
+                    say("No more " + oreLabel + " found. Mined " + oresMined + " total.");
+                    complete();
+                }
                 return;
             }
         }
@@ -137,7 +147,7 @@ public class MineOresTask extends CompanionTask {
                             ? " Need " + ore.tierName() + " pickaxe or better."
                             : " Need a better pickaxe.";
                     say("I don't have the right tools to mine these ores." + tierHint);
-                    complete();
+                    fail("Wrong pickaxe tier" + tierHint);
                     return;
                 }
                 return;
@@ -158,8 +168,13 @@ public class MineOresTask extends CompanionTask {
                 stuckTimer = 0;
                 consecutiveSkips++;
                 if (consecutiveSkips >= MAX_CONSECUTIVE_SKIPS) {
-                    say("Can't reach any more ores. Mined " + oresMined + ".");
-                    complete();
+                    if (oresMined == 0) {
+                        say("Can't reach any ores.");
+                        fail("Could not reach any ore blocks");
+                    } else {
+                        say("Can't reach any more ores. Mined " + oresMined + ".");
+                        complete();
+                    }
                     return;
                 }
             }

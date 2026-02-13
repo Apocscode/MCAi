@@ -713,6 +713,13 @@ public class CraftItemTool implements AiTool {
                 "Crafting " + targetName + ": " + firstStep,
                 continuationNext
         ));
+
+        // Cancel any existing task chain before starting a new one
+        // (prevents old continuations from interfering with the new plan)
+        if (companion.getTaskManager().hasTasks()) {
+            MCAi.LOGGER.info("Cancelling existing tasks before starting new craft plan for {}", targetName);
+            companion.getTaskManager().cancelAll();
+        }
         companion.getTaskManager().queueTask(firstTask);
 
         MCAi.LOGGER.info("Auto-craft plan for {}: first={}, continuation={}",
