@@ -59,6 +59,9 @@ public class TaskManager {
             String taskDescription = activeTask.getDescription();
             CompanionTask.Status taskStatus = activeTask.getStatus();
             TaskContinuation continuation = activeTask.getContinuation();
+            MCAi.LOGGER.info("Task finished: {} — status={}, ticks={}, hasContinuation={}",
+                    taskDescription, taskStatus, activeTask.getTicksRunning(),
+                    continuation != null);
 
             if (taskStatus == CompanionTask.Status.COMPLETED) {
                 companion.getChat().say(CompanionChat.Category.TASK,
@@ -83,6 +86,7 @@ public class TaskManager {
                         ? activeTask.getFailReason() : "unknown error";
                 companion.getChat().say(CompanionChat.Category.TASK,
                         "Failed: " + taskDescription + " — " + reason);
+                MCAi.LOGGER.warn("Task FAILED: {} — reason: {}", taskDescription, reason);
             }
 
             // Fire continuation if one was registered (for multi-step plans)
@@ -98,6 +102,8 @@ public class TaskManager {
             activeTask = taskQueue.pollFirst();
             progressAnnounceTicks = 0;
             lastAnnouncedPercent = -1;
+            MCAi.LOGGER.info("Task starting: {} (remaining in queue: {})",
+                    activeTask.getDescription(), taskQueue.size());
             companion.getChat().say(CompanionChat.Category.TASK,
                     "Starting: " + activeTask.getDescription());
         }

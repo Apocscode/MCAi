@@ -107,6 +107,7 @@ public class ChopTreesTask extends CompanionTask {
 
     private void tickChopLogs() {
         if (logsChopped >= maxLogs) {
+            MCAi.LOGGER.info("ChopTreesTask: reached maxLogs={}, transitioning to leaves", maxLogs);
             transitionToLeaves();
             return;
         }
@@ -146,10 +147,15 @@ public class ChopTreesTask extends CompanionTask {
             currentTarget = null;
             stuckTimer = 0;
             logsChopped++;
+            if (logsChopped % 4 == 0 || logsChopped == 1) {
+                MCAi.LOGGER.info("ChopTreesTask: chopped {}/{} logs, {} targets remaining",
+                        logsChopped, maxLogs, logTargets.size());
+            }
         } else {
             navigateTo(currentTarget);
             stuckTimer++;
             if (stuckTimer > 120) {
+                MCAi.LOGGER.debug("ChopTreesTask: stuck on log at {}, skipping", currentTarget);
                 logTargets.poll();
                 currentTarget = null;
                 stuckTimer = 0;
@@ -266,6 +272,8 @@ public class ChopTreesTask extends CompanionTask {
     // ========== Completion ==========
 
     private void finishTask() {
+        MCAi.LOGGER.info("ChopTreesTask complete: {} logs, {} leaves, {} saplings planted, {} tree bases",
+                logsChopped, leavesCleared, saplingsPlanted, treeBases.size());
         StringBuilder msg = new StringBuilder();
         msg.append("Done! Chopped ").append(logsChopped).append(" logs");
         if (leavesCleared > 0) {
