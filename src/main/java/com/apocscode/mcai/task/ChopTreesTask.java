@@ -85,8 +85,8 @@ public class ChopTreesTask extends CompanionTask {
     protected void start() {
         scanForTreeBases();
         if (treeBaseTargets.isEmpty()) {
-            say("No trees found nearby.");
-            complete();
+            say("No trees found within " + radius + " blocks.");
+            fail("No trees found within radius " + radius);
             return;
         }
         say("Found " + treeBaseTargets.size() + " trees to fell!");
@@ -365,7 +365,7 @@ public class ChopTreesTask extends CompanionTask {
         Set<BlockPos> foundBases = new LinkedHashSet<>();
 
         for (int x = -radius; x <= radius; x++) {
-            for (int y = -2; y <= 8; y++) { // Trees grow from ground, check a bit above/below
+            for (int y = -4; y <= radius; y++) { // Full vertical range to catch trees on hills/valleys
                 for (int z = -radius; z <= radius; z++) {
                     BlockPos pos = center.offset(x, y, z);
                     BlockState state = level.getBlockState(pos);
