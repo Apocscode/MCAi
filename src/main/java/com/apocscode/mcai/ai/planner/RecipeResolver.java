@@ -496,7 +496,7 @@ public class RecipeResolver {
                 DependencyNode node = new DependencyNode(item, count, StepType.CRAFT, best);
 
                 // Resolve each ingredient recursively
-                Map<Item, Integer> grouped = groupIngredients(recipe.getIngredients(), craftsNeeded);
+                Map<Item, Integer> grouped = groupIngredients(recipe.getIngredients(), craftsNeeded, available);
                 boolean hasUnresolvable = false;
                 for (Map.Entry<Item, Integer> entry : grouped.entrySet()) {
                     DependencyNode child = resolveRecursive(entry.getKey(), entry.getValue(),
@@ -570,7 +570,7 @@ public class RecipeResolver {
                 if (firstIng != null && !firstIng.isEmpty()) {
                     ItemStack[] variants = firstIng.getItems();
                     if (variants != null && variants.length > 0 && variants[0] != null) {
-                        Item inputItem = pickBestVariant(variants);
+                        Item inputItem = pickBestVariant(variants, available);
                         if (inputItem != null) {
                             DependencyNode child = resolveRecursive(inputItem, count,
                                     available, new HashSet<>(visited), depth + 1);
@@ -612,7 +612,7 @@ public class RecipeResolver {
                     if (firstIng != null && !firstIng.isEmpty()) {
                         ItemStack[] variants = firstIng.getItems();
                         if (variants != null && variants.length > 0 && variants[0] != null) {
-                            Item inputItem = pickBestVariant(variants);
+                            Item inputItem = pickBestVariant(variants, available);
                             if (inputItem != null) {
                                 DependencyNode child = resolveRecursive(inputItem, craftsNeeded,
                                         available, new HashSet<>(visited), depth + 1);
@@ -718,8 +718,12 @@ public class RecipeResolver {
      * Group recipe ingredients by item and sum counts.
      * e.g., ShapedRecipe slots [iron, iron, iron, _, stick, _, stick, _, _]
      * → {iron_ingot: 3*crafts, stick: 2*crafts}
+     *
+     * When a recipe ingredient is a tag (e.g., #minecraft:logs), prefers variants
+     * that are already in the available inventory to avoid unnecessary gathering.
      */
-    private Map<Item, Integer> groupIngredients(List<Ingredient> ingredients, int craftsNeeded) {
+    private Map<Item, Integer> groupIngredients(List<Ingredient> ingredients, int craftsNeeded,
+                                                 Map<Item, Integer> available) {
         Map<Item, Integer> grouped = new LinkedHashMap<>();
         if (ingredients == null) return grouped;
         for (Ingredient ing : ingredients) {
@@ -727,8 +731,8 @@ public class RecipeResolver {
                 if (ing == null || ing.isEmpty()) continue;
                 ItemStack[] items = ing.getItems();
                 if (items == null || items.length == 0) continue;
-                // Use first variant (vanilla preferred)
-                Item representative = pickBestVariant(items);
+                // Prefer variants the player already has in inventory
+                Item representative = pickBestVariant(items, available);
                 if (representative == null) continue;
                 grouped.merge(representative, craftsNeeded, Integer::sum);
             } catch (Exception e) {
@@ -742,22 +746,37 @@ public class RecipeResolver {
 
     /**
      * Pick the best variant from an ingredient's options.
-     * Prefers vanilla (minecraft:) items over modded to avoid modded-only recipes.
+     * Priority: 1) items already in available inventory, 2) vanilla items, 3) first valid.
+     * This prevents generating CHOP steps when the companion already has birch_log
+     * but the recipe says "any #logs" and we'd otherwise pick oak_log.
      */
-    private Item pickBestVariant(ItemStack[] variants) {
+    private Item pickBestVariant(ItemStack[] variants, Map<Item, Integer> available) {
         if (variants == null || variants.length == 0) return null;
+        Item availableMatch = null;
         Item vanillaMatch = null;
         Item firstValid = null;
         for (ItemStack v : variants) {
             if (v == null || v.isEmpty()) continue;
-            if (firstValid == null) firstValid = v.getItem();
-            ResourceLocation id = BuiltInRegistries.ITEM.getKey(v.getItem());
-            if (id != null && id.getNamespace().equals("minecraft")) {
-                vanillaMatch = v.getItem();
-                break;
+            Item item = v.getItem();
+            if (firstValid == null) firstValid = item;
+            // Highest priority: variant already in inventory
+            if (availableMatch == null && available != null && available.getOrDefault(item, 0) > 0) {
+                availableMatch = item;
+            }
+            ResourceLocation id = BuiltInRegistries.ITEM.getKey(item);
+            if (vanillaMatch == null && id != null && id.getNamespace().equals("minecraft")) {
+                vanillaMatch = item;
             }
         }
+        if (availableMatch != null) return availableMatch;
         return vanillaMatch != null ? vanillaMatch : firstValid;
+    }
+
+    /**
+     * Legacy overload without inventory context — used by scoring and other non-resolution paths.
+     */
+    private Item pickBestVariant(ItemStack[] variants) {
+        return pickBestVariant(variants, null);
     }
 
     // ========== Debug / logging ==========

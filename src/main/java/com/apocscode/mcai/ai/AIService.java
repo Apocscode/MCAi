@@ -6,6 +6,7 @@ import com.apocscode.mcai.ai.tool.ToolContext;
 import com.apocscode.mcai.ai.tool.ToolRegistry;
 import com.apocscode.mcai.config.AiConfig;
 import com.apocscode.mcai.entity.CompanionEntity;
+import com.apocscode.mcai.entity.CompanionChat;
 import com.apocscode.mcai.network.ChatResponsePacket;
 import com.apocscode.mcai.task.TaskContinuation;
 import com.google.gson.*;
@@ -1121,6 +1122,10 @@ public class AIService {
      * continuation finishes. Triggers a new AI chat turn with the task result
      * and plan context, then sends the response back to the player.
      *
+     * If the AI call fails (e.g., all backends rate-limited during game pause),
+     * retries up to 3 times with 30-second delays scheduled on the server thread.
+     * This ensures continuations survive game pauses and transient rate limits.
+     *
      * @param continuation The continuation plan attached to the completed task
      * @param taskResult   Description of the task outcome (e.g. "Gathered 8 Cobblestone")
      * @param player       The server player to send the response to
@@ -1128,12 +1133,16 @@ public class AIService {
      */
     public static void continueAfterTask(TaskContinuation continuation, String taskResult,
                                           ServerPlayer player, String companionName) {
+        continueAfterTask(continuation, taskResult, player, companionName, 0);
+    }
+
+    private static void continueAfterTask(TaskContinuation continuation, String taskResult,
+                                           ServerPlayer player, String companionName, int attempt) {
         if (executor == null || executor.isShutdown()) return;
 
         boolean isFailed = taskResult.startsWith("FAILED:");
         String syntheticMessage;
         if (isFailed) {
-            // Extract task description and fail reason from "FAILED: <desc> — <reason>"
             String failPart = taskResult.substring("FAILED: ".length());
             int dashIdx = failPart.indexOf(" — ");
             String taskDesc = dashIdx >= 0 ? failPart.substring(0, dashIdx) : failPart;
@@ -1142,27 +1151,68 @@ public class AIService {
         } else {
             syntheticMessage = continuation.buildContinuationMessage(taskResult);
         }
-        MCAi.LOGGER.info("Task continuation for {}: {}", player.getName().getString(), syntheticMessage);
+        MCAi.LOGGER.info("Task continuation for {} (attempt {}): {}",
+                player.getName().getString(), attempt + 1, syntheticMessage);
 
-        // Add a system note to client-side history so the AI has context
-        String statusLabel = isFailed ? "Task failed" : "Task completed";
-        ConversationManager.addSystemMessage("[" + statusLabel + ": " + taskResult + "]");
+        // Add system note only on first attempt to avoid duplicates
+        if (attempt == 0) {
+            String statusLabel = isFailed ? "Task failed" : "Task completed";
+            ConversationManager.addSystemMessage("[" + statusLabel + ": " + taskResult + "]");
+        }
 
         chat(syntheticMessage, player, ConversationManager.getHistoryForAI(), companionName)
                 .thenAccept(response -> {
+                    // Check if response indicates all backends failed — retry if so
+                    if (response != null && attempt < 3 &&
+                            (response.contains("All AI backends are down") ||
+                             response.contains("rate limit") ||
+                             response.contains("Ollama isn't running"))) {
+                        MCAi.LOGGER.warn("Continuation got rate-limit response (attempt {}), scheduling retry in 30s",
+                                attempt + 1);
+                        // Schedule retry on server thread after 600 ticks (30 seconds)
+                        // This uses server ticks, so it PAUSES when game pauses — perfect!
+                        scheduleServerRetry(continuation, taskResult, player, companionName, attempt + 1);
+                        return;
+                    }
                     player.getServer().execute(() -> {
                         net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(
                                 player, new ChatResponsePacket(response));
                     });
                 })
                 .exceptionally(ex -> {
-                    MCAi.LOGGER.error("Task continuation failed", ex);
-                    player.getServer().execute(() -> {
-                        net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(
-                                player, new ChatResponsePacket(
-                                        "I had trouble continuing the plan: " + ex.getMessage()));
-                    });
+                    MCAi.LOGGER.error("Task continuation failed (attempt {})", attempt + 1, ex);
+                    if (attempt < 3) {
+                        MCAi.LOGGER.info("Scheduling continuation retry in 30s (attempt {})", attempt + 2);
+                        scheduleServerRetry(continuation, taskResult, player, companionName, attempt + 1);
+                    } else {
+                        player.getServer().execute(() -> {
+                            net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(
+                                    player, new ChatResponsePacket(
+                                            "I had trouble continuing the plan after multiple retries: " + ex.getMessage()));
+                        });
+                    }
                     return null;
                 });
+    }
+
+    /**
+     * Schedule a continuation retry using server ticks instead of Thread.sleep.
+     * Server ticks pause when the game pauses, so the retry won't fire while paused
+     * and waste rate-limit budget. Waits 600 ticks (30 seconds of game time).
+     */
+    private static void scheduleServerRetry(TaskContinuation continuation, String taskResult,
+                                             ServerPlayer player, String companionName, int nextAttempt) {
+        player.getServer().execute(() -> {
+            CompanionEntity companion = CompanionEntity.getLivingCompanion(player.getUUID());
+            if (companion != null) {
+                companion.getChat().say(CompanionChat.Category.TASK,
+                        "AI backends busy, retrying in 30 seconds...");
+                // Store pending retry on the task manager — it ticks with the server
+                companion.getTaskManager().setPendingRetry(
+                        continuation, taskResult, companionName, nextAttempt, 600);
+            } else {
+                MCAi.LOGGER.warn("Cannot schedule continuation retry — companion not found");
+            }
+        });
     }
 }

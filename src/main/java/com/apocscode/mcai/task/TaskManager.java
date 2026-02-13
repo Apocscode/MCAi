@@ -25,6 +25,13 @@ public class TaskManager {
     private int progressAnnounceTicks = 0;
     private int lastAnnouncedPercent = -1;
 
+    // Pending continuation retry — fires after ticksRemaining reaches 0
+    private TaskContinuation pendingRetryContinuation;
+    private String pendingRetryTaskResult;
+    private String pendingRetryCompanionName;
+    private int pendingRetryAttempt;
+    private int pendingRetryTicksRemaining;
+
     public TaskManager(CompanionEntity companion) {
         this.companion = companion;
     }
@@ -131,6 +138,29 @@ public class TaskManager {
                 }
             }
         }
+
+        // Tick pending continuation retry countdown (server-tick based, pauses with game)
+        if (pendingRetryContinuation != null) {
+            pendingRetryTicksRemaining--;
+            if (pendingRetryTicksRemaining <= 0) {
+                MCAi.LOGGER.info("Pending continuation retry firing (attempt {})", pendingRetryAttempt + 1);
+                TaskContinuation cont = pendingRetryContinuation;
+                String result = pendingRetryTaskResult;
+                String name = pendingRetryCompanionName;
+                int attempt = pendingRetryAttempt;
+                // Clear before firing to prevent double-fire
+                pendingRetryContinuation = null;
+                pendingRetryTaskResult = null;
+                pendingRetryCompanionName = null;
+
+                Player owner = companion.getOwner();
+                if (owner instanceof ServerPlayer serverPlayer) {
+                    AIService.continueAfterTask(cont, result, serverPlayer, name);
+                } else {
+                    MCAi.LOGGER.warn("Cannot fire pending retry — owner not online");
+                }
+            }
+        }
     }
 
     /**
@@ -188,6 +218,28 @@ public class TaskManager {
             activeTask.cleanup();
             activeTask = null;
         }
+    }
+
+    /**
+     * Schedule a pending continuation retry. The retry fires after the given
+     * number of server ticks (which pause when the game pauses).
+     * This is the mechanism that survives game pauses and rate-limit cooldowns.
+     *
+     * @param continuation  The continuation to retry
+     * @param taskResult    The original task result string
+     * @param companionName The companion's display name
+     * @param attempt       The retry attempt number (0-based)
+     * @param delayTicks    Number of server ticks to wait before retrying
+     */
+    public void setPendingRetry(TaskContinuation continuation, String taskResult,
+                                 String companionName, int attempt, int delayTicks) {
+        this.pendingRetryContinuation = continuation;
+        this.pendingRetryTaskResult = taskResult;
+        this.pendingRetryCompanionName = companionName;
+        this.pendingRetryAttempt = attempt;
+        this.pendingRetryTicksRemaining = delayTicks;
+        MCAi.LOGGER.info("Pending continuation retry scheduled: attempt={}, delay={}t ({}s)",
+                attempt + 1, delayTicks, delayTicks / 20);
     }
 
     /**
