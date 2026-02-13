@@ -73,6 +73,9 @@ public class GatherBlocksTool implements AiTool {
             CompanionEntity companion = CompanionEntity.getLivingCompanion(context.player().getUUID());
             if (companion == null) return "No companion found.";
 
+            if (!args.has("block") || args.get("block").isJsonNull()) {
+                return "Error: 'block' parameter is required. Example: gather_blocks({\"block\":\"cobblestone\", \"maxBlocks\":5})";
+            }
             String blockName = args.get("block").getAsString().toLowerCase().trim();
             int radius = args.has("radius") ? args.get("radius").getAsInt() : 16;
             int maxBlocks = args.has("maxBlocks") ? args.get("maxBlocks").getAsInt() : 16;

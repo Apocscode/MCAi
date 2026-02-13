@@ -179,31 +179,49 @@ public class AIService {
                             toolCalls.size(), iteration + 1);
                     AiLogger.agentIteration(iteration, toolCalls.size());
 
-                    // Add the assistant's tool-calling message to the conversation
-                    messages.add(assistantMessage);
+                    // Normalize the assistant message for cross-backend compatibility:
+                    // Ollama returns arguments as JsonObject, Groq requires it as a String.
+                    // Also ensure each tool_call has an "id" field (Ollama omits it).
+                    JsonObject normalizedAssistant = normalizeToolCallMessage(assistantMessage);
+                    messages.add(normalizedAssistant);
+
+                    // Use the normalized tool calls for iteration — they have guaranteed ids
+                    // and string arguments for cross-backend compatibility
+                    JsonArray normalizedToolCalls = normalizedAssistant.getAsJsonArray("tool_calls");
 
                     // Execute each tool call and add results
                     boolean asyncTaskQueued = false;
-                    for (JsonElement tcElement : toolCalls) {
+                    for (JsonElement tcElement : normalizedToolCalls) {
                         JsonObject toolCall = tcElement.getAsJsonObject();
                         JsonObject function = toolCall.getAsJsonObject("function");
                         String toolName = function.get("name").getAsString();
 
-                        // Groq tool calls have an id that must be echoed back
-                        String toolCallId = toolCall.has("id") ? toolCall.get("id").getAsString() : null;
+                        // Always present after normalization
+                        String toolCallId = toolCall.get("id").getAsString();
 
-                        // Parse arguments — may be string (Groq/OpenAI) or object (Ollama)
+                        // Parse arguments (always a string after normalization)
                         JsonObject toolArgs = new JsonObject();
                         if (function.has("arguments")) {
-                            JsonElement argsEl = function.get("arguments");
-                            if (argsEl.isJsonObject()) {
-                                toolArgs = argsEl.getAsJsonObject();
-                            } else if (argsEl.isJsonPrimitive()) {
-                                try {
-                                    toolArgs = JsonParser.parseString(argsEl.getAsString()).getAsJsonObject();
-                                } catch (Exception e) {
-                                    MCAi.LOGGER.warn("Failed to parse tool args string for {}: {}",
-                                            toolName, argsEl.getAsString());
+                            try {
+                                toolArgs = JsonParser.parseString(function.get("arguments").getAsString()).getAsJsonObject();
+                            } catch (Exception e) {
+                                MCAi.LOGGER.warn("Failed to parse normalized tool args for {}: {}",
+                                        toolName, function.get("arguments").getAsString());
+                            }
+                        }
+
+                        // Log parsed args for debugging (especially Ollama fallback issues)
+                        MCAi.LOGGER.info("Tool '{}' args: {}", toolName, toolArgs);
+
+                        // If args are empty but the model returned content text, try parsing args from text
+                        if (toolArgs.size() == 0 && assistantMessage.has("content")
+                                && !assistantMessage.get("content").isJsonNull()) {
+                            String contentText = assistantMessage.get("content").getAsString();
+                            if (contentText != null && !contentText.isBlank()) {
+                                JsonObject textArgs = tryParseTextToolArgs(contentText);
+                                if (textArgs.size() > 0) {
+                                    MCAi.LOGGER.info("Recovered args from content text for '{}': {}", toolName, textArgs);
+                                    toolArgs = textArgs;
                                 }
                             }
                         }
@@ -222,10 +240,8 @@ public class AIService {
                         JsonObject toolResultMsg = new JsonObject();
                         toolResultMsg.addProperty("role", "tool");
                         toolResultMsg.addProperty("content", result);
-                        if (toolCallId != null) {
-                            toolResultMsg.addProperty("tool_call_id", toolCallId);
-                            toolResultMsg.addProperty("name", toolName);
-                        }
+                        toolResultMsg.addProperty("tool_call_id", toolCallId);
+                        toolResultMsg.addProperty("name", toolName);
                         messages.add(toolResultMsg);
 
                         MCAi.LOGGER.info("Tool '{}' executed in {}ms, result length: {} chars",
@@ -399,6 +415,58 @@ public class AIService {
             }
         }
         return new JsonObject();
+    }
+
+    /**
+     * Normalize an assistant message with tool_calls for cross-backend compatibility.
+     * - Ollama returns function.arguments as a JsonObject; Groq requires a JSON string.
+     * - Ollama omits tool_call "id" fields; Groq requires them.
+     * This ensures the conversation history works when switching backends between iterations.
+     */
+    private static JsonObject normalizeToolCallMessage(JsonObject assistantMessage) {
+        if (!assistantMessage.has("tool_calls")) return assistantMessage;
+
+        JsonObject normalized = new JsonObject();
+        normalized.addProperty("role", "assistant");
+        // Groq requires content to be present (can be empty string or null)
+        if (assistantMessage.has("content") && !assistantMessage.get("content").isJsonNull()) {
+            normalized.addProperty("content", assistantMessage.get("content").getAsString());
+        } else {
+            normalized.addProperty("content", "");
+        }
+
+        JsonArray normalizedCalls = new JsonArray();
+        for (JsonElement tcEl : assistantMessage.getAsJsonArray("tool_calls")) {
+            JsonObject tc = tcEl.getAsJsonObject();
+            JsonObject normalizedTc = new JsonObject();
+
+            // Ensure id exists
+            if (tc.has("id")) {
+                normalizedTc.addProperty("id", tc.get("id").getAsString());
+            } else {
+                normalizedTc.addProperty("id", "ollama_" + System.nanoTime());
+            }
+            normalizedTc.addProperty("type", "function");
+
+            // Normalize function.arguments to always be a string
+            JsonObject func = tc.getAsJsonObject("function");
+            JsonObject normalizedFunc = new JsonObject();
+            normalizedFunc.addProperty("name", func.get("name").getAsString());
+            if (func.has("arguments")) {
+                JsonElement argsEl = func.get("arguments");
+                if (argsEl.isJsonObject()) {
+                    normalizedFunc.addProperty("arguments", argsEl.toString());
+                } else {
+                    normalizedFunc.addProperty("arguments", argsEl.getAsString());
+                }
+            } else {
+                normalizedFunc.addProperty("arguments", "{}");
+            }
+            normalizedTc.add("function", normalizedFunc);
+            normalizedCalls.add(normalizedTc);
+        }
+        normalized.add("tool_calls", normalizedCalls);
+        return normalized;
     }
 
     /**

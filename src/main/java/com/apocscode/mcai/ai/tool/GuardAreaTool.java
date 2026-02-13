@@ -49,6 +49,9 @@ public class GuardAreaTool implements AiTool {
             CompanionEntity companion = CompanionEntity.getLivingCompanion(context.player().getUUID());
             if (companion == null) return "No companion found.";
 
+            if (!args.has("location") || args.get("location").isJsonNull()) {
+                return "Error: 'location' parameter is required. Use: 'here', 'home', 'stop', or coordinates (x,y,z).";
+            }
             String location = args.get("location").getAsString().trim().toLowerCase();
 
             if (location.equals("stop") || location.equals("cancel")) {

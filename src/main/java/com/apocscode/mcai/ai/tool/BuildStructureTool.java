@@ -79,6 +79,9 @@ public class BuildStructureTool implements AiTool {
             CompanionEntity companion = CompanionEntity.getLivingCompanion(context.player().getUUID());
             if (companion == null) return "No companion found.";
 
+            if (!args.has("shape") || args.get("shape").isJsonNull()) {
+                return "Error: 'shape' parameter is required. Use: wall, floor, platform, shelter, column.";
+            }
             String shapeName = args.get("shape").getAsString().trim().toUpperCase();
             BuildTask.Shape shape;
             try {
@@ -87,6 +90,9 @@ public class BuildStructureTool implements AiTool {
                 return "Unknown shape: '" + shapeName + "'. Use: wall, floor, platform, shelter, column.";
             }
 
+            if (!args.has("block") || args.get("block").isJsonNull()) {
+                return "Error: 'block' parameter is required. Example: 'cobblestone', 'oak_planks'.";
+            }
             Block block = resolveBlock(args.get("block").getAsString().trim().toLowerCase());
             if (block == null) return "Unknown block type.";
 

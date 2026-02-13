@@ -85,6 +85,9 @@ public class SmeltItemsTool implements AiTool {
             CompanionEntity companion = CompanionEntity.getLivingCompanion(context.player().getUUID());
             if (companion == null) return "No companion found.";
 
+            if (!args.has("item") || args.get("item").isJsonNull()) {
+                return "Error: 'item' parameter is required. Example: smelt_items({\"item\":\"raw_iron\", \"count\":3})";
+            }
             String itemName = args.get("item").getAsString().toLowerCase().trim();
             int count = args.has("count") ? args.get("count").getAsInt() : 1;
             count = Math.max(1, Math.min(count, 64));

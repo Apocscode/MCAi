@@ -70,6 +70,9 @@ public class TransferItemsTool implements AiTool {
             CompanionEntity companion = CompanionEntity.getLivingCompanion(context.player().getUUID());
             if (companion == null) return "No companion found.";
 
+            if (!args.has("direction") || args.get("direction").isJsonNull()) {
+                return "Error: 'direction' parameter is required. Use: 'to_player', 'to_companion', or 'check'.";
+            }
             String direction = args.get("direction").getAsString().toLowerCase().trim();
             String itemFilter = args.has("item") ? args.get("item").getAsString().toLowerCase().trim() : null;
             int maxCount = args.has("count") ? args.get("count").getAsInt() : Integer.MAX_VALUE;

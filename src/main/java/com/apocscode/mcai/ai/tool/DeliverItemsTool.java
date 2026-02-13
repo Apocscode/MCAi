@@ -71,6 +71,9 @@ public class DeliverItemsTool implements AiTool {
             CompanionEntity companion = CompanionEntity.getLivingCompanion(context.player().getUUID());
             if (companion == null) return "No companion found.";
 
+            if (!args.has("destination") || args.get("destination").isJsonNull()) {
+                return "Error: 'destination' parameter is required. Use a bookmark name or coordinates (x,y,z).";
+            }
             String destStr = args.get("destination").getAsString().trim();
 
             // Resolve destination — try bookmark first, then coords

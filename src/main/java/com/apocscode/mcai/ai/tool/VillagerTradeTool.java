@@ -67,6 +67,9 @@ public class VillagerTradeTool implements AiTool {
     @Override
     public String execute(JsonObject args, ToolContext context) {
         return context.runOnServer(() -> {
+            if (!args.has("action") || args.get("action").isJsonNull()) {
+                return "Error: 'action' parameter is required. Use: 'list', 'buy', or 'sell'.";
+            }
             String action = args.get("action").getAsString().toLowerCase().trim();
 
             // Find nearest villager
