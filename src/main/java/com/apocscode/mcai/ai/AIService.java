@@ -708,6 +708,11 @@ public class AIService {
             conn.setRequestMethod("POST");
             conn.setRequestProperty("Content-Type", "application/json");
             conn.setRequestProperty("Authorization", "Bearer " + AiConfig.CLOUD_API_KEY.get());
+            // OpenRouter requires HTTP-Referer and X-Title for free model access
+            if (url.contains("openrouter.ai")) {
+                conn.setRequestProperty("HTTP-Referer", "https://github.com/Apocscode/MCAi");
+                conn.setRequestProperty("X-Title", "MCAi Minecraft Companion");
+            }
             conn.setDoOutput(true);
             conn.setConnectTimeout(timeoutMs);
             conn.setReadTimeout(timeoutMs);
