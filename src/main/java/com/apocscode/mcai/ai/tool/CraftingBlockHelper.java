@@ -173,6 +173,11 @@ public class CraftingBlockHelper {
                 }
             }
 
+            // === Special handling for CRAFTING_TABLE: accept ANY plank type, auto-convert logs ===
+            if (type == StationType.CRAFTING_TABLE) {
+                return craftCraftingTableFlexible(level, center, context);
+            }
+
             // Check if we have all materials
             Map<Item, Integer> needed = new LinkedHashMap<>();
             for (Item mat : type.simpleRecipe) {
@@ -210,6 +215,246 @@ public class CraftingBlockHelper {
         return StationResult.failed("No " + type.item.getDescription().getString() +
                 " found nearby and cannot auto-craft one. Craft or place one within " +
                 SCAN_RADIUS + " blocks.");
+    }
+
+    // ========== Crafting Table — flexible plank/log handling ==========
+
+    /**
+     * All plank items that can craft a crafting table (any wood type works).
+     */
+    private static final List<Item> ALL_PLANKS = List.of(
+            Items.OAK_PLANKS, Items.SPRUCE_PLANKS, Items.BIRCH_PLANKS,
+            Items.JUNGLE_PLANKS, Items.ACACIA_PLANKS, Items.DARK_OAK_PLANKS,
+            Items.MANGROVE_PLANKS, Items.CHERRY_PLANKS, Items.BAMBOO_PLANKS,
+            Items.CRIMSON_PLANKS, Items.WARPED_PLANKS
+    );
+
+    /**
+     * Log → Plank mappings. Each log type produces 4 planks of its type.
+     */
+    private static final Map<Item, Item> LOG_TO_PLANK = Map.ofEntries(
+            Map.entry(Items.OAK_LOG, Items.OAK_PLANKS),
+            Map.entry(Items.STRIPPED_OAK_LOG, Items.OAK_PLANKS),
+            Map.entry(Items.OAK_WOOD, Items.OAK_PLANKS),
+            Map.entry(Items.STRIPPED_OAK_WOOD, Items.OAK_PLANKS),
+            Map.entry(Items.SPRUCE_LOG, Items.SPRUCE_PLANKS),
+            Map.entry(Items.STRIPPED_SPRUCE_LOG, Items.SPRUCE_PLANKS),
+            Map.entry(Items.BIRCH_LOG, Items.BIRCH_PLANKS),
+            Map.entry(Items.STRIPPED_BIRCH_LOG, Items.BIRCH_PLANKS),
+            Map.entry(Items.JUNGLE_LOG, Items.JUNGLE_PLANKS),
+            Map.entry(Items.STRIPPED_JUNGLE_LOG, Items.JUNGLE_PLANKS),
+            Map.entry(Items.ACACIA_LOG, Items.ACACIA_PLANKS),
+            Map.entry(Items.STRIPPED_ACACIA_LOG, Items.ACACIA_PLANKS),
+            Map.entry(Items.DARK_OAK_LOG, Items.DARK_OAK_PLANKS),
+            Map.entry(Items.STRIPPED_DARK_OAK_LOG, Items.DARK_OAK_PLANKS),
+            Map.entry(Items.MANGROVE_LOG, Items.MANGROVE_PLANKS),
+            Map.entry(Items.STRIPPED_MANGROVE_LOG, Items.MANGROVE_PLANKS),
+            Map.entry(Items.CHERRY_LOG, Items.CHERRY_PLANKS),
+            Map.entry(Items.STRIPPED_CHERRY_LOG, Items.CHERRY_PLANKS),
+            Map.entry(Items.BAMBOO_BLOCK, Items.BAMBOO_PLANKS),
+            Map.entry(Items.STRIPPED_BAMBOO_BLOCK, Items.BAMBOO_PLANKS),
+            Map.entry(Items.CRIMSON_STEM, Items.CRIMSON_PLANKS),
+            Map.entry(Items.STRIPPED_CRIMSON_STEM, Items.CRIMSON_PLANKS),
+            Map.entry(Items.WARPED_STEM, Items.WARPED_PLANKS),
+            Map.entry(Items.STRIPPED_WARPED_STEM, Items.WARPED_PLANKS)
+    );
+
+    /**
+     * Craft a crafting table from ANY plank type, auto-converting logs → planks if needed.
+     * Checks player inventory, companion inventory, and storage containers.
+     *
+     * Steps:
+     *   1. Count all plank types across all inventories — if ≥4 of any single type, use those
+     *   2. If not enough planks, check for logs and convert logs → planks (1 log = 4 planks)
+     *   3. Consume 4 planks and produce a crafting table
+     */
+    private static StationResult craftCraftingTableFlexible(Level level, BlockPos center, ToolContext context) {
+        // Step 1: Find planks across all inventories
+        for (Item plank : ALL_PLANKS) {
+            int available = countItemIncludingStorage(context, plank);
+            if (available >= 4) {
+                // Consume 4 planks (pull from storage if needed)
+                pullAndConsume(context, plank, 4);
+                giveItem(context, Items.CRAFTING_TABLE, 1);
+                MCAi.LOGGER.info("Auto-crafted Crafting Table from {} planks", plank.getDescription().getString());
+                return placeStation(level, center, StationType.CRAFTING_TABLE, context, true);
+            }
+        }
+
+        // Step 2: Check for logs and auto-convert to planks
+        // Need 1 log minimum (produces 4 planks = exactly enough for a crafting table)
+        for (Map.Entry<Item, Item> entry : LOG_TO_PLANK.entrySet()) {
+            Item log = entry.getKey();
+            Item plank = entry.getValue();
+            int logCount = countItemIncludingStorage(context, log);
+            if (logCount >= 1) {
+                // Convert 1 log → 4 planks, then use 4 planks → crafting table
+                pullAndConsume(context, log, 1);
+                // Don't actually give planks — go straight to crafting table
+                giveItem(context, Items.CRAFTING_TABLE, 1);
+                MCAi.LOGGER.info("Auto-crafted Crafting Table: {} → 4x {} → Crafting Table",
+                        log.getDescription().getString(), plank.getDescription().getString());
+                return placeStation(level, center, StationType.CRAFTING_TABLE, context, true);
+            }
+        }
+
+        return StationResult.failed("Cannot craft Crafting Table. Need 4 planks (any type) " +
+                "or 1 log (any type). No planks or logs found in inventories or storage.");
+    }
+
+    /**
+     * Count an item across player inventory, companion inventory, tagged STORAGE, and home area containers.
+     */
+    private static int countItemIncludingStorage(ToolContext context, Item item) {
+        int count = countItem(context, item);
+
+        CompanionEntity companion = CompanionEntity.getLivingCompanion(context.player().getUUID());
+        if (companion != null) {
+            Set<BlockPos> scanned = new HashSet<>();
+
+            // Tagged STORAGE
+            var storageBlocks = companion.getTaggedBlocks(
+                    com.apocscode.mcai.logistics.TaggedBlock.Role.STORAGE);
+            for (var tb : storageBlocks) {
+                scanned.add(tb.pos());
+                count += countItemInContainer(context.player().level(), tb.pos(), item);
+            }
+
+            // Home area containers
+            if (companion.hasHomeArea()) {
+                BlockPos c1 = companion.getHomeCorner1();
+                BlockPos c2 = companion.getHomeCorner2();
+                if (c1 != null && c2 != null) {
+                    int minX = Math.min(c1.getX(), c2.getX());
+                    int minY = Math.min(c1.getY(), c2.getY());
+                    int minZ = Math.min(c1.getZ(), c2.getZ());
+                    int maxX = Math.max(c1.getX(), c2.getX());
+                    int maxY = Math.max(c1.getY(), c2.getY());
+                    int maxZ = Math.max(c1.getZ(), c2.getZ());
+                    for (int x = minX; x <= maxX; x++) {
+                        for (int y = minY; y <= maxY; y++) {
+                            for (int z = minZ; z <= maxZ; z++) {
+                                BlockPos pos = new BlockPos(x, y, z);
+                                if (scanned.contains(pos)) continue;
+                                scanned.add(pos);
+                                count += countItemInContainer(context.player().level(), pos, item);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return count;
+    }
+
+    /**
+     * Count a specific item inside a container block entity.
+     */
+    private static int countItemInContainer(Level level, BlockPos pos, Item item) {
+        net.minecraft.world.level.block.entity.BlockEntity be = level.getBlockEntity(pos);
+        if (!(be instanceof net.minecraft.world.Container container)) return 0;
+        int count = 0;
+        for (int i = 0; i < container.getContainerSize(); i++) {
+            ItemStack stack = container.getItem(i);
+            if (!stack.isEmpty() && stack.getItem() == item) {
+                count += stack.getCount();
+            }
+        }
+        return count;
+    }
+
+    /**
+     * Pull items from storage containers into companion inventory, then consume them.
+     * First consumes from player/companion, then pulls from storage as needed.
+     */
+    private static void pullAndConsume(ToolContext context, Item item, int amount) {
+        // First, consume what's already in player/companion inventory
+        int inInventory = countItem(context, item);
+        int consumeFromInv = Math.min(inInventory, amount);
+        if (consumeFromInv > 0) {
+            consumeItem(context, item, consumeFromInv);
+        }
+
+        int remaining = amount - consumeFromInv;
+        if (remaining <= 0) return;
+
+        // Pull from storage containers
+        CompanionEntity companion = CompanionEntity.getLivingCompanion(context.player().getUUID());
+        if (companion == null) return;
+
+        Set<BlockPos> scanned = new HashSet<>();
+
+        // Tagged STORAGE
+        var storageBlocks = companion.getTaggedBlocks(
+                com.apocscode.mcai.logistics.TaggedBlock.Role.STORAGE);
+        for (var tb : storageBlocks) {
+            if (remaining <= 0) break;
+            scanned.add(tb.pos());
+            remaining -= extractItemFromContainer(context.player().level(), tb.pos(),
+                    companion.getCompanionInventory(), item, remaining);
+        }
+
+        // Home area
+        if (remaining > 0 && companion.hasHomeArea()) {
+            BlockPos c1 = companion.getHomeCorner1();
+            BlockPos c2 = companion.getHomeCorner2();
+            if (c1 != null && c2 != null) {
+                int minX = Math.min(c1.getX(), c2.getX());
+                int minY = Math.min(c1.getY(), c2.getY());
+                int minZ = Math.min(c1.getZ(), c2.getZ());
+                int maxX = Math.max(c1.getX(), c2.getX());
+                int maxY = Math.max(c1.getY(), c2.getY());
+                int maxZ = Math.max(c1.getZ(), c2.getZ());
+                for (int x = minX; x <= maxX && remaining > 0; x++) {
+                    for (int y = minY; y <= maxY && remaining > 0; y++) {
+                        for (int z = minZ; z <= maxZ && remaining > 0; z++) {
+                            BlockPos pos = new BlockPos(x, y, z);
+                            if (scanned.contains(pos)) continue;
+                            scanned.add(pos);
+                            remaining -= extractItemFromContainer(context.player().level(), pos,
+                                    companion.getCompanionInventory(), item, remaining);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Now consume the pulled items from companion inventory
+        if (remaining < amount - consumeFromInv) {
+            int pulledFromStorage = (amount - consumeFromInv) - remaining;
+            // These items are now in companion inventory — consume them
+            consumeItem(context, item, pulledFromStorage);
+        }
+    }
+
+    /**
+     * Extract items from a container block entity into a SimpleContainer.
+     * @return number of items actually extracted
+     */
+    private static int extractItemFromContainer(Level level, BlockPos pos,
+                                                 SimpleContainer targetInv, Item item, int maxExtract) {
+        net.minecraft.world.level.block.entity.BlockEntity be = level.getBlockEntity(pos);
+        if (!(be instanceof net.minecraft.world.Container container)) return 0;
+
+        int extracted = 0;
+        for (int i = 0; i < container.getContainerSize() && extracted < maxExtract; i++) {
+            ItemStack stack = container.getItem(i);
+            if (!stack.isEmpty() && stack.getItem() == item) {
+                int take = Math.min(maxExtract - extracted, stack.getCount());
+                ItemStack toInsert = stack.copy();
+                toInsert.setCount(take);
+                ItemStack remainder = targetInv.addItem(toInsert);
+                int actual = take - remainder.getCount();
+                if (actual > 0) {
+                    stack.shrink(actual);
+                    if (stack.isEmpty()) container.setItem(i, ItemStack.EMPTY);
+                    extracted += actual;
+                }
+                if (!remainder.isEmpty()) break;
+            }
+        }
+        if (extracted > 0) container.setChanged();
+        return extracted;
     }
 
     /**
