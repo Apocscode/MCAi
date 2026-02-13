@@ -816,7 +816,7 @@ public class AIService {
                 - ASYNC TASKS: When a tool returns [ASYNC_TASK], STOP calling tools immediately. Tell the player what you're doing. The plan will auto-continue when each task finishes.
                 - Do NOT call craft_item again in the same turn after it returns [ASYNC_TASK].
                 - On [TASK_COMPLETE], follow the 'Next steps' instructions EXACTLY. Call each tool as described with the parameters shown.
-                - On [TASK_FAILED], ADAPT and try an alternative approach. If mine_ores failed, use strip_mine(ore=X) to dig at the optimal Y-level. Then continue the remaining plan steps.
+                - On [TASK_FAILED], ADAPT and try an alternative approach. If mine_ores failed, use strip_mine(ore=X, plan="<remaining steps>") to dig at the optimal Y-level. ALWAYS copy the 'Remaining steps' into the 'plan' parameter so the crafting chain continues automatically.
                 - NEVER tell the player "you need materials" — craft_item handles gathering automatically.
                 - For direct smelting requests, use smelt_items. It auto-handles furnace placement + fuel.
                 - ACT first, explain briefly after. Be fully autonomous — complete the entire task.

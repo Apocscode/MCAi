@@ -41,10 +41,12 @@ public record TaskContinuation(
                 "\n\nOriginal plan: " + planContext +
                 "\nRemaining steps: " + nextSteps +
                 "\n\nThe previous step FAILED. You must adapt and try an alternative approach:" +
-                "\n- If mine_ores failed (could not reach ores / no ores found): use strip_mine instead — it digs a tunnel at the optimal Y-level." +
+                "\n- If mine_ores failed (could not reach ores / no ores found): use strip_mine(ore=X, plan=\"<remaining steps>\") instead — it digs a tunnel at the optimal Y-level." +
                 "\n- If gather_blocks failed: try a larger radius or different location." +
                 "\n- If the task timed out or got stuck: retry with adjusted parameters." +
-                "\nThen continue with the remaining steps of the original plan." +
+                "\n\nCRITICAL: You MUST pass the 'Remaining steps' above as the 'plan' parameter in your fallback tool call." +
+                "\nExample: strip_mine({\"ore\":\"iron\",\"plan\":\"smelt iron_ingot, then craft bucket\"})" +
+                "\nThis ensures the crafting chain continues automatically after the fallback task completes." +
                 "\nDo NOT give up — find an alternative way to get the materials needed.";
     }
 }
