@@ -17,10 +17,10 @@ public class AiConfig {
     public static final ModConfigSpec.IntValue AI_MAX_TOKENS;
     public static final ModConfigSpec.IntValue MAX_TOOL_ITERATIONS;
 
-    // ---- Groq Cloud API ----
-    public static final ModConfigSpec.ConfigValue<String> GROQ_API_KEY;
-    public static final ModConfigSpec.ConfigValue<String> GROQ_MODEL;
-    public static final ModConfigSpec.ConfigValue<String> GROQ_URL;
+    // ---- Cloud AI (OpenAI-compatible: Groq, OpenRouter, Together, Cerebras, etc.) ----
+    public static final ModConfigSpec.ConfigValue<String> CLOUD_API_KEY;
+    public static final ModConfigSpec.ConfigValue<String> CLOUD_MODEL;
+    public static final ModConfigSpec.ConfigValue<String> CLOUD_URL;
 
     // ---- Whisper Voice ----
     public static final ModConfigSpec.ConfigValue<String> WHISPER_URL;
@@ -101,24 +101,38 @@ public class AiConfig {
 
         builder.pop(); // connection
 
-        builder.comment("Groq cloud API settings — set an API key to use Groq instead of Ollama",
-                "Get a free key at https://console.groq.com",
-                "When groqApiKey is set (not empty), Groq is used as the AI backend",
-                "Llama 4 Scout has best free-tier limits: 30K TPM, 500K TPD").push("groq");
+        builder.comment("Cloud AI settings — any OpenAI-compatible API (Groq, OpenRouter, Together, Cerebras, etc.)",
+                "Set an API key to use cloud AI instead of local Ollama",
+                "When cloudApiKey is set (not empty), cloud AI is used as primary backend",
+                "Recommended providers:",
+                "  Groq:       https://console.groq.com  (free, fast, 500K TPD limit)",
+                "  OpenRouter: https://openrouter.ai      (free models available, many providers)",
+                "  Together:   https://together.ai        ($5 free credits, large models)",
+                "  Cerebras:   https://cerebras.ai        (free, very fast inference)",
+                "  SambaNova:  https://sambanova.ai       (free, generous limits)").push("cloud");
 
-        GROQ_API_KEY = builder
-                .comment("Groq API key (leave empty to use local Ollama instead)")
-                .define("groqApiKey", "");
+        CLOUD_API_KEY = builder
+                .comment("Cloud API key (leave empty to use local Ollama instead)")
+                .define("cloudApiKey", "");
 
-        GROQ_MODEL = builder
-                .comment("Groq model name (recommended: meta-llama/llama-4-scout-17b-16e-instruct for best free-tier limits)")
-                .define("groqModel", "meta-llama/llama-4-scout-17b-16e-instruct");
+        CLOUD_MODEL = builder
+                .comment("Model name — depends on provider. Examples:",
+                        "  Groq:       meta-llama/llama-4-scout-17b-16e-instruct",
+                        "  OpenRouter: meta-llama/llama-3.1-8b-instruct:free",
+                        "  Together:   meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo",
+                        "  Cerebras:   llama3.1-8b")
+                .define("cloudModel", "meta-llama/llama-4-scout-17b-16e-instruct");
 
-        GROQ_URL = builder
-                .comment("Groq API endpoint URL")
-                .define("groqUrl", "https://api.groq.com/openai/v1/chat/completions");
+        CLOUD_URL = builder
+                .comment("Cloud API endpoint URL (OpenAI chat completions format). Examples:",
+                        "  Groq:       https://api.groq.com/openai/v1/chat/completions",
+                        "  OpenRouter: https://openrouter.ai/api/v1/chat/completions",
+                        "  Together:   https://api.together.xyz/v1/chat/completions",
+                        "  Cerebras:   https://api.cerebras.ai/v1/chat/completions",
+                        "  SambaNova:  https://api.sambanova.ai/v1/chat/completions")
+                .define("cloudUrl", "https://api.groq.com/openai/v1/chat/completions");
 
-        builder.pop(); // groq
+        builder.pop(); // cloud
 
         builder.comment("Whisper voice input settings").push("whisper");
 
@@ -289,16 +303,22 @@ public class AiConfig {
     // ---- Helper Methods ----
 
     /**
-     * Check if Groq cloud API is configured (API key is set and non-empty).
-     * When true, AIService should use Groq instead of local Ollama.
+     * Check if cloud AI is configured (API key is set and non-empty).
+     * When true, AIService uses cloud AI instead of local Ollama.
      */
-    public static boolean isGroqEnabled() {
+    public static boolean isCloudEnabled() {
         try {
-            String key = GROQ_API_KEY.get();
+            String key = CLOUD_API_KEY.get();
             return key != null && !key.isBlank();
         } catch (Exception e) {
             return false;
         }
+    }
+
+    /** @deprecated Use {@link #isCloudEnabled()} — kept for backward compatibility */
+    @Deprecated
+    public static boolean isGroqEnabled() {
+        return isCloudEnabled();
     }
 
     /**

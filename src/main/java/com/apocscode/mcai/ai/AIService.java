@@ -49,7 +49,7 @@ public class AIService {
         ToolRegistry.init();
 
         try {
-            String backend = AiConfig.isGroqEnabled() ? "Groq (" + AiConfig.GROQ_MODEL.get() + ")"
+            String backend = AiConfig.isCloudEnabled() ? "Cloud (" + AiConfig.CLOUD_MODEL.get() + ")"
                     : "Ollama (" + AiConfig.OLLAMA_MODEL.get() + ")";
             MCAi.LOGGER.info("AI Service initialized (backend: {}, tools: {})",
                     backend, ToolRegistry.getAll().size());
@@ -90,7 +90,7 @@ public class AIService {
                 AiLogger.error("AI chat error after " + elapsed + "ms", e);
                 MCAi.LOGGER.error("AI chat error: {}", e.getMessage(), e);
                 return "I'm having trouble connecting to my brain. " +
-                        (AiConfig.isGroqEnabled() ? "Check your Groq API key." : "Make sure Ollama is running on localhost:11434.") +
+                        (AiConfig.isCloudEnabled() ? "Check your cloud API key in config." : "Make sure Ollama is running on localhost:11434.") +
                         " Error: " + e.getMessage();
             }
         }, executor);
@@ -106,7 +106,7 @@ public class AIService {
                                      ToolContext toolCtx, String companionName) throws IOException {
 
         // Build initial messages array
-        boolean useGroq = AiConfig.isGroqEnabled();
+        boolean useCloud = AiConfig.isCloudEnabled();
         JsonArray messages = new JsonArray();
 
         // System prompt
@@ -115,8 +115,8 @@ public class AIService {
         systemMsg.addProperty("content", buildSystemPrompt(playerContext, companionName));
         messages.add(systemMsg);
 
-        // Conversation history — fewer messages for Groq to stay within free-tier TPM limits
-        int historyLimit = useGroq ? 8 : 20;
+        // Conversation history — fewer messages for cloud to stay within free-tier TPM limits
+        int historyLimit = useCloud ? 8 : 20;
         int startIdx = Math.max(0, history.size() - historyLimit);
         for (int i = startIdx; i < history.size(); i++) {
             ConversationManager.ChatMessage msg = history.get(i);
@@ -139,19 +139,19 @@ public class AIService {
         for (int iteration = 0; iteration < maxIterations; iteration++) {
             JsonObject response;
             try {
-                response = useGroq ? callGroq(messages, userMessage) : callOllama(messages, userMessage);
+                response = useCloud ? callCloudAI(messages, userMessage) : callOllama(messages, userMessage);
             } catch (IOException e) {
-                if (useGroq && e.getMessage() != null && e.getMessage().contains("429")) {
-                    // Groq rate limited after retries — silently fall back to local Ollama
-                    MCAi.LOGGER.info("Groq rate limited, falling back to Ollama for this request");
+                if (useCloud && e.getMessage() != null && e.getMessage().contains("429")) {
+                    // Cloud rate limited after retries — silently fall back to local Ollama
+                    MCAi.LOGGER.info("Cloud AI rate limited, falling back to Ollama for this request");
                     AiLogger.log(AiLogger.Category.AI_REQUEST, "WARN",
-                            "Groq rate limited — falling back to Ollama");
+                            "Cloud AI rate limited — falling back to Ollama");
                     try {
                         response = callOllama(messages, userMessage);
                     } catch (IOException ollamaEx) {
                         // Both backends failed — give a friendly message
                         MCAi.LOGGER.warn("Ollama fallback also failed: {}", ollamaEx.getMessage());
-                        return "I'm taking a breather — my cloud brain (Groq) hit its rate limit and local AI (Ollama) isn't running. " +
+                        return "I'm taking a breather — my cloud AI hit its rate limit and local AI (Ollama) isn't running. " +
                                 "Try again in about 30 seconds, or start Ollama on your PC for unlimited local AI.";
                     }
                 } else {
@@ -160,7 +160,7 @@ public class AIService {
             }
 
             // Extract assistant message — detect format dynamically:
-            // Groq/OpenAI: response.choices[0].message
+            // Cloud/OpenAI: response.choices[0].message
             // Ollama:      response.message
             JsonObject assistantMessage;
             if (response.has("choices")) {
@@ -180,7 +180,7 @@ public class AIService {
                     AiLogger.agentIteration(iteration, toolCalls.size());
 
                     // Normalize the assistant message for cross-backend compatibility:
-                    // Ollama returns arguments as JsonObject, Groq requires it as a String.
+                    // Ollama returns arguments as JsonObject, Cloud/OpenAI requires it as a String.
                     // Also ensure each tool_call has an "id" field (Ollama omits it).
                     JsonObject normalizedAssistant = normalizeToolCallMessage(assistantMessage);
                     messages.add(normalizedAssistant);
@@ -236,7 +236,7 @@ public class AIService {
                             asyncTaskQueued = true;
                         }
 
-                        // Add tool result — Groq requires tool_call_id, Ollama just uses "tool" role
+                        // Add tool result — Cloud requires tool_call_id, Ollama just uses "tool" role
                         JsonObject toolResultMsg = new JsonObject();
                         toolResultMsg.addProperty("role", "tool");
                         toolResultMsg.addProperty("content", result);
@@ -262,7 +262,7 @@ public class AIService {
 
                         // One more LLM call to get the final text
                         try {
-                            JsonObject finalResp = useGroq ? callGroq(messages, userMessage) : callOllama(messages, userMessage);
+                            JsonObject finalResp = useCloud ? callCloudAI(messages, userMessage) : callOllama(messages, userMessage);
                             JsonObject finalMsg;
                             if (finalResp.has("choices")) {
                                 finalMsg = finalResp.getAsJsonArray("choices")
@@ -671,42 +671,43 @@ public class AIService {
     }
 
     /**
-     * Call Groq cloud API (OpenAI-compatible) with tool support.
-     * Uses dynamic tool selection to stay within free-tier token limits (12K TPM).
+     * Call cloud AI API (OpenAI-compatible) with tool support.
+     * Works with any OpenAI-compatible provider: Groq, OpenRouter, Together, Cerebras, etc.
+     * Uses dynamic tool selection to stay within free-tier token limits.
      * Retries automatically on 429 rate-limit errors with backoff.
      * Returns the full response JSON object (OpenAI format with choices[]).
      */
-    private static JsonObject callGroq(JsonArray messages, String userMessage) throws IOException {
+    private static JsonObject callCloudAI(JsonArray messages, String userMessage) throws IOException {
         // Build request — OpenAI chat completions format
         JsonObject request = new JsonObject();
-        request.addProperty("model", AiConfig.GROQ_MODEL.get());
+        request.addProperty("model", AiConfig.CLOUD_MODEL.get());
         request.add("messages", messages);
         request.addProperty("temperature", AiConfig.AI_TEMPERATURE.get());
         request.addProperty("max_tokens", AiConfig.AI_MAX_TOKENS.get());
         request.addProperty("stream", false);
 
-        // Use dynamic tool selection — keeps token usage low for free-tier TPM limits
+        // Use dynamic tool selection — keeps token usage low for free-tier limits
         JsonArray tools = ToolRegistry.toOllamaToolsArray(userMessage);
         if (tools.size() > 0) {
             request.add("tools", tools);
             request.addProperty("tool_choice", "auto");
         }
 
-        String model = AiConfig.GROQ_MODEL.get();
+        String model = AiConfig.CLOUD_MODEL.get();
         AiLogger.aiRequest(messages.size(), tools.size(), model);
 
         String requestBody = GSON.toJson(request);
-        MCAi.LOGGER.debug("Groq request: {} chars, model: {}", requestBody.length(), model);
+        MCAi.LOGGER.debug("Cloud AI request: {} chars, model: {}", requestBody.length(), model);
 
         // Retry loop for rate limits (429)
         int maxRetries = 3;
         for (int attempt = 0; attempt <= maxRetries; attempt++) {
             int timeoutMs = AiConfig.AI_TIMEOUT_MS.get();
-            String url = AiConfig.GROQ_URL.get();
+            String url = AiConfig.CLOUD_URL.get();
             HttpURLConnection conn = (HttpURLConnection) URI.create(url).toURL().openConnection();
             conn.setRequestMethod("POST");
             conn.setRequestProperty("Content-Type", "application/json");
-            conn.setRequestProperty("Authorization", "Bearer " + AiConfig.GROQ_API_KEY.get());
+            conn.setRequestProperty("Authorization", "Bearer " + AiConfig.CLOUD_API_KEY.get());
             conn.setDoOutput(true);
             conn.setConnectTimeout(timeoutMs);
             conn.setReadTimeout(timeoutMs);
@@ -723,7 +724,7 @@ public class AIService {
 
                 long waitMs = 15_000;
                 try {
-                    // Try to extract "Please try again in X.XXs" from Groq error
+                    // Try to extract "Please try again in X.XXs" from error
                     java.util.regex.Matcher retryMatcher = Pattern.compile(
                             "try again in ([\\d.]+)s").matcher(error);
                     if (retryMatcher.find()) {
@@ -731,39 +732,39 @@ public class AIService {
                     }
                 } catch (Exception ignored) {}
 
-                MCAi.LOGGER.info("Groq rate limited (429), retrying in {}ms (attempt {}/{})",
+                MCAi.LOGGER.info("Cloud AI rate limited (429), retrying in {}ms (attempt {}/{})",
                         waitMs, attempt + 1, maxRetries);
                 AiLogger.log(AiLogger.Category.AI_REQUEST, "WARN",
-                        "Groq rate limited, waiting " + waitMs + "ms before retry " + (attempt + 1));
+                        "Cloud AI rate limited, waiting " + waitMs + "ms before retry " + (attempt + 1));
 
                 try { Thread.sleep(waitMs); } catch (InterruptedException ie) {
                     Thread.currentThread().interrupt();
-                    throw new IOException("Interrupted while waiting for Groq rate limit retry");
+                    throw new IOException("Interrupted while waiting for rate limit retry");
                 }
                 continue;
             }
 
             if (responseCode == 400) {
-                // Groq sometimes returns 400 tool_use_failed when the model generates
-                // tool calls in XML format (<function=name({args})>) instead of structured format.
+                // Some providers return 400 tool_use_failed when the model generates
+                // tool calls in XML format instead of structured format.
                 // Parse the failed_generation and build a synthetic tool_calls response.
                 String error = readStream(conn.getErrorStream());
                 conn.disconnect();
 
                 JsonObject syntheticResponse = tryParseGroqFailedGeneration(error);
                 if (syntheticResponse != null) {
-                    MCAi.LOGGER.info("Recovered Groq tool_use_failed via failed_generation parsing");
+                    MCAi.LOGGER.info("Recovered tool_use_failed via failed_generation parsing");
                     AiLogger.log(AiLogger.Category.AI_REQUEST, "WARN",
-                            "Groq 400 tool_use_failed — recovered via failed_generation parsing");
+                            "Cloud 400 tool_use_failed — recovered via failed_generation parsing");
                     return syntheticResponse;
                 }
-                throw new IOException("Groq returned HTTP 400: " + error);
+                throw new IOException("Cloud AI returned HTTP 400: " + error);
             }
 
             if (responseCode != 200) {
                 String error = readStream(conn.getErrorStream());
                 conn.disconnect();
-                throw new IOException("Groq returned HTTP " + responseCode + ": " + error);
+                throw new IOException("Cloud AI returned HTTP " + responseCode + ": " + error);
             }
 
             String responseBody = readStream(conn.getInputStream());
@@ -771,7 +772,7 @@ public class AIService {
             return JsonParser.parseString(responseBody).getAsJsonObject();
         }
 
-        throw new IOException("Groq rate limit exceeded after " + maxRetries + " retries");
+        throw new IOException("Cloud AI rate limit exceeded after " + maxRetries + " retries");
     }
 
     /**
