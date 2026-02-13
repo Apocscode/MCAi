@@ -1,11 +1,14 @@
 package com.apocscode.mcai.ai.tool;
 
+import com.apocscode.mcai.MCAi;
 import com.apocscode.mcai.entity.CompanionEntity;
 import com.apocscode.mcai.task.MineOresTask;
 import com.apocscode.mcai.task.OreGuide;
 import com.apocscode.mcai.task.TaskContinuation;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.PickaxeItem;
 
 /**
  * AI Tool: Mine ores nearby.
@@ -96,6 +99,43 @@ public class MineOresTool implements AiTool {
                             .append(". ").append(targetOre.name).append(" ore is most common at Y=")
                             .append(targetOre.bestY).append(". Consider mining deeper for better results. ");
                 }
+
+                // === Auto-craft required pickaxe if companion doesn't have one ===
+                if (targetOre.minTier > 0) {
+                    int companionTier = getCompanionPickaxeTier(companion);
+                    if (companionTier < targetOre.minTier) {
+                        String neededPick = getPickaxeForTier(targetOre.minTier);
+                        String planText = "mine_ores({\"ore\":\"" + targetOre.name + "\",\"radius\":" + radius +
+                                ",\"maxOres\":" + maxOres + "})";
+                        if (args.has("plan") && !args.get("plan").getAsString().isBlank()) {
+                            planText += ", then " + args.get("plan").getAsString();
+                        }
+                        MCAi.LOGGER.info("Auto-crafting {} before mining {} (have tier {}, need tier {})",
+                                neededPick, targetOre.name, companionTier, targetOre.minTier);
+
+                        // Call craft_item with a plan to return to mining afterward
+                        JsonObject craftArgs = new JsonObject();
+                        craftArgs.addProperty("item", neededPick);
+                        craftArgs.addProperty("count", 1);
+                        AiTool craftTool = ToolRegistry.get("craft_item");
+                        if (craftTool != null) {
+                            String craftResult = craftTool.execute(craftArgs, context);
+                            // If craft succeeded immediately, continue to mining
+                            if (craftResult.contains("Crafted") || craftResult.contains("already have")) {
+                                MCAi.LOGGER.info("Auto-crafted pickaxe, proceeding to mine");
+                                // Fall through to create mining task below
+                            } else if (craftResult.contains("[ASYNC_TASK]")) {
+                                // Crafting needs gathering first — return async with plan to mine after
+                                return craftResult + " After crafting " + neededPick +
+                                        ", I'll mine " + targetOre.name + " ore.";
+                            } else {
+                                // Craft failed — warn but try mining anyway
+                                warnings.append("Could not auto-craft ").append(neededPick)
+                                        .append(": ").append(craftResult).append(" ");
+                            }
+                        }
+                    }
+                }
             }
 
             // Create task — pass ore target for filtered scanning
@@ -123,5 +163,51 @@ public class MineOresTool implements AiTool {
                     "This task runs over time — STOP calling tools and tell the player you're on it. " +
                     "If you used the plan parameter, the next step will auto-execute when mining finishes.";
         });
+    }
+
+    /**
+     * Get the best pickaxe tier the companion currently has.
+     * Returns -1=none, 0=wood/gold, 1=stone, 2=iron, 3=diamond, 4=netherite
+     */
+    private int getCompanionPickaxeTier(CompanionEntity companion) {
+        int bestTier = -1;
+
+        // Check main hand
+        ItemStack mainHand = companion.getMainHandItem();
+        if (!mainHand.isEmpty() && mainHand.getItem() instanceof PickaxeItem pick) {
+            bestTier = Math.max(bestTier, getPickTier(pick));
+        }
+
+        // Check inventory
+        var inv = companion.getCompanionInventory();
+        for (int i = 0; i < inv.getContainerSize(); i++) {
+            ItemStack stack = inv.getItem(i);
+            if (!stack.isEmpty() && stack.getItem() instanceof PickaxeItem pick) {
+                bestTier = Math.max(bestTier, getPickTier(pick));
+            }
+        }
+        return bestTier;
+    }
+
+    private int getPickTier(PickaxeItem pick) {
+        float speed = pick.getTier().getSpeed();
+        if (speed >= 9) return 4;  // Netherite
+        if (speed >= 8) return 3;  // Diamond
+        if (speed >= 6) return 2;  // Iron
+        if (speed >= 4) return 1;  // Stone
+        return 0;                   // Wood/Gold
+    }
+
+    /**
+     * Get the pickaxe item name needed for a given tier.
+     */
+    private String getPickaxeForTier(int tier) {
+        return switch (tier) {
+            case 1 -> "stone_pickaxe";
+            case 2 -> "iron_pickaxe";
+            case 3 -> "diamond_pickaxe";
+            case 4 -> "netherite_pickaxe";
+            default -> "wooden_pickaxe";
+        };
     }
 }

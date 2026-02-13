@@ -73,9 +73,13 @@ public class CraftingPlan {
                         "farm_area({\"crop\":\"%s\",\"plan\":\"%s\"})", itemId, remainingPlan);
                 case FISH -> String.format(
                         "go_fishing({\"maxFish\":%d,\"plan\":\"%s\"})", count, remainingPlan);
-                case KILL_MOB -> String.format(
-                        "gather_blocks({\"block\":\"%s\",\"maxBlocks\":%d,\"plan\":\"%s\"})",
-                        itemId, count, remainingPlan);
+                case KILL_MOB -> {
+                    // Resolve which mob to kill for this item drop
+                    String mob = resolveMobForDrop(itemId);
+                    yield String.format(
+                            "kill_mob({\"mob\":\"%s\",\"count\":%d,\"plan\":\"%s\"})",
+                            mob, count, remainingPlan);
+                }
                 default -> "Unknown step: " + itemId;
             };
         }
@@ -247,5 +251,39 @@ public class CraftingPlan {
             MCAi.LOGGER.info("  Step {}: {} {} x{} {}", 
                     i + 1, s.type, s.itemId, s.count, s.isAsync() ? "[ASYNC]" : "[SYNC]");
         }
+    }
+
+    /**
+     * Resolve which mob to kill to obtain a specific item drop.
+     * Maps item IDs to mob names for the kill_mob tool.
+     */
+    private static String resolveMobForDrop(String itemId) {
+        return switch (itemId) {
+            case "leather", "beef" -> "cow";
+            case "string", "spider_eye" -> "spider";
+            case "bone", "bone_meal" -> "skeleton";
+            case "gunpowder" -> "creeper";
+            case "ender_pearl" -> "enderman";
+            case "blaze_rod" -> "blaze";
+            case "ghast_tear" -> "ghast";
+            case "slime_ball" -> "slime";
+            case "phantom_membrane" -> "phantom";
+            case "rabbit_hide", "rabbit_foot", "rabbit" -> "rabbit";
+            case "feather", "chicken", "egg" -> "chicken";
+            case "ink_sac" -> "squid";
+            case "glow_ink_sac" -> "glow_squid";
+            case "rotten_flesh" -> "zombie";
+            case "wither_skeleton_skull" -> "wither_skeleton";
+            case "shulker_shell" -> "shulker";
+            case "prismarine_shard", "prismarine_crystals" -> "guardian";
+            case "magma_cream" -> "magma_cube";
+            case "porkchop" -> "pig";
+            case "mutton" -> "sheep";
+            default -> {
+                if (itemId.contains("wool")) yield "sheep";
+                if (itemId.contains("meat")) yield "cow";
+                yield itemId;
+            }
+        };
     }
 }

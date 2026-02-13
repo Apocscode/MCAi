@@ -1,5 +1,6 @@
 package com.apocscode.mcai.ai.tool;
 
+import com.apocscode.mcai.MCAi;
 import com.apocscode.mcai.entity.CompanionEntity;
 import com.apocscode.mcai.task.OreGuide;
 import com.apocscode.mcai.task.StripMineTask;
@@ -7,6 +8,8 @@ import com.apocscode.mcai.task.TaskContinuation;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import net.minecraft.core.Direction;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.PickaxeItem;
 
 /**
  * AI Tool: Strip-mine a tunnel to find ores.
@@ -118,13 +121,34 @@ public class StripMineTool implements AiTool {
                 targetY = currentY; // Stay at current level
             }
 
-            // Check tool tier
+            // Check tool tier — auto-craft required pickaxe if missing
+            String tierWarning = "";
             if (targetOre != null && targetOre.minTier > 0) {
-                // Warn about tool requirements (but don't block — the task will skip unharvestabl ores)
-                String tierWarning = "";
-                if (!hasPickaxeTier(companion, targetOre.minTier)) {
-                    tierWarning = " WARNING: Need " + targetOre.tierName() + " pickaxe or better to harvest " +
-                            targetOre.name + " ore — companion may not have the right tool.";
+                int companionTier = getCompanionPickaxeTier(companion);
+                if (companionTier < targetOre.minTier) {
+                    String neededPick = getPickaxeForTier(targetOre.minTier);
+                    MCAi.LOGGER.info("Auto-crafting {} before strip mining {} (have tier {}, need tier {})",
+                            neededPick, targetOre.name, companionTier, targetOre.minTier);
+
+                    // Try to auto-craft the pickaxe
+                    AiTool craftTool = ToolRegistry.get("craft_item");
+                    if (craftTool != null) {
+                        JsonObject craftArgs = new JsonObject();
+                        craftArgs.addProperty("item", neededPick);
+                        craftArgs.addProperty("count", 1);
+                        String craftResult = craftTool.execute(craftArgs, context);
+
+                        if (craftResult.contains("Crafted") || craftResult.contains("already have")) {
+                            MCAi.LOGGER.info("Auto-crafted pickaxe, proceeding to strip mine");
+                        } else if (craftResult.contains("[ASYNC_TASK]")) {
+                            // Crafting needs gathering first — return async with plan to mine after
+                            return craftResult + " After crafting " + neededPick +
+                                    ", I'll strip mine for " + targetOre.name + " ore.";
+                        } else {
+                            tierWarning = " WARNING: Could not auto-craft " + neededPick +
+                                    ". Companion may not harvest " + targetOre.name + " ore.";
+                        }
+                    }
                 }
             }
 
@@ -165,6 +189,7 @@ public class StripMineTool implements AiTool {
                 resp.append(targetOre.tip).append(" ");
             }
             resp.append("This task runs over time — STOP calling tools and tell the player you're on it.");
+            resp.append(tierWarning);
 
             return resp.toString();
         });
@@ -201,35 +226,51 @@ public class StripMineTool implements AiTool {
     }
 
     /**
-     * Check if companion has at least the given pickaxe tier.
-     * Tier: 0=wood, 1=stone, 2=iron, 3=diamond, 4=netherite
+     * Get the best pickaxe tier the companion currently has.
+     * Returns -1=none, 0=wood/gold, 1=stone, 2=iron, 3=diamond, 4=netherite
      */
-    private boolean hasPickaxeTier(CompanionEntity companion, int minTier) {
+    private int getCompanionPickaxeTier(CompanionEntity companion) {
+        int bestTier = -1;
+
+        // Check main hand
+        ItemStack mainHand = companion.getMainHandItem();
+        if (!mainHand.isEmpty() && mainHand.getItem() instanceof PickaxeItem pick) {
+            bestTier = Math.max(bestTier, getToolTier(pick));
+        }
+
+        // Check inventory
         var inv = companion.getCompanionInventory();
         for (int i = 0; i < inv.getContainerSize(); i++) {
-            net.minecraft.world.item.ItemStack stack = inv.getItem(i);
-            if (!stack.isEmpty() && stack.getItem() instanceof net.minecraft.world.item.PickaxeItem pickaxe) {
-                if (getToolTier(pickaxe) >= minTier) return true;
+            ItemStack stack = inv.getItem(i);
+            if (!stack.isEmpty() && stack.getItem() instanceof PickaxeItem pick) {
+                bestTier = Math.max(bestTier, getToolTier(pick));
             }
         }
-        // Also check main hand
-        net.minecraft.world.item.ItemStack mainHand = companion.getMainHandItem();
-        if (!mainHand.isEmpty() && mainHand.getItem() instanceof net.minecraft.world.item.PickaxeItem pickaxe) {
-            if (getToolTier(pickaxe) >= minTier) return true;
-        }
-        return false;
+        return bestTier;
     }
 
     /**
      * Estimate tool tier from a PickaxeItem.
      */
-    private int getToolTier(net.minecraft.world.item.PickaxeItem pickaxe) {
-        // Use mining speed as a rough proxy for tier
+    private int getToolTier(PickaxeItem pickaxe) {
         float speed = pickaxe.getTier().getSpeed();
-        if (speed >= 9.0f) return 4; // netherite (9.0)
-        if (speed >= 8.0f) return 3; // diamond (8.0)
-        if (speed >= 6.0f) return 2; // iron (6.0)
-        if (speed >= 4.0f) return 1; // stone (4.0)
-        return 0; // wood (2.0)
+        if (speed >= 9.0f) return 4; // netherite
+        if (speed >= 8.0f) return 3; // diamond
+        if (speed >= 6.0f) return 2; // iron
+        if (speed >= 4.0f) return 1; // stone
+        return 0; // wood
+    }
+
+    /**
+     * Get the pickaxe item name needed for a given tier.
+     */
+    private String getPickaxeForTier(int tier) {
+        return switch (tier) {
+            case 1 -> "stone_pickaxe";
+            case 2 -> "iron_pickaxe";
+            case 3 -> "diamond_pickaxe";
+            case 4 -> "netherite_pickaxe";
+            default -> "wooden_pickaxe";
+        };
     }
 }

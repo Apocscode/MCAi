@@ -8,6 +8,7 @@ import com.apocscode.mcai.logistics.ItemRoutingHelper;
 import com.apocscode.mcai.task.ChopTreesTask;
 import com.apocscode.mcai.task.CompanionTask;
 import com.apocscode.mcai.task.GatherBlocksTask;
+import com.apocscode.mcai.task.KillMobTask;
 import com.apocscode.mcai.task.MineOresTask;
 import com.apocscode.mcai.task.TaskContinuation;
 import com.google.gson.JsonArray;
@@ -881,7 +882,7 @@ public class CraftItemTool implements AiTool {
             case SMOKE, CAMPFIRE_COOK -> "cook " + step.count + "x " + step.itemId;
             case FARM -> "farm " + step.itemId;
             case FISH -> "fish for " + step.count + "x " + step.itemId;
-            case KILL_MOB -> "gather " + step.count + "x " + step.itemId + " (mob drop)";
+            case KILL_MOB -> "kill mobs for " + step.count + "x " + step.itemId;
             case CRAFT -> "craft " + step.count + "x " + step.itemId;
             default -> step.toString();
         };
@@ -900,12 +901,56 @@ public class CraftItemTool implements AiTool {
                         ? new GatherBlocksTask(companion, block, 16, step.count)
                         : null;
             }
+            case KILL_MOB -> {
+                // Resolve which mob to kill based on the item being gathered
+                String mobName = resolveMobForDrop(step.itemId);
+                yield new KillMobTask(companion,
+                        KillMobTask.resolveEntityType(mobName),
+                        mobName, Math.max(step.count, 1));
+            }
             case SMELT, BLAST, SMOKE, CAMPFIRE_COOK -> {
                 // Smelting tasks are handled via AI continuation calling smelt_items tool
                 // (SmeltItemsTask needs the furnace interaction which the tool handles)
                 yield null;
             }
             default -> null;
+        };
+    }
+
+    /**
+     * Resolve which mob to kill to get a specific drop item.
+     * Maps item IDs to mob names for the kill_mob tool.
+     */
+    private static String resolveMobForDrop(String itemId) {
+        return switch (itemId) {
+            case "leather" -> "cow";
+            case "beef" -> "cow";
+            case "string" -> "spider";
+            case "spider_eye" -> "spider";
+            case "bone", "bone_meal" -> "skeleton";
+            case "gunpowder" -> "creeper";
+            case "ender_pearl" -> "enderman";
+            case "blaze_rod" -> "blaze";
+            case "ghast_tear" -> "ghast";
+            case "slime_ball" -> "slime";
+            case "phantom_membrane" -> "phantom";
+            case "rabbit_hide", "rabbit_foot", "rabbit" -> "rabbit";
+            case "feather", "chicken", "egg" -> "chicken";
+            case "ink_sac" -> "squid";
+            case "glow_ink_sac" -> "glow_squid";
+            case "rotten_flesh" -> "zombie";
+            case "wither_skeleton_skull" -> "wither_skeleton";
+            case "shulker_shell" -> "shulker";
+            case "prismarine_shard", "prismarine_crystals" -> "guardian";
+            case "magma_cream" -> "magma_cube";
+            case "porkchop" -> "pig";
+            case "mutton" -> "sheep";
+            default -> {
+                // Try to infer from item name
+                if (itemId.contains("wool")) yield "sheep";
+                if (itemId.contains("meat")) yield "cow";
+                yield itemId; // Last resort: use the item name itself
+            }
         };
     }
 

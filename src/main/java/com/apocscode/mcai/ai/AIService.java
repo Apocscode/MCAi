@@ -798,6 +798,7 @@ public class AIService {
                   "get me X from chest" / "bring X" / "fetch X" → find_and_fetch_item
                   "gather sand/dirt/cobble" → gather_blocks(block="sand")
                   "smelt X" / "cook X" → smelt_items
+                  "kill X" / "attack X" / "hunt X" → kill_mob(mob="X") — works with vanilla AND modded mobs
                   "what's nearby" / "scan" / "look around" → scan_surroundings
                   NEVER use mine_area for "dig down" — mine_area is horizontal. dig_down is vertical.
                 
@@ -805,11 +806,24 @@ public class AIService {
                   1. Player says "mine iron/diamond/etc" → FIRST call mine_ores(ore="iron") to scan nearby.
                   2. If mine_ores says "no ores found" or warns about wrong Y-level:
                      → Use strip_mine(ore="iron") to tunnel at the optimal Y. It auto-descends to the best depth.
-                  3. If companion has wrong tool tier (e.g. no stone pick for iron):
-                     → Craft the required pickaxe FIRST, THEN mine. Don't send them to mine without tools.
+                  3. mine_ores and strip_mine will AUTO-CRAFT the required pickaxe if the companion doesn't have one.
+                     You do NOT need to manually craft a pickaxe first — the tools handle the full chain automatically.
                   4. For "find diamonds" or similar → strip_mine(ore="diamond") is usually best since
                      diamonds are rare and deep (Y=-59). Simple scanning won't find enough.
                   5. ALWAYS specify the ore= parameter when the player asks for a specific ore type.
+                
+                KILL MOB — kill_mob() supports ALL mobs including modded ones:
+                  - Vanilla: kill_mob(mob="zombie"), kill_mob(mob="cow", count=3)
+                  - Modded: kill_mob(mob="raccoon") — auto-finds mod entity (e.g. livingthings:raccoon)
+                  - Use full ID if ambiguous: kill_mob(mob="livingthings:raccoon")
+                  - For crafting that needs mob drops (leather→armor, string→bow), craft_item auto-handles it.
+                
+                CRAFTING AUTONOMY — craft_item handles the FULL chain:
+                  - Checks inventory/chests → auto-crafts intermediates → auto-gathers missing materials
+                  - Auto-places AND picks up crafting tables, furnaces, etc. as needed
+                  - Auto-crafts required tools (pickaxe for mining, etc.) before gathering
+                  - Auto-hunts mobs for drops (leather, string, bones, etc.)
+                  - Just call craft_item ONCE — it queues all gathering/smelting/crafting steps with continuations
                 
                 ORE Y-LEVELS (Minecraft 1.21 Overworld):
                   Coal:    Y=0 to 320,  best Y=96.  Any pickaxe.
@@ -866,11 +880,12 @@ public class AIService {
                   Wool/Vines/Cobweb → Shears (or sword for cobweb)
                   Breaking without correct tool = very slow + often no drop.
                 
-                Mob Drops (common):
+                Mob Drops (use kill_mob tool to hunt):
                   Zombie→rotten_flesh. Skeleton→bone+arrow. Creeper→gunpowder.
                   Spider→string+spider_eye. Enderman→ender_pearl. Blaze→blaze_rod.
                   Cow→leather+beef. Sheep→wool(shears)+mutton. Chicken→feather+chicken+egg.
                   Pig→porkchop. Iron Golem→iron_ingot. Witch→potions+redstone+glowstone.
+                  Modded mobs: use kill_mob with the mob name — auto-resolves mod entity IDs.
                 
                 Dimensions:
                   Overworld — normal. Nether — fire/lava, needs obsidian portal (4x5 frame + flint&steel). End — endermen+dragon, needs ender_eyes in stronghold portal.

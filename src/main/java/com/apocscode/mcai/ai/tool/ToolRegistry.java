@@ -75,6 +75,9 @@ public class ToolRegistry {
         // Guard / patrol
         kw("guard,patrol,defend,protect,watch",
                 "guard_area");
+        // Kill / attack / hunt
+        kw("kill,attack,hunt,fight,slay,murder,mob,hostile,animal,monster,creature,raccoon,zombie,skeleton,creeper,spider,cow,pig,sheep,chicken",
+                "kill_mob", "scan_surroundings");
         // Deliver
         kw("deliver,bring to,take to,drop off,deposit",
                 "deliver_items");
@@ -140,6 +143,7 @@ public class ToolRegistry {
         // New feature tools
         register(new DeliverItemsTool());
         register(new GuardAreaTool());
+        register(new KillMobTool());
         register(new BuildStructureTool());
         register(new VillagerTradeTool());
         register(new FishingTool());
