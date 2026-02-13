@@ -30,6 +30,9 @@ public class MCAi {
         // Start diagnostic logger
         AiLogger.init();
 
+        // Auto-detect and start Ollama (local LLM fallback)
+        com.apocscode.mcai.ai.OllamaManager.init();
+
         // Start AI service
         AIService.init();
 

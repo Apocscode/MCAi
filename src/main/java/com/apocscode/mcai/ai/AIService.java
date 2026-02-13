@@ -287,18 +287,36 @@ public class AIService {
                 AiLogger.log(AiLogger.Category.TOOL_CALL, "INFO",
                         "FALLBACK parsed text tool call: " + parsedToolName);
 
-                // Add the original assistant message
-                messages.add(assistantMessage);
+                // Add the original assistant message — inject a synthetic tool_calls
+                // structure so Groq sees a valid assistant+tool_call → tool response pair
+                String syntheticId = "fallback_" + System.nanoTime();
+                JsonObject syntheticFunc = new JsonObject();
+                syntheticFunc.addProperty("name", parsedToolName);
+                syntheticFunc.addProperty("arguments", parsedArgs.toString());
+                JsonObject syntheticToolCall = new JsonObject();
+                syntheticToolCall.addProperty("id", syntheticId);
+                syntheticToolCall.addProperty("type", "function");
+                syntheticToolCall.add("function", syntheticFunc);
+                JsonArray syntheticToolCalls = new JsonArray();
+                syntheticToolCalls.add(syntheticToolCall);
+                // Build a proper assistant message with tool_calls
+                JsonObject assistantWithToolCall = new JsonObject();
+                assistantWithToolCall.addProperty("role", "assistant");
+                assistantWithToolCall.addProperty("content", "");
+                assistantWithToolCall.add("tool_calls", syntheticToolCalls);
+                messages.add(assistantWithToolCall);
 
                 // Execute the tool
                 long toolStartMs = System.currentTimeMillis();
                 String result = executeTool(parsedToolName, parsedArgs, toolCtx);
                 long toolElapsed = System.currentTimeMillis() - toolStartMs;
 
-                // Add tool result
+                // Add tool result with proper tool_call_id
                 JsonObject toolResultMsg = new JsonObject();
                 toolResultMsg.addProperty("role", "tool");
                 toolResultMsg.addProperty("content", result);
+                toolResultMsg.addProperty("tool_call_id", syntheticId);
+                toolResultMsg.addProperty("name", parsedToolName);
                 messages.add(toolResultMsg);
 
                 MCAi.LOGGER.info("Fallback tool '{}' executed in {}ms, result: {} chars",
@@ -356,18 +374,25 @@ public class AIService {
         while (m.find()) {
             String name = m.group(1);
             if (ToolRegistry.get(name) != null) {
-                String argsStr = m.group(2);
+                String argsStr = m.group(2).trim();
+                // Clean up common formatting issues from small models
+                argsStr = argsStr.replace("'", "\"");
+                // Remove trailing parens/brackets that aren't part of JSON
+                while (argsStr.endsWith(")") || argsStr.endsWith("]}")) {
+                    argsStr = argsStr.substring(0, argsStr.length() - 1);
+                }
+                // Ensure it ends with }
+                if (!argsStr.endsWith("}")) argsStr += "}";
                 try {
-                    // Fix common issues: single quotes → double quotes
-                    argsStr = argsStr.replace("'", "\"");
                     return JsonParser.parseString(argsStr).getAsJsonObject();
                 } catch (Exception e) {
-                    // If nested braces break JSON parsing, try stripping the plan value
+                    // Try stripping the plan value (may contain commas/quotes that break JSON)
                     try {
-                        argsStr = argsStr.replaceAll(",\\s*\"plan\"\\s*:\\s*\"[^\"]*\"", "");
-                        return JsonParser.parseString(argsStr).getAsJsonObject();
+                        String stripped = argsStr.replaceAll(",?\\s*\"plan\"\\s*:\\s*\"[^\"]*\"", "");
+                        if (!stripped.endsWith("}")) stripped += "}";
+                        return JsonParser.parseString(stripped).getAsJsonObject();
                     } catch (Exception e2) {
-                        MCAi.LOGGER.warn("Fallback: found tool '{}' but couldn't parse args: {}", name, m.group(2));
+                        MCAi.LOGGER.warn("Fallback: found tool '{}' but couldn't parse args: {}", name, argsStr);
                         return new JsonObject();
                     }
                 }
