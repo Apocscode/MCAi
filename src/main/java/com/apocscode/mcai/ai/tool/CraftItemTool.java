@@ -5,11 +5,13 @@ import com.apocscode.mcai.ai.planner.CraftingPlan;
 import com.apocscode.mcai.ai.planner.RecipeResolver;
 import com.apocscode.mcai.entity.CompanionEntity;
 import com.apocscode.mcai.logistics.ItemRoutingHelper;
+import com.apocscode.mcai.task.BlockHelper;
 import com.apocscode.mcai.task.ChopTreesTask;
 import com.apocscode.mcai.task.CompanionTask;
 import com.apocscode.mcai.task.GatherBlocksTask;
 import com.apocscode.mcai.task.KillMobTask;
 import com.apocscode.mcai.task.MineOresTask;
+import com.apocscode.mcai.task.SmeltItemsTask;
 import com.apocscode.mcai.task.TaskContinuation;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
@@ -27,7 +29,11 @@ import net.minecraft.world.item.crafting.*;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.entity.AbstractFurnaceBlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.FurnaceBlock;
+import net.minecraft.world.level.block.BlastFurnaceBlock;
+import net.minecraft.world.level.block.SmokerBlock;
 
 import javax.annotation.Nullable;
 import java.util.*;
@@ -580,6 +586,9 @@ public class CraftItemTool implements AiTool {
         // but only if we detect the need and recursively resolve the pickaxe too.
         ensureToolPrerequisites(plan, available, companion, recipeManager, registryAccess);
 
+        // Ensure smelting prerequisites: fuel and furnace materials
+        ensureSmeltPrerequisites(plan, available, companion);
+
         plan.logPlan();
 
         List<CraftingPlan.Step> asyncSteps = plan.getAsyncSteps();
@@ -594,8 +603,8 @@ public class CraftItemTool implements AiTool {
         }
 
         // === Find the first async step that can be directly tasked ===
-        // Some async steps (SMELT, KILL_MOB, etc.) can't create a CompanionTask directly —
-        // they're handled via AI continuation calling the tool. So find the first one we CAN task.
+        // Most async steps now create CompanionTasks directly (CHOP, MINE, GATHER,
+        // SMELT, KILL_MOB). The rest are handled via AI continuation tool calls.
         int firstTaskableIndex = -1;
         CompanionTask firstTask = null;
         for (int i = 0; i < asyncSteps.size(); i++) {
@@ -737,6 +746,106 @@ public class CraftItemTool implements AiTool {
         } catch (Exception e) {
             MCAi.LOGGER.warn("Failed to resolve tool prerequisites: {}", e.getMessage());
         }
+    }
+
+    // ========== Smelting Prerequisite System ==========
+
+    /**
+     * Ensure the plan has prerequisites for smelting steps:
+     * 1. Enough fuel (add CHOP step if no fuel available and plan doesn't already chop)
+     * 2. Enough cobblestone for a furnace (add GATHER step if no furnace nearby and not enough cobble)
+     *
+     * Without this, the smelting task would fail when the companion has no furnace,
+     * no fuel, or no cobblestone to auto-craft a furnace.
+     */
+    private void ensureSmeltPrerequisites(CraftingPlan plan, Map<Item, Integer> available,
+                                           CompanionEntity companion) {
+        boolean hasSmelt = plan.getSteps().stream()
+                .anyMatch(s -> s.type == RecipeResolver.StepType.SMELT
+                        || s.type == RecipeResolver.StepType.BLAST
+                        || s.type == RecipeResolver.StepType.SMOKE
+                        || s.type == RecipeResolver.StepType.CAMPFIRE_COOK);
+        if (!hasSmelt) return;
+
+        List<CraftingPlan.Step> prereqs = new ArrayList<>();
+
+        // === Furnace check ===
+        // If no furnace nearby, companion needs 8 cobblestone to auto-craft one
+        boolean hasFurnace = hasFurnaceNearby(companion);
+        if (!hasFurnace) {
+            int cobble = available.getOrDefault(Items.COBBLESTONE, 0);
+            cobble += BlockHelper.countItem(companion, Items.COBBLESTONE);
+            if (cobble < 8) {
+                // Check if plan already gathers cobblestone
+                int planCobble = plan.getSteps().stream()
+                        .filter(s -> s.type == RecipeResolver.StepType.GATHER
+                                && s.itemId.equals("cobblestone"))
+                        .mapToInt(s -> s.count).sum();
+                int totalCobble = cobble + planCobble;
+                if (totalCobble < 8) {
+                    int needed = 8 - totalCobble;
+                    prereqs.add(new CraftingPlan.Step(RecipeResolver.StepType.GATHER,
+                            Items.COBBLESTONE, needed));
+                    MCAi.LOGGER.info("Smelting prereq: added GATHER cobblestone x{} for furnace auto-craft",
+                            needed);
+                }
+            }
+        }
+
+        // === Fuel check ===
+        // If no fuel in inventory and plan doesn't already chop trees, add a CHOP step
+        boolean hasFuel = false;
+        SimpleContainer inv = companion.getCompanionInventory();
+        for (int i = 0; i < inv.getContainerSize(); i++) {
+            ItemStack stack = inv.getItem(i);
+            if (!stack.isEmpty() && AbstractFurnaceBlockEntity.isFuel(stack)) {
+                hasFuel = true;
+                break;
+            }
+        }
+        // Also check if the available map has any common fuels
+        if (!hasFuel) {
+            for (Map.Entry<Item, Integer> entry : available.entrySet()) {
+                if (entry.getValue() > 0 && AbstractFurnaceBlockEntity.isFuel(new ItemStack(entry.getKey()))) {
+                    hasFuel = true;
+                    break;
+                }
+            }
+        }
+        // Check if plan already has a CHOP step (logs are excellent fuel)
+        boolean planChops = plan.getSteps().stream()
+                .anyMatch(s -> s.type == RecipeResolver.StepType.CHOP);
+        if (!hasFuel && !planChops) {
+            prereqs.add(new CraftingPlan.Step(RecipeResolver.StepType.CHOP,
+                    Items.OAK_LOG, 4));
+            MCAi.LOGGER.info("Smelting prereq: added CHOP oak_log x4 for fuel");
+        }
+
+        if (!prereqs.isEmpty()) {
+            plan.prependSteps(prereqs);
+        }
+    }
+
+    /**
+     * Check if there's a furnace (or blast furnace or smoker) within range of the companion.
+     */
+    private static boolean hasFurnaceNearby(CompanionEntity companion) {
+        BlockPos center = companion.blockPosition();
+        Level level = companion.level();
+        int range = 32;
+        for (int x = -range; x <= range; x++) {
+            for (int y = -4; y <= 8; y++) {
+                for (int z = -range; z <= range; z++) {
+                    BlockPos pos = center.offset(x, y, z);
+                    Block block = level.getBlockState(pos).getBlock();
+                    if (block instanceof FurnaceBlock || block instanceof BlastFurnaceBlock
+                            || block instanceof SmokerBlock) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
     }
 
     /**
@@ -909,8 +1018,15 @@ public class CraftItemTool implements AiTool {
                         mobName, Math.max(step.count, 1));
             }
             case SMELT, BLAST, SMOKE, CAMPFIRE_COOK -> {
-                // Smelting tasks are handled via AI continuation calling smelt_items tool
-                // (SmeltItemsTask needs the furnace interaction which the tool handles)
+                // Resolve the raw material input from the smelting recipe
+                // Step item is the OUTPUT (e.g., iron_ingot); we need the INPUT (e.g., raw_iron)
+                Item inputItem = resolveSmeltInput(step.item, companion);
+                if (inputItem != null) {
+                    MCAi.LOGGER.info("createTaskForStep: SMELT {} → input={}, count={}",
+                            step.itemId, BuiltInRegistries.ITEM.getKey(inputItem).getPath(), step.count);
+                    yield new SmeltItemsTask(companion, inputItem, step.count);
+                }
+                MCAi.LOGGER.warn("createTaskForStep: cannot resolve smelting input for {}", step.itemId);
                 yield null;
             }
             default -> null;
@@ -975,6 +1091,53 @@ public class CraftItemTool implements AiTool {
                 yield Blocks.STONE; // fallback
             }
         };
+    }
+
+    /**
+     * Reverse-lookup a smelting recipe: given the OUTPUT item, find the raw INPUT item.
+     * e.g., iron_ingot → raw_iron, gold_ingot → raw_gold, glass → sand
+     * Prefers vanilla recipes with raw_ inputs (actual mining drops).
+     */
+    private static Item resolveSmeltInput(Item outputItem, CompanionEntity companion) {
+        RecipeManager rm = companion.level().getServer().getRecipeManager();
+        RegistryAccess ra = companion.level().registryAccess();
+
+        Item bestInput = null;
+
+        for (RecipeHolder<?> holder : rm.getRecipes()) {
+            try {
+                Recipe<?> r = holder.value();
+                if (r == null) continue;
+                if (!(r instanceof SmeltingRecipe) && !(r instanceof BlastingRecipe)
+                        && !(r instanceof SmokingRecipe) && !(r instanceof CampfireCookingRecipe)) {
+                    continue;
+                }
+                ItemStack result = RecipeResolver.safeGetResult(r, ra);
+                if (result.isEmpty() || !result.is(outputItem)) continue;
+
+                List<Ingredient> ings = r.getIngredients();
+                if (ings.isEmpty() || ings.get(0).isEmpty()) continue;
+
+                ItemStack[] items = ings.get(0).getItems();
+                if (items.length == 0) continue;
+
+                // Prefer raw_ inputs (actual mining drops) — return immediately
+                for (ItemStack stack : items) {
+                    ResourceLocation id = BuiltInRegistries.ITEM.getKey(stack.getItem());
+                    if (id.getPath().startsWith("raw_")) {
+                        return stack.getItem();
+                    }
+                }
+
+                // Accept non-raw input as fallback
+                if (bestInput == null) {
+                    bestInput = items[0].getItem();
+                }
+            } catch (Exception e) {
+                continue;
+            }
+        }
+        return bestInput;
     }
 
     /**

@@ -4,6 +4,7 @@ import com.apocscode.mcai.MCAi;
 import com.apocscode.mcai.entity.CompanionEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.sounds.SoundEvents;
+import net.minecraft.tags.BlockTags;
 import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -64,14 +65,25 @@ public class SmeltItemsTask extends CompanionTask {
             return;
         }
 
-        // Check companion has fuel
+        // Check companion has fuel — if not, try to gather some
         if (!hasFuel()) {
-            fail("No fuel available! I need coal, charcoal, or wood to smelt.");
-            return;
+            if (!tryGatherFuel()) {
+                fail("No fuel available and couldn't find any nearby! " +
+                        "I need coal, charcoal, wood, or any burnable item to smelt.");
+                return;
+            }
         }
 
         furnacePos = findNearbyFurnace();
         if (furnacePos == null) {
+            // If not enough cobblestone for a furnace, try to mine some stone nearby
+            int cobble = BlockHelper.countItem(companion, Items.COBBLESTONE);
+            if (cobble < 8) {
+                int gathered = tryGatherCobblestone(8 - cobble);
+                MCAi.LOGGER.info("Auto-gathered {} cobblestone for furnace (had {}, need 8)",
+                        gathered, cobble);
+            }
+
             // Try to auto-craft and place a furnace
             furnacePos = tryAutoPlaceFurnace();
             if (furnacePos == null) {
@@ -342,18 +354,85 @@ public class SmeltItemsTask extends CompanionTask {
     }
 
     private static boolean isFuel(ItemStack stack) {
-        var item = stack.getItem();
-        return item == Items.COAL || item == Items.CHARCOAL || item == Items.STICK
-                || item == Items.OAK_PLANKS || item == Items.SPRUCE_PLANKS
-                || item == Items.BIRCH_PLANKS || item == Items.JUNGLE_PLANKS
-                || item == Items.ACACIA_PLANKS || item == Items.DARK_OAK_PLANKS
-                || item == Items.MANGROVE_PLANKS || item == Items.CHERRY_PLANKS
-                || item == Items.BAMBOO_PLANKS
-                || item == Items.OAK_LOG || item == Items.SPRUCE_LOG
-                || item == Items.BIRCH_LOG || item == Items.JUNGLE_LOG
-                || item == Items.ACACIA_LOG || item == Items.DARK_OAK_LOG
-                || item == Items.MANGROVE_LOG || item == Items.CHERRY_LOG
-                || item == Items.LAVA_BUCKET || item == Items.BLAZE_ROD;
+        // Use Minecraft's built-in fuel registry — covers ALL valid fuels
+        // including modded items, dried kelp, bamboo, wooden tools, wool, etc.
+        return AbstractFurnaceBlockEntity.isFuel(stack);
+    }
+
+    /**
+     * Try to gather fuel by breaking nearby logs.
+     * Scans for log blocks within a short radius and breaks them.
+     * Logs burn for 300 ticks (1.5 items each), so 4 logs smelt 6 items.
+     *
+     * @return true if fuel was found/gathered
+     */
+    private boolean tryGatherFuel() {
+        Level level = companion.level();
+        BlockPos center = companion.blockPosition();
+        int gathered = 0;
+        int needed = Math.max(2, (count + 1) / 2); // Rough fuel estimate
+
+        for (int radius = 1; radius <= 16 && gathered < needed; radius++) {
+            for (int x = -radius; x <= radius && gathered < needed; x++) {
+                for (int y = -2; y <= 8 && gathered < needed; y++) {
+                    for (int z = -radius; z <= radius && gathered < needed; z++) {
+                        if (Math.abs(x) != radius && Math.abs(z) != radius) continue;
+                        BlockPos pos = center.offset(x, y, z);
+                        BlockState state = level.getBlockState(pos);
+                        if (state.is(net.minecraft.tags.BlockTags.LOGS)) {
+                            companion.equipBestToolForBlock(state);
+                            if (BlockHelper.breakBlock(companion, pos)) {
+                                gathered++;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (gathered > 0) {
+            MCAi.LOGGER.info("SmeltItemsTask: auto-gathered {} logs for fuel", gathered);
+            say("Gathered " + gathered + " logs for fuel.");
+        }
+        return hasFuel();
+    }
+
+    /**
+     * Try to gather cobblestone by breaking nearby stone blocks.
+     * Stone drops cobblestone when mined with a pickaxe.
+     *
+     * @param needed number of cobblestone blocks needed
+     * @return number actually gathered
+     */
+    private int tryGatherCobblestone(int needed) {
+        Level level = companion.level();
+        BlockPos center = companion.blockPosition();
+        int gathered = 0;
+
+        for (int radius = 1; radius <= 8 && gathered < needed; radius++) {
+            for (int x = -radius; x <= radius && gathered < needed; x++) {
+                for (int y = -3; y <= 2 && gathered < needed; y++) {
+                    for (int z = -radius; z <= radius && gathered < needed; z++) {
+                        BlockPos pos = center.offset(x, y, z);
+                        Block block = level.getBlockState(pos).getBlock();
+                        if (block == Blocks.STONE || block == Blocks.COBBLESTONE
+                                || block == Blocks.ANDESITE || block == Blocks.DIORITE
+                                || block == Blocks.GRANITE) {
+                            // Only mine stone if companion can harvest it
+                            BlockState state = level.getBlockState(pos);
+                            if (companion.canHarvestBlock(state)
+                                    && BlockHelper.isSafeToMine(level, pos)) {
+                                companion.equipBestToolForBlock(state);
+                                if (BlockHelper.breakBlock(companion, pos)) {
+                                    gathered++;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return gathered;
     }
 
     // ========== Auto-place furnace ==========

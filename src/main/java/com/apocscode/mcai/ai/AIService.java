@@ -786,7 +786,7 @@ public class AIService {
                 - Do NOT call craft_item again in the same turn after it returns [ASYNC_TASK].
                 - On [TASK_COMPLETE], follow the 'Next steps' instructions EXACTLY. Call each tool as described with the parameters shown.
                 - NEVER tell the player "you need materials" — craft_item handles gathering automatically.
-                - For smelting, use smelt_items (requires real furnace + fuel in companion inventory).
+                - For direct smelting requests, use smelt_items. It auto-handles furnace placement + fuel.
                 - ACT first, explain briefly after. Be fully autonomous — complete the entire task.
                 
                 TOOL ROUTING — read the user's intent and pick the RIGHT tool:
@@ -818,11 +818,14 @@ public class AIService {
                   - Use full ID if ambiguous: kill_mob(mob="livingthings:raccoon")
                   - For crafting that needs mob drops (leather→armor, string→bow), craft_item auto-handles it.
                 
-                CRAFTING AUTONOMY — craft_item handles the FULL chain:
+                CRAFTING AUTONOMY — craft_item handles the FULL chain from NOTHING:
                   - Checks inventory/chests → auto-crafts intermediates → auto-gathers missing materials
                   - Auto-places AND picks up crafting tables, furnaces, etc. as needed
                   - Auto-crafts required tools (pickaxe for mining, etc.) before gathering
                   - Auto-hunts mobs for drops (leather, string, bones, etc.)
+                  - Auto-smelts ores at a furnace (auto-crafts + auto-places furnace from cobblestone)
+                  - Auto-gathers fuel (chops trees) and cobblestone if needed for smelting
+                  - Example: "craft iron pickaxe" from nothing → chop trees → craft planks/sticks → craft wood pick → mine stone → craft stone pick → mine iron ore → auto-craft furnace → smelt iron → craft iron pickaxe
                   - Just call craft_item ONCE — it queues all gathering/smelting/crafting steps with continuations
                 
                 ORE Y-LEVELS (Minecraft 1.21 Overworld):
@@ -864,6 +867,8 @@ public class AIService {
                   Furnace smelts raw ores → ingots (raw_iron→iron_ingot, raw_gold→gold_ingot).
                   Fuel: coal(8 items), charcoal(8), planks(1.5), logs(1.5), blaze_rod(12), lava_bucket(100).
                   Blast furnace = 2x faster for ores/metal. Smoker = 2x faster for food.
+                  Smelting is fully autonomous: auto-crafts furnace from 8 cobblestone, auto-gathers fuel (chops trees), auto-places/retrieves furnace.
+                  craft_item handles smelting steps directly in the crafting chain — no need to manually call smelt_items.
                 
                 Crafting Progression (early game):
                   1. Punch tree → logs → planks → crafting table + sticks
