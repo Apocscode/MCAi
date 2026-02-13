@@ -1,14 +1,20 @@
 package com.apocscode.mcai.ai.tool;
 
+import com.apocscode.mcai.entity.CompanionEntity;
+import com.apocscode.mcai.logistics.TaggedBlock;
 import com.google.gson.JsonObject;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.Container;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.entity.BlockEntity;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Returns the player's full inventory contents.
+ * Returns the player's full inventory contents + companion inventory + storage summary.
  */
 public class GetInventoryTool implements AiTool {
 
@@ -88,6 +94,98 @@ public class GetInventoryTool implements AiTool {
             if (inv.getItem(i).isEmpty()) emptySlots++;
         }
         sb.append("\nEmpty slots: ").append(emptySlots).append("/36\n");
+
+        // === Companion Inventory ===
+        CompanionEntity companion = CompanionEntity.getLivingCompanion(context.player().getUUID());
+        if (companion != null) {
+            var compInv = companion.getCompanionInventory();
+            Map<String, Integer> compCounts = new LinkedHashMap<>();
+            Map<String, String> compNames = new LinkedHashMap<>();
+            for (int i = 0; i < compInv.getContainerSize(); i++) {
+                ItemStack stack = compInv.getItem(i);
+                if (!stack.isEmpty()) {
+                    String id = stack.getItem().toString();
+                    String name = stack.getDisplayName().getString();
+                    compCounts.merge(id, stack.getCount(), Integer::sum);
+                    compNames.putIfAbsent(id, name);
+                }
+            }
+            sb.append("\n=== Companion Inventory ===\n");
+            if (compCounts.isEmpty()) {
+                sb.append("(empty)\n");
+            } else {
+                for (Map.Entry<String, Integer> entry : compCounts.entrySet()) {
+                    sb.append("- ").append(compNames.get(entry.getKey()))
+                            .append(": ").append(entry.getValue()).append("\n");
+                }
+            }
+
+            // === Storage containers (tagged STORAGE + home area) ===
+            Map<String, Integer> storageCounts = new LinkedHashMap<>();
+            Map<String, String> storageNames = new LinkedHashMap<>();
+            java.util.Set<BlockPos> scanned = new java.util.HashSet<>();
+            Level level = context.player().level();
+
+            // Tagged STORAGE
+            for (TaggedBlock tb : companion.getTaggedBlocks(TaggedBlock.Role.STORAGE)) {
+                scanned.add(tb.pos());
+                BlockEntity be = level.getBlockEntity(tb.pos());
+                if (be instanceof Container container) {
+                    for (int i = 0; i < container.getContainerSize(); i++) {
+                        ItemStack stack = container.getItem(i);
+                        if (!stack.isEmpty()) {
+                            String id = stack.getItem().toString();
+                            String name = stack.getDisplayName().getString();
+                            storageCounts.merge(id, stack.getCount(), Integer::sum);
+                            storageNames.putIfAbsent(id, name);
+                        }
+                    }
+                }
+            }
+
+            // Home area containers
+            if (companion.hasHomeArea()) {
+                BlockPos c1 = companion.getHomeCorner1();
+                BlockPos c2 = companion.getHomeCorner2();
+                if (c1 != null && c2 != null) {
+                    int minX = Math.min(c1.getX(), c2.getX());
+                    int minY = Math.min(c1.getY(), c2.getY());
+                    int minZ = Math.min(c1.getZ(), c2.getZ());
+                    int maxX = Math.max(c1.getX(), c2.getX());
+                    int maxY = Math.max(c1.getY(), c2.getY());
+                    int maxZ = Math.max(c1.getZ(), c2.getZ());
+                    for (int x = minX; x <= maxX; x++) {
+                        for (int y = minY; y <= maxY; y++) {
+                            for (int z = minZ; z <= maxZ; z++) {
+                                BlockPos pos = new BlockPos(x, y, z);
+                                if (scanned.contains(pos)) continue;
+                                scanned.add(pos);
+                                BlockEntity be = level.getBlockEntity(pos);
+                                if (be instanceof Container container) {
+                                    for (int i = 0; i < container.getContainerSize(); i++) {
+                                        ItemStack stack = container.getItem(i);
+                                        if (!stack.isEmpty()) {
+                                            String id = stack.getItem().toString();
+                                            String name = stack.getDisplayName().getString();
+                                            storageCounts.merge(id, stack.getCount(), Integer::sum);
+                                            storageNames.putIfAbsent(id, name);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (!storageCounts.isEmpty()) {
+                sb.append("\n=== Storage/Home Containers ===\n");
+                for (Map.Entry<String, Integer> entry : storageCounts.entrySet()) {
+                    sb.append("- ").append(storageNames.get(entry.getKey()))
+                            .append(": ").append(entry.getValue()).append("\n");
+                }
+            }
+        }
 
         return sb.toString();
     }

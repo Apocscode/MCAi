@@ -14,7 +14,6 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 
 import java.util.*;
-
 /**
  * One-step smart item fetching: scans all containers within a large radius,
  * finds the best source(s) for the requested items, and transfers them to
@@ -92,10 +91,12 @@ public class FindAndFetchItemTool implements AiTool {
 
         // Phase 1: Check companion's tagged STORAGE locations FIRST (priority containers)
         CompanionEntity companion = CompanionEntity.getLivingCompanion(context.player().getUUID());
+        Set<BlockPos> scanned = new HashSet<>();
         if (companion != null) {
             List<TaggedBlock> storageBlocks = companion.getTaggedBlocks(TaggedBlock.Role.STORAGE);
             for (TaggedBlock tb : storageBlocks) {
                 BlockPos sPos = tb.pos();
+                scanned.add(sPos);
                 // Storage blocks might be outside the normal radius — always check them
                 BlockEntity sBe = level.getBlockEntity(sPos);
                 if (sBe instanceof Container sContainer) {
@@ -107,14 +108,47 @@ public class FindAndFetchItemTool implements AiTool {
                     }
                 }
             }
+
+            // Phase 1.5: Scan ALL containers within the companion's home area
+            if (companion.hasHomeArea()) {
+                BlockPos c1 = companion.getHomeCorner1();
+                BlockPos c2 = companion.getHomeCorner2();
+                if (c1 != null && c2 != null) {
+                    int minX = Math.min(c1.getX(), c2.getX());
+                    int minY = Math.min(c1.getY(), c2.getY());
+                    int minZ = Math.min(c1.getZ(), c2.getZ());
+                    int maxX = Math.max(c1.getX(), c2.getX());
+                    int maxY = Math.max(c1.getY(), c2.getY());
+                    int maxZ = Math.max(c1.getZ(), c2.getZ());
+                    for (int x = minX; x <= maxX; x++) {
+                        for (int y = minY; y <= maxY; y++) {
+                            for (int z = minZ; z <= maxZ; z++) {
+                                BlockPos pos = new BlockPos(x, y, z);
+                                if (scanned.contains(pos)) continue;
+                                scanned.add(pos);
+                                BlockEntity be = level.getBlockEntity(pos);
+                                if (be instanceof Container container) {
+                                    int available = countMatchingItems(container, itemQuery);
+                                    if (available > 0) {
+                                        double dist = Math.sqrt(center.distSqr(pos));
+                                        String blockName = level.getBlockState(pos).getBlock().getName().getString();
+                                        matches.add(new ContainerMatch(pos, container, blockName + " [HOME]", available, Math.min(dist, 1.0)));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
 
-        // Phase 2: Scan all containers within radius
+        // Phase 2: Scan all containers within radius (skip already-scanned)
 
         for (int x = -radius; x <= radius; x++) {
             for (int y = -radius; y <= radius; y++) {
                 for (int z = -radius; z <= radius; z++) {
                     BlockPos pos = center.offset(x, y, z);
+                    if (scanned.contains(pos)) continue;
                     BlockEntity be = level.getBlockEntity(pos);
                     if (be instanceof Container container) {
                         int available = countMatchingItems(container, itemQuery);

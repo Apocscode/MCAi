@@ -956,12 +956,16 @@ public class CraftItemTool implements AiTool {
             }
         }
 
-        // Also include items in tagged STORAGE containers
+        // Also include items in tagged STORAGE containers + all home area containers
         CompanionEntity companion = CompanionEntity.getLivingCompanion(context.player().getUUID());
         if (companion != null) {
+            java.util.Set<net.minecraft.core.BlockPos> scanned = new java.util.HashSet<>();
+
+            // Tagged STORAGE containers (always checked, may be outside home area)
             var storageBlocks = companion.getTaggedBlocks(
                     com.apocscode.mcai.logistics.TaggedBlock.Role.STORAGE);
             for (var tb : storageBlocks) {
+                scanned.add(tb.pos());
                 net.minecraft.world.level.block.entity.BlockEntity be =
                         context.player().level().getBlockEntity(tb.pos());
                 if (be instanceof net.minecraft.world.Container container) {
@@ -969,6 +973,39 @@ public class CraftItemTool implements AiTool {
                         ItemStack stack = container.getItem(i);
                         if (!stack.isEmpty()) {
                             available.merge(stack.getItem(), stack.getCount(), Integer::sum);
+                        }
+                    }
+                }
+            }
+
+            // ALL containers within the home area
+            if (companion.hasHomeArea()) {
+                net.minecraft.core.BlockPos c1 = companion.getHomeCorner1();
+                net.minecraft.core.BlockPos c2 = companion.getHomeCorner2();
+                if (c1 != null && c2 != null) {
+                    int minX = Math.min(c1.getX(), c2.getX());
+                    int minY = Math.min(c1.getY(), c2.getY());
+                    int minZ = Math.min(c1.getZ(), c2.getZ());
+                    int maxX = Math.max(c1.getX(), c2.getX());
+                    int maxY = Math.max(c1.getY(), c2.getY());
+                    int maxZ = Math.max(c1.getZ(), c2.getZ());
+                    for (int x = minX; x <= maxX; x++) {
+                        for (int y = minY; y <= maxY; y++) {
+                            for (int z = minZ; z <= maxZ; z++) {
+                                net.minecraft.core.BlockPos pos = new net.minecraft.core.BlockPos(x, y, z);
+                                if (scanned.contains(pos)) continue;
+                                scanned.add(pos);
+                                net.minecraft.world.level.block.entity.BlockEntity be =
+                                        context.player().level().getBlockEntity(pos);
+                                if (be instanceof net.minecraft.world.Container container) {
+                                    for (int i = 0; i < container.getContainerSize(); i++) {
+                                        ItemStack stack = container.getItem(i);
+                                        if (!stack.isEmpty()) {
+                                            available.merge(stack.getItem(), stack.getCount(), Integer::sum);
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }

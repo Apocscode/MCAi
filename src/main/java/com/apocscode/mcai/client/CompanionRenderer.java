@@ -81,9 +81,9 @@ public class CompanionRenderer extends LivingEntityRenderer<CompanionEntity, Pla
         double bbHeight = entity.getBbHeight() + 0.5;
         poseStack.translate(0.0, bbHeight, 0.0);
 
-        // Billboard — always face camera
+        // Billboard — always face camera (vanilla nametag pattern)
         poseStack.mulPose(this.entityRenderDispatcher.cameraOrientation());
-        poseStack.scale(-0.025F, -0.025F, 0.025F);
+        poseStack.scale(0.025F, -0.025F, -0.025F);
 
         Font font = this.getFont();
         Matrix4f matrix = poseStack.last().pose();

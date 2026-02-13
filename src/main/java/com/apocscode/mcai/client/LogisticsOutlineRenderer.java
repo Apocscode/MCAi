@@ -161,9 +161,9 @@ public class LogisticsOutlineRenderer {
                     pos.getY() + 1.3 - camera.y,
                     pos.getZ() + 0.5 - camera.z);
 
-            // Billboard: face camera (same approach as vanilla nametag)
+            // Billboard: face camera (vanilla nametag pattern)
             poseStack.mulPose(mc.getEntityRenderDispatcher().cameraOrientation());
-            poseStack.scale(-0.025F, -0.025F, 0.025F);
+            poseStack.scale(0.025F, -0.025F, -0.025F);
 
             Matrix4f matrix = poseStack.last().pose();
             float halfWidth = font.width(label) / 2.0f;
@@ -189,7 +189,7 @@ public class LogisticsOutlineRenderer {
                     poseStack.pushPose();
                     poseStack.translate(cx - camera.x, cy - camera.y, cz - camera.z);
                     poseStack.mulPose(mc.getEntityRenderDispatcher().cameraOrientation());
-                    poseStack.scale(-0.03F, -0.03F, 0.03F);
+                    poseStack.scale(0.03F, -0.03F, -0.03F);
 
                     Matrix4f matrix = poseStack.last().pose();
                     String homeLabel = "Home Area";

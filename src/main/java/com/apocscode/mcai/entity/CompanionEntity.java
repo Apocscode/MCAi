@@ -313,6 +313,7 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
         this.goalSelector.addGoal(0, new FloatGoal(this));
         this.goalSelector.addGoal(1, new CompanionCombatGoal(this, 1.2D, true));
         this.goalSelector.addGoal(2, new CompanionEatFoodGoal(this));
+        this.goalSelector.addGoal(2, new CompanionFetchFoodGoal(this));   // Fetch food from chests when hungry
         this.goalSelector.addGoal(3, new CompanionCookFoodGoal(this));   // Cook raw food at furnace/campfire
         this.goalSelector.addGoal(4, new CompanionFarmGoal(this));       // Harvest mature crops
         this.goalSelector.addGoal(5, new CompanionPickupItemGoal(this));   // Actively seek dropped items
