@@ -123,7 +123,7 @@ public class AiConfig {
         CLOUD_MODEL = builder
                 .comment("Model name — depends on provider. Examples:",
                         "  Groq:       meta-llama/llama-4-scout-17b-16e-instruct",
-                        "  OpenRouter: meta-llama/llama-3.1-8b-instruct:free",
+                        "  OpenRouter: meta-llama/llama-3.3-70b-instruct:free",
                         "  Together:   meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo",
                         "  Cerebras:   llama3.1-8b")
                 .define("cloudModel", "meta-llama/llama-4-scout-17b-16e-instruct");
@@ -149,7 +149,7 @@ public class AiConfig {
 
         CLOUD_FALLBACK_MODEL = builder
                 .comment("Fallback model name")
-                .define("fallbackModel", "meta-llama/llama-3.1-8b-instruct:free");
+                .define("fallbackModel", "meta-llama/llama-3.3-70b-instruct:free");
 
         CLOUD_FALLBACK_URL = builder
                 .comment("Fallback API endpoint URL")
