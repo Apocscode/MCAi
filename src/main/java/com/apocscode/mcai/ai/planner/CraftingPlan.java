@@ -57,7 +57,8 @@ public class CraftingPlan {
                 case CHOP -> String.format(
                         "chop_trees({\"maxLogs\":%d,\"plan\":\"%s\"})", count, remainingPlan);
                 case MINE -> String.format(
-                        "mine_ores({\"maxOres\":%d,\"plan\":\"%s\"})", count, remainingPlan);
+                        "mine_ores({\"ore\":\"%s\",\"maxOres\":%d,\"plan\":\"%s\"})",
+                        itemId, count, remainingPlan);
                 case GATHER -> String.format(
                         "gather_blocks({\"block\":\"%s\",\"maxBlocks\":%d,\"plan\":\"%s\"})",
                         itemId, count, remainingPlan);
@@ -70,7 +71,8 @@ public class CraftingPlan {
                 case CRAFT -> String.format(
                         "craft_item({\"item\":\"%s\",\"count\":%d})", itemId, count);
                 case FARM -> String.format(
-                        "farm_area({\"crop\":\"%s\",\"plan\":\"%s\"})", itemId, remainingPlan);
+                        "gather_blocks({\"block\":\"%s\",\"maxBlocks\":%d,\"plan\":\"%s\"})",
+                        itemId, count, remainingPlan);
                 case FISH -> String.format(
                         "go_fishing({\"maxFish\":%d,\"plan\":\"%s\"})", count, remainingPlan);
                 case KILL_MOB -> {

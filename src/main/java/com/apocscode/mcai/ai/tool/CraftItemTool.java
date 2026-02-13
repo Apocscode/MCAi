@@ -8,9 +8,11 @@ import com.apocscode.mcai.logistics.ItemRoutingHelper;
 import com.apocscode.mcai.task.BlockHelper;
 import com.apocscode.mcai.task.ChopTreesTask;
 import com.apocscode.mcai.task.CompanionTask;
+import com.apocscode.mcai.task.FishingTask;
 import com.apocscode.mcai.task.GatherBlocksTask;
 import com.apocscode.mcai.task.KillMobTask;
 import com.apocscode.mcai.task.MineOresTask;
+import com.apocscode.mcai.task.OreGuide;
 import com.apocscode.mcai.task.SmeltItemsTask;
 import com.apocscode.mcai.task.TaskContinuation;
 import com.google.gson.JsonArray;
@@ -985,12 +987,12 @@ public class CraftItemTool implements AiTool {
     private String stepToInstruction(CraftingPlan.Step step) {
         return switch (step.type) {
             case CHOP -> "chop_trees for " + step.count + " logs";
-            case MINE -> "mine_ores for " + step.count + " ores";
+            case MINE -> "mine_ores(ore=\"" + step.itemId + "\") for " + step.count + " ores";
             case GATHER -> "gather " + step.count + "x " + step.itemId;
             case SMELT, BLAST -> "smelt " + step.count + "x " + step.itemId;
             case SMOKE, CAMPFIRE_COOK -> "cook " + step.count + "x " + step.itemId;
-            case FARM -> "farm " + step.itemId;
-            case FISH -> "fish for " + step.count + "x " + step.itemId;
+            case FARM -> "gather " + step.count + "x " + step.itemId + " (farm/plants)";
+            case FISH -> "go_fishing for " + step.count + " fish";
             case KILL_MOB -> "kill mobs for " + step.count + "x " + step.itemId;
             case CRAFT -> "craft " + step.count + "x " + step.itemId;
             default -> step.toString();
@@ -1003,7 +1005,15 @@ public class CraftItemTool implements AiTool {
     private CompanionTask createTaskForStep(CraftingPlan.Step step, CompanionEntity companion) {
         return switch (step.type) {
             case CHOP -> new ChopTreesTask(companion, 16, Math.max(step.count, 4));
-            case MINE -> new MineOresTask(companion, 16, Math.max(step.count, 3));
+            case MINE -> {
+                // Use targeted ore type when possible (e.g., "raw_iron" → IRON ore)
+                OreGuide.Ore targetOre = OreGuide.findByName(step.itemId);
+                if (targetOre != null) {
+                    MCAi.LOGGER.info("createTaskForStep: MINE {} → targeted ore: {}",
+                            step.itemId, targetOre.name);
+                }
+                yield new MineOresTask(companion, 16, Math.max(step.count, 3), targetOre);
+            }
             case GATHER -> {
                 Block block = resolveGatherBlock(step.itemId);
                 yield block != null
@@ -1016,6 +1026,20 @@ public class CraftItemTool implements AiTool {
                 yield new KillMobTask(companion,
                         KillMobTask.resolveEntityType(mobName),
                         mobName, Math.max(step.count, 1));
+            }
+            case FISH -> {
+                yield new FishingTask(companion, Math.max(step.count, 1));
+            }
+            case FARM -> {
+                // FARM items (wheat, flowers, mushrooms, etc.) — use GatherBlocksTask
+                // to scan and collect the block form of the item from the world.
+                // FarmAreaTask requires corners and is for user-directed farming.
+                Block block = resolveFarmBlock(step.itemId);
+                if (block != null) {
+                    yield new GatherBlocksTask(companion, block, 24, Math.max(step.count, 1));
+                }
+                MCAi.LOGGER.warn("createTaskForStep: cannot resolve farm block for {}", step.itemId);
+                yield null;
             }
             case SMELT, BLAST, SMOKE, CAMPFIRE_COOK -> {
                 // Resolve the raw material input from the smelting recipe
@@ -1081,6 +1105,25 @@ public class CraftItemTool implements AiTool {
             case "flint" -> Blocks.GRAVEL;  // Gravel drops flint
             case "clay_ball" -> Blocks.CLAY;
             case "snowball" -> Blocks.SNOW_BLOCK;
+            case "sand", "red_sand" -> Blocks.SAND;
+            case "gravel" -> Blocks.GRAVEL;
+            case "dirt" -> Blocks.DIRT;
+            case "stone" -> Blocks.STONE;
+            case "obsidian" -> Blocks.OBSIDIAN;
+            case "ice" -> Blocks.ICE;
+            case "netherrack" -> Blocks.NETHERRACK;
+            case "soul_sand" -> Blocks.SOUL_SAND;
+            case "soul_soil" -> Blocks.SOUL_SOIL;
+            case "basalt" -> Blocks.BASALT;
+            case "blackstone" -> Blocks.BLACKSTONE;
+            case "end_stone" -> Blocks.END_STONE;
+            case "moss_block" -> Blocks.MOSS_BLOCK;
+            case "mud" -> Blocks.MUD;
+            case "calcite" -> Blocks.CALCITE;
+            case "tuff" -> Blocks.TUFF;
+            case "dripstone_block" -> Blocks.DRIPSTONE_BLOCK;
+            case "pointed_dripstone" -> Blocks.POINTED_DRIPSTONE;
+            case "clay" -> Blocks.CLAY;
             default -> {
                 // Try to find block by registry name
                 for (var entry : BuiltInRegistries.BLOCK.entrySet()) {
@@ -1089,6 +1132,59 @@ public class CraftItemTool implements AiTool {
                     }
                 }
                 yield Blocks.STONE; // fallback
+            }
+        };
+    }
+
+    /**
+     * Resolve a FARM item ID to a Block for gathering from the world.
+     * Maps crop/plant items to their breakable block forms.
+     * Most "farm" items are plants/flowers that exist as blocks in the world.
+     */
+    private Block resolveFarmBlock(String itemId) {
+        return switch (itemId) {
+            // Crops — break the crop block itself
+            case "wheat", "wheat_seeds" -> Blocks.WHEAT;
+            case "carrot" -> Blocks.CARROTS;
+            case "potato" -> Blocks.POTATOES;
+            case "beetroot", "beetroot_seeds" -> Blocks.BEETROOTS;
+            case "melon_slice" -> Blocks.MELON;
+            case "pumpkin" -> Blocks.PUMPKIN;
+            case "sugar_cane", "sugar" -> Blocks.SUGAR_CANE;
+            case "bamboo" -> Blocks.BAMBOO;
+            case "cactus" -> Blocks.CACTUS;
+            case "cocoa_beans" -> Blocks.COCOA;
+            case "sweet_berries" -> Blocks.SWEET_BERRY_BUSH;
+            case "kelp", "dried_kelp" -> Blocks.KELP;
+            case "nether_wart" -> Blocks.NETHER_WART;
+            case "chorus_fruit" -> Blocks.CHORUS_PLANT;
+            // Flowers
+            case "dandelion" -> Blocks.DANDELION;
+            case "poppy" -> Blocks.POPPY;
+            case "blue_orchid" -> Blocks.BLUE_ORCHID;
+            case "allium" -> Blocks.ALLIUM;
+            case "azure_bluet" -> Blocks.AZURE_BLUET;
+            case "cornflower" -> Blocks.CORNFLOWER;
+            case "lily_of_the_valley" -> Blocks.LILY_OF_THE_VALLEY;
+            case "lily_pad" -> Blocks.LILY_PAD;
+            // Mushrooms
+            case "red_mushroom" -> Blocks.RED_MUSHROOM;
+            case "brown_mushroom" -> Blocks.BROWN_MUSHROOM;
+            // Other gatherable plants
+            case "vine" -> Blocks.VINE;
+            case "fern" -> Blocks.FERN;
+            case "tall_grass" -> Blocks.SHORT_GRASS;
+            case "seagrass" -> Blocks.SEAGRASS;
+            case "apple" -> Blocks.OAK_LEAVES;  // Apple drops from oak leaves
+            default -> {
+                // Try to find block by registry name
+                for (var entry : BuiltInRegistries.BLOCK.entrySet()) {
+                    if (entry.getKey().location().getPath().equals(itemId)) {
+                        yield entry.getValue();
+                    }
+                }
+                MCAi.LOGGER.debug("resolveFarmBlock: no block mapping for '{}'", itemId);
+                yield null;
             }
         };
     }
