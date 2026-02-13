@@ -31,4 +31,20 @@ public record TaskContinuation(
                 "Call each tool with the parameters shown. " +
                 "craft_item will auto-pull materials from your inventory and nearby chests.";
     }
+
+    /**
+     * Build the synthetic message sent to the AI when a task FAILS but has a continuation.
+     * Gives the AI context to try an alternative approach.
+     */
+    public String buildFailureContinuationMessage(String taskDescription, String failReason) {
+        return "[TASK_FAILED] " + taskDescription + " — Reason: " + failReason +
+                "\n\nOriginal plan: " + planContext +
+                "\nRemaining steps: " + nextSteps +
+                "\n\nThe previous step FAILED. You must adapt and try an alternative approach:" +
+                "\n- If mine_ores failed (could not reach ores / no ores found): use strip_mine instead — it digs a tunnel at the optimal Y-level." +
+                "\n- If gather_blocks failed: try a larger radius or different location." +
+                "\n- If the task timed out or got stuck: retry with adjusted parameters." +
+                "\nThen continue with the remaining steps of the original plan." +
+                "\nDo NOT give up — find an alternative way to get the materials needed.";
+    }
 }

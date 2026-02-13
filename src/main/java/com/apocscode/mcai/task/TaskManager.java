@@ -90,8 +90,15 @@ public class TaskManager {
             }
 
             // Fire continuation if one was registered (for multi-step plans)
-            if (continuation != null && taskStatus == CompanionTask.Status.COMPLETED) {
-                fireContinuation(continuation, taskDescription);
+            if (continuation != null) {
+                if (taskStatus == CompanionTask.Status.COMPLETED) {
+                    fireContinuation(continuation, taskDescription);
+                } else {
+                    // Fire failure continuation so the AI can adapt and try alternatives
+                    String failReason = activeTask.getFailReason() != null
+                            ? activeTask.getFailReason() : "unknown error";
+                    fireFailureContinuation(continuation, taskDescription, failReason);
+                }
             }
 
             activeTask = null;
@@ -224,6 +231,31 @@ public class TaskManager {
                 "Continuing the plan...");
 
         AIService.continueAfterTask(continuation, "Completed: " + taskDescription,
+                serverPlayer, companionName);
+    }
+
+    /**
+     * Fire a failure continuation — triggers an AI follow-up chat so it can adapt the plan.
+     * Called when a task with a continuation FAILS (e.g., mine_ores can't reach underground ore).
+     */
+    private void fireFailureContinuation(TaskContinuation continuation, String taskDescription, String failReason) {
+        Player owner = companion.getOwner();
+        if (!(owner instanceof ServerPlayer serverPlayer)) {
+            MCAi.LOGGER.warn("Cannot fire failure continuation — owner not online");
+            return;
+        }
+
+        String companionName = companion.getCompanionName();
+        MCAi.LOGGER.info("Firing FAILURE continuation for '{}': reason='{}', plan='{}'",
+                taskDescription, failReason, continuation.planContext());
+
+        companion.getChat().say(CompanionChat.Category.TASK,
+                "That didn't work, trying another approach...");
+
+        String syntheticMessage = continuation.buildFailureContinuationMessage(taskDescription, failReason);
+        MCAi.LOGGER.info("Failure continuation message: {}", syntheticMessage);
+
+        AIService.continueAfterTask(continuation, "FAILED: " + taskDescription + " — " + failReason,
                 serverPlayer, companionName);
     }
 }
