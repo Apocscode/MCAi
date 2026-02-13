@@ -8,8 +8,12 @@ import java.util.EnumSet;
 /**
  * Goal that ticks the companion's TaskManager each server tick.
  *
- * Active whenever the companion has queued tasks and is in AUTO mode.
- * Uses MOVE + LOOK flags so tasks can control pathfinding.
+ * Active whenever the companion has queued tasks (any behavior mode except STAY).
+ * Uses MOVE + LOOK flags so tasks can control pathfinding without interference
+ * from follow/wander goals.
+ *
+ * Priority should be set high (2) so only combat and swimming can preempt tasks
+ * that the player explicitly requested via AI chat.
  */
 public class CompanionTaskGoal extends Goal {
     private final CompanionEntity companion;
@@ -21,14 +25,15 @@ public class CompanionTaskGoal extends Goal {
 
     @Override
     public boolean canUse() {
-        if (companion.getBehaviorMode() != CompanionEntity.BehaviorMode.AUTO) return false;
+        // Tasks run in any mode except STAY — the player explicitly asked the AI to do something
+        if (companion.getBehaviorMode() == CompanionEntity.BehaviorMode.STAY) return false;
         if (companion.level().isClientSide) return false;
         return companion.getTaskManager().hasTasks();
     }
 
     @Override
     public boolean canContinueToUse() {
-        if (companion.getBehaviorMode() != CompanionEntity.BehaviorMode.AUTO) return false;
+        if (companion.getBehaviorMode() == CompanionEntity.BehaviorMode.STAY) return false;
         return companion.getTaskManager().hasTasks();
     }
 
@@ -39,7 +44,7 @@ public class CompanionTaskGoal extends Goal {
 
     @Override
     public void stop() {
-        // Don't cancel tasks — just pause them while not in AUTO mode
+        // Don't cancel tasks — just pause them while mode changes
         companion.getNavigation().stop();
     }
 }

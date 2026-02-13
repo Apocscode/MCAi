@@ -34,6 +34,8 @@ public class TaskManager {
      */
     public void queueTask(CompanionTask task) {
         taskQueue.addLast(task);
+        // Clear interaction freeze — player gave a command, so let the companion move
+        companion.setOwnerInteracting(false);
         MCAi.LOGGER.info("Task queued: {} (queue size: {})", task.getDescription(), taskQueue.size());
     }
 
@@ -42,6 +44,8 @@ public class TaskManager {
      */
     public void queueTaskFirst(CompanionTask task) {
         taskQueue.addFirst(task);
+        // Clear interaction freeze — player gave a command, so let the companion move
+        companion.setOwnerInteracting(false);
         MCAi.LOGGER.info("Priority task queued: {} (queue size: {})", task.getDescription(), taskQueue.size());
     }
 

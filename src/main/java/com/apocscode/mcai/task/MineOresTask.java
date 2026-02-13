@@ -2,6 +2,7 @@ package com.apocscode.mcai.task;
 
 import com.apocscode.mcai.entity.CompanionEntity;
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
@@ -92,7 +93,21 @@ public class MineOresTask extends CompanionTask {
                 stuckTimer = 0;
                 return; // Skip this ore
             }
-            companion.equipBestToolForBlock(companion.level().getBlockState(currentTarget));
+            // Tool-tier check: skip ores we can't properly harvest (e.g. iron ore needs stone pickaxe+)
+            BlockState targetState = companion.level().getBlockState(currentTarget);
+            if (!companion.canHarvestBlock(targetState)) {
+                targets.poll();
+                currentTarget = null;
+                stuckTimer = 0;
+                consecutiveSkips++;
+                if (consecutiveSkips >= MAX_CONSECUTIVE_SKIPS) {
+                    say("I don't have the right tools to mine these ores. Need a better pickaxe.");
+                    complete();
+                    return;
+                }
+                return; // Skip — wrong tool tier
+            }
+            companion.equipBestToolForBlock(targetState);
             BlockHelper.breakBlock(companion, currentTarget);
             targets.poll();
             currentTarget = null;

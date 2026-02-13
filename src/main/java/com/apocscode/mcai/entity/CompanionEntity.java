@@ -331,8 +331,8 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
         });
         // Guard mode — patrol and defend area
         this.goalSelector.addGoal(3, new CompanionGuardGoal(this));
-        // Automation — task queue and logistics (AUTO mode only)
-        this.goalSelector.addGoal(3, new com.apocscode.mcai.entity.goal.CompanionTaskGoal(this));
+        // Task queue — AI-requested tasks get high priority (player explicitly asked)
+        this.goalSelector.addGoal(2, new com.apocscode.mcai.entity.goal.CompanionTaskGoal(this));
         this.goalSelector.addGoal(4, new com.apocscode.mcai.entity.goal.CompanionLogisticsGoal(this));
 
         // Targeting
@@ -616,7 +616,8 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
         super.tick();
         if (!this.level().isClientSide) {
             // Freeze all movement if owner is interacting with companion UI
-            if (isOwnerInteracting()) {
+            // BUT allow navigation when tasks are active (player sent a command via chat)
+            if (isOwnerInteracting() && taskManager.isIdle()) {
                 this.getNavigation().stop();
             }
 
