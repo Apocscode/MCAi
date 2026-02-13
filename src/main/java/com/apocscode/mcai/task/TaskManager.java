@@ -141,6 +141,13 @@ public class TaskManager {
     }
 
     /**
+     * Get the active task (for continuation injection). Returns null if idle.
+     */
+    public CompanionTask peekActiveTask() {
+        return activeTask;
+    }
+
+    /**
      * Get the active task description, or null if idle.
      */
     public String getActiveTaskDescription() {

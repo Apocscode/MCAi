@@ -223,31 +223,57 @@ public class CraftItemTool implements AiTool {
 
             ItemStack result = new ItemStack(targetItem, totalOutput);
 
-            // Give the requested amount to the player
-            int forPlayer = Math.min(totalOutput, stillNeed);
-            ItemStack playerShare = new ItemStack(targetItem, forPlayer);
-            if (!context.player().getInventory().add(playerShare)) {
-                context.player().drop(playerShare, false);
+            // Give the requested amount to the companion inventory (items belong to the AI companion)
+            int forCompanion = Math.min(totalOutput, stillNeed);
+            ItemStack companionShare = new ItemStack(targetItem, forCompanion);
+            SimpleContainer companionInv = getCompanionInventory(context);
+            if (companionInv != null) {
+                ItemStack rem = companionInv.addItem(companionShare);
+                // If companion inventory full, fallback to player
+                if (!rem.isEmpty()) {
+                    if (!context.player().getInventory().add(rem)) {
+                        context.player().drop(rem, false);
+                    }
+                }
+            } else {
+                // No companion — give to player as fallback
+                if (!context.player().getInventory().add(companionShare)) {
+                    context.player().drop(companionShare, false);
+                }
             }
 
             // Route any excess to tagged storage (OUTPUT > STORAGE > companion inventory)
-            int excess = totalOutput - forPlayer;
+            int excess = totalOutput - forCompanion;
             String depositMsg = "";
             if (excess > 0) {
                 CompanionEntity companion = CompanionEntity.getLivingCompanion(context.player().getUUID());
                 if (companion != null && ItemRoutingHelper.hasTaggedStorage(companion)) {
                     ItemStack excessStack = new ItemStack(targetItem, excess);
                     depositMsg = " " + ItemRoutingHelper.routeToStorage(companion, excessStack);
-                    // If any couldn't be routed, give to player
+                    // If any couldn't be routed, give to companion then player
                     if (!excessStack.isEmpty()) {
-                        if (!context.player().getInventory().add(excessStack)) {
+                        if (companionInv != null) {
+                            ItemStack rem = companionInv.addItem(excessStack);
+                            if (!rem.isEmpty()) {
+                                if (!context.player().getInventory().add(rem)) {
+                                    context.player().drop(rem, false);
+                                }
+                            }
+                        } else if (!context.player().getInventory().add(excessStack)) {
                             context.player().drop(excessStack, false);
                         }
                     }
                 } else {
-                    // No tagged storage — give everything to player
+                    // No tagged storage — give to companion inventory
                     ItemStack excessStack = new ItemStack(targetItem, excess);
-                    if (!context.player().getInventory().add(excessStack)) {
+                    if (companionInv != null) {
+                        ItemStack rem = companionInv.addItem(excessStack);
+                        if (!rem.isEmpty()) {
+                            if (!context.player().getInventory().add(rem)) {
+                                context.player().drop(rem, false);
+                            }
+                        }
+                    } else if (!context.player().getInventory().add(excessStack)) {
                         context.player().drop(excessStack, false);
                     }
                 }
@@ -262,8 +288,8 @@ public class CraftItemTool implements AiTool {
             StringBuilder sb = new StringBuilder();
             if (craftLog.length() > 0) sb.append(craftLog);
             sb.append("Crafted ").append(totalOutput).append("x ").append(targetName);
-            if (forPlayer < totalOutput) {
-                sb.append(" (").append(forPlayer).append(" to player");
+            if (forCompanion < totalOutput) {
+                sb.append(" (").append(forCompanion).append(" to companion");
                 if (excess > 0) sb.append(", ").append(excess).append(" to storage");
                 sb.append(")");
             }
@@ -275,12 +301,13 @@ public class CraftItemTool implements AiTool {
     // ========== Container scanning (auto-fetch from chests) ==========
 
     /**
-     * Scans nearby containers for the finished item and pulls it into the player's inventory.
+     * Scans nearby containers for the finished item and pulls it into the companion's inventory.
      * Returns the number of items fetched.
      */
     private int fetchFromNearbyContainers(ToolContext context, Item targetItem, int maxToFetch) {
         Level level = context.player().level();
         BlockPos center = context.player().blockPosition();
+        SimpleContainer companionInv = getCompanionInventory(context);
         int fetched = 0;
 
         for (int x = -CHEST_SCAN_RADIUS; x <= CHEST_SCAN_RADIUS && fetched < maxToFetch; x++) {
@@ -297,13 +324,32 @@ public class CraftItemTool implements AiTool {
                         int toTake = Math.min(stack.getCount(), maxToFetch - fetched);
                         ItemStack toInsert = stack.copyWithCount(toTake);
 
-                        if (context.player().getInventory().add(toInsert)) {
-                            int inserted = toTake - toInsert.getCount();
-                            if (toInsert.isEmpty()) inserted = toTake;
-                            stack.shrink(inserted);
+                        // Route to companion inventory first, player as fallback
+                        boolean inserted = false;
+                        int actualInserted = 0;
+                        if (companionInv != null) {
+                            ItemStack rem = companionInv.addItem(toInsert);
+                            actualInserted = toTake - rem.getCount();
+                            if (!rem.isEmpty()) {
+                                // Companion full — try player for remainder
+                                if (context.player().getInventory().add(rem)) {
+                                    actualInserted = toTake;
+                                }
+                            } else {
+                                actualInserted = toTake;
+                            }
+                            inserted = actualInserted > 0;
+                        } else if (context.player().getInventory().add(toInsert)) {
+                            actualInserted = toTake - toInsert.getCount();
+                            if (toInsert.isEmpty()) actualInserted = toTake;
+                            inserted = actualInserted > 0;
+                        }
+
+                        if (inserted) {
+                            stack.shrink(actualInserted);
                             if (stack.isEmpty()) container.setItem(i, ItemStack.EMPTY);
                             container.setChanged();
-                            fetched += inserted;
+                            fetched += actualInserted;
                         }
                     }
                 }
@@ -513,17 +559,19 @@ public class CraftItemTool implements AiTool {
                 }
             }
 
-            // Place results where countInInventory can find them
+            // Place results in companion inventory (where tasks consume from)
             int produced = actualSub * outputPerCraft;
             ItemStack subResult = new ItemStack(targetItem, produced);
-            if (!context.player().getInventory().add(subResult)) {
-                SimpleContainer companionInv = getCompanionInventory(context);
-                if (companionInv != null) {
-                    ItemStack rem = companionInv.addItem(subResult);
-                    if (!rem.isEmpty()) context.player().drop(rem, false);
-                } else {
-                    context.player().drop(subResult, false);
+            SimpleContainer companionInv = getCompanionInventory(context);
+            if (companionInv != null) {
+                ItemStack rem = companionInv.addItem(subResult);
+                if (!rem.isEmpty()) {
+                    if (!context.player().getInventory().add(rem)) {
+                        context.player().drop(rem, false);
+                    }
                 }
+            } else if (!context.player().getInventory().add(subResult)) {
+                context.player().drop(subResult, false);
             }
 
             log.append("Auto-crafted ").append(produced).append("x ")
@@ -1678,33 +1726,35 @@ public class CraftItemTool implements AiTool {
     }
 
     /**
-     * Consumes ingredient from player inventory first, then companion inventory.
+     * Consumes ingredient from companion inventory first, then player inventory.
      */
     private void consumeIngredient(ToolContext context, Ingredient ingredient, int amount) {
         int remaining = amount;
 
-        var playerInv = context.player().getInventory();
-        for (int i = 0; i < playerInv.getContainerSize() && remaining > 0; i++) {
-            ItemStack stack = playerInv.getItem(i);
-            if (!stack.isEmpty() && ingredient.test(stack)) {
-                int toRemove = Math.min(stack.getCount(), remaining);
-                stack.shrink(toRemove);
-                if (stack.isEmpty()) playerInv.setItem(i, ItemStack.EMPTY);
-                remaining -= toRemove;
+        // Try companion inventory first (where gathered materials are stored)
+        SimpleContainer companionInv = getCompanionInventory(context);
+        if (companionInv != null) {
+            for (int i = 0; i < companionInv.getContainerSize() && remaining > 0; i++) {
+                ItemStack stack = companionInv.getItem(i);
+                if (!stack.isEmpty() && ingredient.test(stack)) {
+                    int toRemove = Math.min(stack.getCount(), remaining);
+                    stack.shrink(toRemove);
+                    if (stack.isEmpty()) companionInv.setItem(i, ItemStack.EMPTY);
+                    remaining -= toRemove;
+                }
             }
         }
 
+        // Fallback to player inventory
         if (remaining > 0) {
-            SimpleContainer companionInv = getCompanionInventory(context);
-            if (companionInv != null) {
-                for (int i = 0; i < companionInv.getContainerSize() && remaining > 0; i++) {
-                    ItemStack stack = companionInv.getItem(i);
-                    if (!stack.isEmpty() && ingredient.test(stack)) {
-                        int toRemove = Math.min(stack.getCount(), remaining);
-                        stack.shrink(toRemove);
-                        if (stack.isEmpty()) companionInv.setItem(i, ItemStack.EMPTY);
-                        remaining -= toRemove;
-                    }
+            var playerInv = context.player().getInventory();
+            for (int i = 0; i < playerInv.getContainerSize() && remaining > 0; i++) {
+                ItemStack stack = playerInv.getItem(i);
+                if (!stack.isEmpty() && ingredient.test(stack)) {
+                    int toRemove = Math.min(stack.getCount(), remaining);
+                    stack.shrink(toRemove);
+                    if (stack.isEmpty()) playerInv.setItem(i, ItemStack.EMPTY);
+                    remaining -= toRemove;
                 }
             }
         }

@@ -2,6 +2,7 @@ package com.apocscode.mcai.ai.tool;
 
 import com.apocscode.mcai.MCAi;
 import com.apocscode.mcai.entity.CompanionEntity;
+import com.apocscode.mcai.task.CompanionTask;
 import com.apocscode.mcai.task.MineOresTask;
 import com.apocscode.mcai.task.OreGuide;
 import com.apocscode.mcai.task.TaskContinuation;
@@ -125,7 +126,29 @@ public class MineOresTool implements AiTool {
                                 MCAi.LOGGER.info("Auto-crafted pickaxe, proceeding to mine");
                                 // Fall through to create mining task below
                             } else if (craftResult.contains("[ASYNC_TASK]")) {
-                                // Crafting needs gathering first — return async with plan to mine after
+                                // Crafting needs gathering first — inject mine_ores into the task continuation chain
+                                // so mining actually starts after the pickaxe is auto-crafted.
+                                // The craft chain ends with "Call craft_item(stone_pickaxe)..." — we append
+                                // ", then Call mine_ores(...)" so the AI continues to mine after crafting.
+                                String mineCall = "Call " + planText;
+                                CompanionTask activeTask = companion.getTaskManager().peekActiveTask();
+                                if (activeTask != null && activeTask.getContinuation() != null) {
+                                    TaskContinuation existing = activeTask.getContinuation();
+                                    String newNextSteps = existing.nextSteps() + ", then " + mineCall;
+                                    activeTask.setContinuation(new TaskContinuation(
+                                            existing.ownerUUID(),
+                                            existing.planContext(),
+                                            newNextSteps
+                                    ));
+                                    MCAi.LOGGER.info("Injected mine_ores continuation into craft chain: {}", mineCall);
+                                } else if (activeTask != null) {
+                                    activeTask.setContinuation(new TaskContinuation(
+                                            context.player().getUUID(),
+                                            "Craft " + neededPick + " then mine " + targetOre.name,
+                                            mineCall
+                                    ));
+                                    MCAi.LOGGER.info("Set mine_ores continuation on active task: {}", mineCall);
+                                }
                                 return craftResult + " After crafting " + neededPick +
                                         ", I'll mine " + targetOre.name + " ore.";
                             } else {
