@@ -22,6 +22,11 @@ public class AiConfig {
     public static final ModConfigSpec.ConfigValue<String> CLOUD_MODEL;
     public static final ModConfigSpec.ConfigValue<String> CLOUD_URL;
 
+    // ---- Cloud AI Fallback (second cloud provider, used when primary hits rate limits) ----
+    public static final ModConfigSpec.ConfigValue<String> CLOUD_FALLBACK_API_KEY;
+    public static final ModConfigSpec.ConfigValue<String> CLOUD_FALLBACK_MODEL;
+    public static final ModConfigSpec.ConfigValue<String> CLOUD_FALLBACK_URL;
+
     // ---- Whisper Voice ----
     public static final ModConfigSpec.ConfigValue<String> WHISPER_URL;
 
@@ -133,6 +138,24 @@ public class AiConfig {
                 .define("cloudUrl", "https://api.groq.com/openai/v1/chat/completions");
 
         builder.pop(); // cloud
+
+        builder.comment("Fallback cloud AI — used when the primary cloud provider hits rate limits",
+                "Set a DIFFERENT provider here for seamless failover",
+                "Example: primary=Groq (fast but limited), fallback=OpenRouter (unlimited free models)").push("cloud_fallback");
+
+        CLOUD_FALLBACK_API_KEY = builder
+                .comment("Fallback cloud API key (leave empty to fall back to local Ollama instead)")
+                .define("fallbackApiKey", "");
+
+        CLOUD_FALLBACK_MODEL = builder
+                .comment("Fallback model name")
+                .define("fallbackModel", "meta-llama/llama-3.1-8b-instruct:free");
+
+        CLOUD_FALLBACK_URL = builder
+                .comment("Fallback API endpoint URL")
+                .define("fallbackUrl", "https://openrouter.ai/api/v1/chat/completions");
+
+        builder.pop(); // cloud_fallback
 
         builder.comment("Whisper voice input settings").push("whisper");
 
@@ -309,6 +332,18 @@ public class AiConfig {
     public static boolean isCloudEnabled() {
         try {
             String key = CLOUD_API_KEY.get();
+            return key != null && !key.isBlank();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /**
+     * Check if a fallback cloud provider is configured.
+     */
+    public static boolean isCloudFallbackEnabled() {
+        try {
+            String key = CLOUD_FALLBACK_API_KEY.get();
             return key != null && !key.isBlank();
         } catch (Exception e) {
             return false;

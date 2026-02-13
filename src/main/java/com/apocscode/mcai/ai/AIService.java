@@ -49,12 +49,15 @@ public class AIService {
         ToolRegistry.init();
 
         try {
-            String backend = AiConfig.isCloudEnabled() ? "Cloud (" + AiConfig.CLOUD_MODEL.get() + ")"
+            String primary = AiConfig.isCloudEnabled() ? "Cloud (" + AiConfig.CLOUD_MODEL.get() + ")"
                     : "Ollama (" + AiConfig.OLLAMA_MODEL.get() + ")";
-            MCAi.LOGGER.info("AI Service initialized (backend: {}, tools: {})",
-                    backend, ToolRegistry.getAll().size());
+            String fallback = AiConfig.isCloudFallbackEnabled()
+                    ? " → Fallback: " + AiConfig.CLOUD_FALLBACK_MODEL.get()
+                    : "";
+            MCAi.LOGGER.info("AI Service initialized (backend: {}{}, tools: {})",
+                    primary, fallback, ToolRegistry.getAll().size());
             AiLogger.log(AiLogger.Category.SYSTEM, "INFO",
-                    "AIService initialized — backend=" + backend +
+                    "AIService initialized — backend=" + primary + fallback +
                     ", tools=" + ToolRegistry.getAll().size());
         } catch (Exception e) {
             MCAi.LOGGER.info("AI Service initialized (config not yet loaded, {} tools registered)",
@@ -142,17 +145,39 @@ public class AIService {
                 response = useCloud ? callCloudAI(messages, userMessage) : callOllama(messages, userMessage);
             } catch (IOException e) {
                 if (useCloud && e.getMessage() != null && e.getMessage().contains("429")) {
-                    // Cloud rate limited after retries — silently fall back to local Ollama
-                    MCAi.LOGGER.info("Cloud AI rate limited, falling back to Ollama for this request");
-                    AiLogger.log(AiLogger.Category.AI_REQUEST, "WARN",
-                            "Cloud AI rate limited — falling back to Ollama");
-                    try {
-                        response = callOllama(messages, userMessage);
-                    } catch (IOException ollamaEx) {
-                        // Both backends failed — give a friendly message
-                        MCAi.LOGGER.warn("Ollama fallback also failed: {}", ollamaEx.getMessage());
-                        return "I'm taking a breather — my cloud AI hit its rate limit and local AI (Ollama) isn't running. " +
-                                "Try again in about 30 seconds, or start Ollama on your PC for unlimited local AI.";
+                    // Primary cloud rate limited — try fallback cloud provider first
+                    if (AiConfig.isCloudFallbackEnabled()) {
+                        MCAi.LOGGER.info("Primary cloud rate limited, trying fallback cloud provider");
+                        AiLogger.log(AiLogger.Category.AI_REQUEST, "WARN",
+                                "Primary cloud rate limited — trying fallback provider");
+                        try {
+                            response = callCloudAI(messages, userMessage,
+                                    AiConfig.CLOUD_FALLBACK_URL.get(),
+                                    AiConfig.CLOUD_FALLBACK_API_KEY.get(),
+                                    AiConfig.CLOUD_FALLBACK_MODEL.get());
+                        } catch (IOException fallbackEx) {
+                            // Fallback cloud also failed — try local Ollama
+                            MCAi.LOGGER.warn("Fallback cloud also failed: {}", fallbackEx.getMessage());
+                            try {
+                                response = callOllama(messages, userMessage);
+                            } catch (IOException ollamaEx) {
+                                MCAi.LOGGER.warn("Ollama also failed: {}", ollamaEx.getMessage());
+                                return "All AI backends are down — primary cloud hit rate limit, " +
+                                        "fallback cloud failed, and Ollama isn't running. Try again shortly.";
+                            }
+                        }
+                    } else {
+                        // No fallback cloud — go straight to Ollama
+                        MCAi.LOGGER.info("Cloud AI rate limited, falling back to Ollama");
+                        AiLogger.log(AiLogger.Category.AI_REQUEST, "WARN",
+                                "Cloud AI rate limited — falling back to Ollama");
+                        try {
+                            response = callOllama(messages, userMessage);
+                        } catch (IOException ollamaEx) {
+                            MCAi.LOGGER.warn("Ollama fallback also failed: {}", ollamaEx.getMessage());
+                            return "My cloud AI hit its rate limit and Ollama isn't running. " +
+                                    "Try again in about 30 seconds.";
+                        }
                     }
                 } else {
                     throw e;
@@ -672,15 +697,27 @@ public class AIService {
 
     /**
      * Call cloud AI API (OpenAI-compatible) with tool support.
+     * Uses the primary cloud provider from config.
+     */
+    private static JsonObject callCloudAI(JsonArray messages, String userMessage) throws IOException {
+        return callCloudAI(messages, userMessage,
+                AiConfig.CLOUD_URL.get(),
+                AiConfig.CLOUD_API_KEY.get(),
+                AiConfig.CLOUD_MODEL.get());
+    }
+
+    /**
+     * Call cloud AI API (OpenAI-compatible) with tool support.
      * Works with any OpenAI-compatible provider: Groq, OpenRouter, Together, Cerebras, etc.
      * Uses dynamic tool selection to stay within free-tier token limits.
      * Retries automatically on 429 rate-limit errors with backoff.
      * Returns the full response JSON object (OpenAI format with choices[]).
      */
-    private static JsonObject callCloudAI(JsonArray messages, String userMessage) throws IOException {
+    private static JsonObject callCloudAI(JsonArray messages, String userMessage,
+                                          String url, String apiKey, String model) throws IOException {
         // Build request — OpenAI chat completions format
         JsonObject request = new JsonObject();
-        request.addProperty("model", AiConfig.CLOUD_MODEL.get());
+        request.addProperty("model", model);
         request.add("messages", messages);
         request.addProperty("temperature", AiConfig.AI_TEMPERATURE.get());
         request.addProperty("max_tokens", AiConfig.AI_MAX_TOKENS.get());
@@ -693,7 +730,6 @@ public class AIService {
             request.addProperty("tool_choice", "auto");
         }
 
-        String model = AiConfig.CLOUD_MODEL.get();
         AiLogger.aiRequest(messages.size(), tools.size(), model);
 
         String requestBody = GSON.toJson(request);
@@ -703,11 +739,10 @@ public class AIService {
         int maxRetries = 3;
         for (int attempt = 0; attempt <= maxRetries; attempt++) {
             int timeoutMs = AiConfig.AI_TIMEOUT_MS.get();
-            String url = AiConfig.CLOUD_URL.get();
             HttpURLConnection conn = (HttpURLConnection) URI.create(url).toURL().openConnection();
             conn.setRequestMethod("POST");
             conn.setRequestProperty("Content-Type", "application/json");
-            conn.setRequestProperty("Authorization", "Bearer " + AiConfig.CLOUD_API_KEY.get());
+            conn.setRequestProperty("Authorization", "Bearer " + apiKey);
             // OpenRouter requires HTTP-Referer and X-Title for free model access
             if (url.contains("openrouter.ai")) {
                 conn.setRequestProperty("HTTP-Referer", "https://github.com/Apocscode/MCAi");
