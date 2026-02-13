@@ -138,17 +138,18 @@ public class ChopTreesTask extends CompanionTask {
 
         if (isInReach(currentTarget, 3.5)) {
             // === TREE FELLING: break base → flood-fill break all connected logs ===
+            BlockPos basePos = currentTarget;
             companion.equipBestToolForBlock(state);
-            int felled = fellTree(currentTarget);
+            int felled = fellTree(basePos);
             logsChopped += felled;
             treesFelled++;
-            felledBases.add(currentTarget);
+            felledBases.add(basePos);
             treeBaseTargets.poll();
             currentTarget = null;
             stuckTimer = 0;
 
             MCAi.LOGGER.info("ChopTreesTask: felled tree #{} at {} — {} logs (total: {}/{})",
-                    treesFelled, currentTarget, felled, logsChopped, maxLogs);
+                    treesFelled, basePos, felled, logsChopped, maxLogs);
         } else {
             navigateTo(currentTarget);
             stuckTimer++;
