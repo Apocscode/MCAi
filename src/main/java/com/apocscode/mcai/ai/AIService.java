@@ -385,9 +385,9 @@ public class AIService {
     // instead of using the structured tool_calls format.
     // These helpers detect and parse such text so it can be executed.
 
-    /** Pattern: tool_name({...}) — uses greedy match to handle nested braces in values */
+    /** Pattern: tool_name( — finds the start of a text-based tool call */
     private static final Pattern TEXT_TOOL_PATTERN = Pattern.compile(
-            "\\b([a-z_]+)\\s*\\(\\s*(\\{.+\\})\\s*\\)", Pattern.DOTALL);
+            "\\b([a-z_]+)\\s*\\(");
 
     /**
      * Try to extract a tool name from text that looks like a tool call.
@@ -406,7 +406,35 @@ public class AIService {
     }
 
     /**
+     * Extract a balanced JSON object from text starting at the given position.
+     * Counts { and } while respecting quoted strings to handle nested objects.
+     */
+    private static String extractBalancedJson(String text, int start) {
+        if (start >= text.length() || text.charAt(start) != '{') return null;
+        int depth = 0;
+        boolean inString = false;
+        boolean escaped = false;
+        for (int i = start; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (escaped) { escaped = false; continue; }
+            if (c == '\\' && inString) { escaped = true; continue; }
+            if (c == '"') { inString = !inString; continue; }
+            if (!inString) {
+                if (c == '{') depth++;
+                else if (c == '}') {
+                    depth--;
+                    if (depth == 0) return text.substring(start, i + 1);
+                }
+            }
+        }
+        // Unbalanced — try adding a closing brace
+        return text.substring(start) + "}";
+    }
+
+    /**
      * Try to extract tool arguments JSON from text that looks like a tool call.
+     * Uses balanced brace counting so multiple tool calls in one text blob
+     * (common with Ollama) are correctly separated.
      * Returns empty JsonObject if parsing fails.
      */
     private static JsonObject tryParseTextToolArgs(String text) {
@@ -415,15 +443,14 @@ public class AIService {
         while (m.find()) {
             String name = m.group(1);
             if (ToolRegistry.get(name) != null) {
-                String argsStr = m.group(2).trim();
+                // Find the opening { after the (
+                int braceStart = text.indexOf('{', m.end());
+                if (braceStart < 0) continue;
+                // Extract balanced JSON using brace counting
+                String argsStr = extractBalancedJson(text, braceStart);
+                if (argsStr == null) continue;
                 // Clean up common formatting issues from small models
                 argsStr = argsStr.replace("'", "\"");
-                // Remove trailing parens/brackets that aren't part of JSON
-                while (argsStr.endsWith(")") || argsStr.endsWith("]}")) {
-                    argsStr = argsStr.substring(0, argsStr.length() - 1);
-                }
-                // Ensure it ends with }
-                if (!argsStr.endsWith("}")) argsStr += "}";
                 try {
                     return JsonParser.parseString(argsStr).getAsJsonObject();
                 } catch (Exception e) {
