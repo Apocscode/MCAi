@@ -1722,6 +1722,24 @@ public class CraftItemTool implements AiTool {
             }
         }
 
+        // Also count companion equipped items (mainhand, offhand, armor)
+        CompanionEntity companion = CompanionEntity.getLivingCompanion(context.player().getUUID());
+        if (companion != null) {
+            ItemStack mainHand = companion.getMainHandItem();
+            if (!mainHand.isEmpty() && mainHand.getItem() == item) {
+                count += mainHand.getCount();
+            }
+            ItemStack offHand = companion.getOffhandItem();
+            if (!offHand.isEmpty() && offHand.getItem() == item) {
+                count += offHand.getCount();
+            }
+            for (ItemStack armor : companion.getArmorSlots()) {
+                if (!armor.isEmpty() && armor.getItem() == item) {
+                    count += armor.getCount();
+                }
+            }
+        }
+
         return count;
     }
 

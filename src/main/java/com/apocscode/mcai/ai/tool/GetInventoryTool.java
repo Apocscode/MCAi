@@ -25,9 +25,9 @@ public class GetInventoryTool implements AiTool {
 
     @Override
     public String description() {
-        return "Get the player's complete inventory contents including armor and offhand. " +
-                "Use this when you need to know exactly what items the player has, " +
-                "check if they have specific materials, or help plan crafting.";
+        return "Get the player's and companion's complete inventory contents including equipped items (mainhand, offhand, armor). " +
+                "Shows player inventory, companion inventory with equipped gear, and nearby storage containers. " +
+                "Use this to check what items are available before crafting or to see what tools/armor are equipped.";
     }
 
     @Override
@@ -111,6 +111,30 @@ public class GetInventoryTool implements AiTool {
                 }
             }
             sb.append("\n=== Companion Inventory ===\n");
+
+            // Equipped items (mainhand, offhand, armor)
+            ItemStack compMainHand = companion.getMainHandItem();
+            ItemStack compOffHand = companion.getOffhandItem();
+            if (!compMainHand.isEmpty()) {
+                sb.append("Equipped main hand: ").append(compMainHand.getDisplayName().getString())
+                        .append(" x").append(compMainHand.getCount()).append("\n");
+            }
+            if (!compOffHand.isEmpty()) {
+                sb.append("Equipped off hand: ").append(compOffHand.getDisplayName().getString())
+                        .append(" x").append(compOffHand.getCount()).append("\n");
+            }
+            sb.append("Armor:\n");
+            boolean hasArmor = false;
+            for (ItemStack armor : companion.getArmorSlots()) {
+                if (!armor.isEmpty()) {
+                    sb.append("- ").append(armor.getDisplayName().getString()).append("\n");
+                    hasArmor = true;
+                }
+            }
+            if (!hasArmor) sb.append("- (none)\n");
+
+            // Inventory items
+            sb.append("\nInventory items:\n");
             if (compCounts.isEmpty()) {
                 sb.append("(empty)\n");
             } else {

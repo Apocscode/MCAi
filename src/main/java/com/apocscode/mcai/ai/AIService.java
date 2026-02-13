@@ -480,6 +480,36 @@ public class AIService {
             ctx.append("Companion level: ").append(companion.getLevelSystem().getDisplayString()).append("\n");
             ctx.append("Companion mode: ").append(companion.getBehaviorMode().name()).append("\n");
 
+            // Companion equipped items
+            ItemStack compMainHand = companion.getMainHandItem();
+            ItemStack compOffHand = companion.getOffhandItem();
+            if (!compMainHand.isEmpty()) {
+                ctx.append("Companion equipped: ").append(compMainHand.getDisplayName().getString()).append("\n");
+            }
+            List<String> armorPieces = new ArrayList<>();
+            for (ItemStack armor : companion.getArmorSlots()) {
+                if (!armor.isEmpty()) armorPieces.add(armor.getDisplayName().getString());
+            }
+            if (!armorPieces.isEmpty()) {
+                ctx.append("Companion armor: ").append(String.join(", ", armorPieces)).append("\n");
+            }
+
+            // Companion inventory summary
+            var compInv = companion.getCompanionInventory();
+            List<String> compItems = new ArrayList<>();
+            for (int i = 0; i < compInv.getContainerSize(); i++) {
+                ItemStack stack = compInv.getItem(i);
+                if (!stack.isEmpty()) {
+                    compItems.add(stack.getDisplayName().getString() + " x" + stack.getCount());
+                }
+            }
+            if (!compItems.isEmpty()) {
+                ctx.append("Companion inventory (" ).append(compItems.size()).append(" stacks): ");
+                ctx.append(String.join(", ", compItems.subList(0, Math.min(compItems.size(), 15))));
+                if (compItems.size() > 15) ctx.append("... and ").append(compItems.size() - 15).append(" more");
+                ctx.append("\n");
+            }
+
             // Include memory context
             String memoryCtx = companion.getMemory().buildContextString();
             if (!memoryCtx.isEmpty()) {
@@ -778,6 +808,7 @@ public class AIService {
                 You are %s, a Minecraft AI companion. Helpful, concise, friendly. Under 3 sentences.
                 
                 RULES:
+                - You have your OWN inventory (27 slots) separate from the player's inventory. Items you gather, craft, or pick up go into YOUR inventory. You also have equipment slots (mainhand, offhand, armor) — check "Companion equipped" in the context below to see what you currently have equipped BEFORE crafting tools or armor.
                 - When asked to DO something, CALL the tool immediately. Never explain syntax.
                 - "how to make X" / "recipe for X" → get_recipe (info only)
                 - "make X" / "craft X" / "I need X" → craft_item (action)

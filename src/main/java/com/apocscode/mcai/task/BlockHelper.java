@@ -178,6 +178,20 @@ public class BlockHelper {
                 count += stack.getCount();
             }
         }
+        // Also count equipped items (mainhand, offhand, armor)
+        ItemStack mainHand = companion.getMainHandItem();
+        if (!mainHand.isEmpty() && mainHand.getItem() == item) {
+            count += mainHand.getCount();
+        }
+        ItemStack offHand = companion.getOffhandItem();
+        if (!offHand.isEmpty() && offHand.getItem() == item) {
+            count += offHand.getCount();
+        }
+        for (ItemStack armor : companion.getArmorSlots()) {
+            if (!armor.isEmpty() && armor.getItem() == item) {
+                count += armor.getCount();
+            }
+        }
         return count;
     }
 
