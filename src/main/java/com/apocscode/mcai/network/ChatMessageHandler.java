@@ -3,6 +3,7 @@ package com.apocscode.mcai.network;
 import com.apocscode.mcai.MCAi;
 import com.apocscode.mcai.ai.AIService;
 import com.apocscode.mcai.ai.AiLogger;
+import com.apocscode.mcai.ai.CommandParser;
 import com.apocscode.mcai.ai.ConversationManager;
 import com.apocscode.mcai.config.AiConfig;
 import com.apocscode.mcai.entity.CompanionEntity;
@@ -47,8 +48,17 @@ public class ChatMessageHandler {
         // Look up companion entity to get its name
         String companionName = AiConfig.DEFAULT_COMPANION_NAME.get();
         Entity entity = serverPlayer.level().getEntity(packet.entityId());
-        if (entity instanceof CompanionEntity companion) {
-            companionName = companion.getCompanionName();
+        CompanionEntity companion = null;
+        if (entity instanceof CompanionEntity comp) {
+            companion = comp;
+            companionName = comp.getCompanionName();
+        }
+
+        // === Local command parser — handles common requests without AI ===
+        // Works offline, zero latency, immune to rate limits.
+        if (CommandParser.tryParse(message, serverPlayer, companion)) {
+            MCAi.LOGGER.info("Command handled locally (no AI needed): {}", message);
+            return;
         }
 
         // Call AI asynchronously — NEVER block the server thread
@@ -74,6 +84,12 @@ public class ChatMessageHandler {
             String response = handleQuickCommand(message.substring(1).trim(), companion, player);
             player.sendSystemMessage(net.minecraft.network.chat.Component.literal(
                     "§b[" + companion.getCompanionName() + "]§r " + response));
+            return;
+        }
+
+        // Local command parser — handles common requests without AI
+        if (CommandParser.tryParse(message, player, companion)) {
+            MCAi.LOGGER.info("Game chat command handled locally (no AI needed): {}", message);
             return;
         }
 
