@@ -1318,6 +1318,21 @@ public class CraftItemTool implements AiTool {
             case "magma_cream" -> "magma_cube";
             case "porkchop" -> "pig";
             case "mutton" -> "sheep";
+            // 1.21+ mob drops
+            case "scute" -> "turtle";
+            case "armadillo_scute" -> "armadillo";
+            case "breeze_rod" -> "breeze";
+            case "honeycomb", "honey_bottle" -> "bee";
+            case "goat_horn" -> "goat";
+            case "nether_star" -> "wither";
+            case "dragon_egg", "dragon_breath" -> "ender_dragon";
+            case "totem_of_undying" -> "evoker";
+            case "nautilus_shell", "trident" -> "drowned";
+            case "skeleton_skull" -> "skeleton";
+            case "zombie_head" -> "zombie";
+            case "creeper_head" -> "creeper";
+            case "piglin_head" -> "piglin";
+            case "trial_key", "ominous_trial_key", "ominous_bottle", "heavy_core" -> "trial_chamber";
             default -> {
                 // Try to infer from item name
                 if (itemId.contains("wool")) yield "sheep";
@@ -1364,6 +1379,20 @@ public class CraftItemTool implements AiTool {
             case "dripstone_block" -> new Block[]{Blocks.DRIPSTONE_BLOCK};
             case "pointed_dripstone" -> new Block[]{Blocks.POINTED_DRIPSTONE};
             case "clay" -> new Block[]{Blocks.CLAY};
+            // New gather items
+            case "packed_ice" -> new Block[]{Blocks.PACKED_ICE};
+            case "blue_ice" -> new Block[]{Blocks.BLUE_ICE};
+            case "magma_block" -> new Block[]{Blocks.MAGMA_BLOCK};
+            case "crying_obsidian" -> new Block[]{Blocks.CRYING_OBSIDIAN};
+            case "gilded_blackstone" -> new Block[]{Blocks.GILDED_BLACKSTONE};
+            case "grass_block" -> new Block[]{Blocks.GRASS_BLOCK};
+            case "mycelium" -> new Block[]{Blocks.MYCELIUM};
+            case "podzol" -> new Block[]{Blocks.PODZOL};
+            case "rooted_dirt" -> new Block[]{Blocks.ROOTED_DIRT};
+            case "sponge" -> new Block[]{Blocks.SPONGE};
+            case "wet_sponge" -> new Block[]{Blocks.WET_SPONGE};
+            case "suspicious_sand" -> new Block[]{Blocks.SUSPICIOUS_SAND};
+            case "suspicious_gravel" -> new Block[]{Blocks.SUSPICIOUS_GRAVEL};
             default -> {
                 // Try to find block by registry name
                 for (var entry : BuiltInRegistries.BLOCK.entrySet()) {
@@ -1415,16 +1444,50 @@ public class CraftItemTool implements AiTool {
             case "cornflower" -> Blocks.CORNFLOWER;
             case "lily_of_the_valley" -> Blocks.LILY_OF_THE_VALLEY;
             case "lily_pad" -> Blocks.LILY_PAD;
+            case "wither_rose" -> Blocks.WITHER_ROSE;
+            // Tall flowers
+            case "sunflower" -> Blocks.SUNFLOWER;
+            case "lilac" -> Blocks.LILAC;
+            case "rose_bush" -> Blocks.ROSE_BUSH;
+            case "peony" -> Blocks.PEONY;
             // Mushrooms
             case "red_mushroom" -> Blocks.RED_MUSHROOM;
             case "brown_mushroom" -> Blocks.BROWN_MUSHROOM;
+            case "brown_mushroom_block" -> Blocks.BROWN_MUSHROOM_BLOCK;
+            case "red_mushroom_block" -> Blocks.RED_MUSHROOM_BLOCK;
+            case "mushroom_stem" -> Blocks.MUSHROOM_STEM;
             // Other gatherable plants
             case "vine" -> Blocks.VINE;
             case "fern" -> Blocks.FERN;
+            case "large_fern" -> Blocks.LARGE_FERN;
             case "tall_grass" -> Blocks.SHORT_GRASS;
+            case "short_grass" -> Blocks.SHORT_GRASS;
             case "seagrass" -> Blocks.SEAGRASS;
+            case "dead_bush" -> Blocks.DEAD_BUSH;
             case "apple" -> Blocks.OAK_LEAVES;  // Apple drops from oak leaves
+            case "sea_pickle" -> Blocks.SEA_PICKLE;
+            // Lush cave plants
+            case "spore_blossom" -> Blocks.SPORE_BLOSSOM;
+            case "big_dripleaf" -> Blocks.BIG_DRIPLEAF;
+            case "small_dripleaf" -> Blocks.SMALL_DRIPLEAF;
+            case "hanging_roots" -> Blocks.HANGING_ROOTS;
+            case "azalea" -> Blocks.AZALEA;
+            case "flowering_azalea" -> Blocks.FLOWERING_AZALEA;
+            // 1.20+ sniffer crops
+            case "torchflower" -> Blocks.TORCHFLOWER;
+            case "torchflower_seeds" -> Blocks.TORCHFLOWER_CROP;
+            case "pitcher_plant" -> Blocks.PITCHER_PLANT;
+            case "pitcher_pod" -> Blocks.PITCHER_CROP;
             default -> {
+                // Try saplings and leaves by suffix
+                if (itemId.endsWith("_sapling") || itemId.equals("mangrove_propagule") 
+                        || itemId.endsWith("_leaves")) {
+                    for (var entry : BuiltInRegistries.BLOCK.entrySet()) {
+                        if (entry.getKey().location().getPath().equals(itemId)) {
+                            yield entry.getValue();
+                        }
+                    }
+                }
                 // Try to find block by registry name
                 for (var entry : BuiltInRegistries.BLOCK.entrySet()) {
                     if (entry.getKey().location().getPath().equals(itemId)) {

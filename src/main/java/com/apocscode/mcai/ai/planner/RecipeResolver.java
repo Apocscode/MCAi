@@ -662,27 +662,24 @@ public class RecipeResolver {
                 || id.equals("emerald") || id.equals("coal") || id.equals("lapis_lazuli")
                 || id.equals("redstone") || id.equals("quartz") || id.equals("amethyst_shard")
                 || id.equals("ancient_debris") || id.equals("glowstone_dust")
-                || id.equals("deepslate")) {
+                || id.equals("deepslate")
+                // Sculk blocks — found deep underground, mined with silk touch
+                || id.equals("sculk") || id.equals("sculk_vein")
+                || id.equals("sculk_catalyst") || id.equals("sculk_sensor")
+                || id.equals("sculk_shrieker")) {
             return new DependencyNode(item, count, StepType.MINE, null);
         }
 
         // Wood / logs → CHOP
-        // Use endsWith/startsWith to avoid false matches:
-        //   "wooden_pickaxe".contains("wood") was incorrectly classified as CHOP!
-        //   "wooden_sword", "wooden_hoe", etc. are craftable items, NOT raw wood.
         if (id.endsWith("_log") || id.endsWith("_wood") || id.endsWith("_stem")
                 || id.endsWith("_hyphae")
                 || id.startsWith("stripped_")
-                || id.equals("bamboo_block")) {
+                || id.equals("bamboo_block")
+                || id.equals("mangrove_roots")) {
             return new DependencyNode(item, count, StepType.CHOP, null);
         }
 
         // Surface blocks, loose materials → GATHER
-        // Note: stone removed — mining stone drops cobblestone (without silk touch),
-        //   so stone should resolve via smelting: cobblestone → stone.
-        // Note: packed_mud removed — has crafting recipe (mud + wheat), rarely found raw.
-        // Note: id.contains("sand") changed to equals — was matching sandstone/red_sandstone
-        //   which are craftable blocks, not raw gatherables.
         if (id.equals("cobblestone") || id.equals("cobbled_deepslate")
                 || id.equals("sand") || id.equals("red_sand")
                 || id.equals("gravel") || id.equals("clay_ball")
@@ -693,19 +690,30 @@ public class RecipeResolver {
                 || id.equals("end_stone") || id.equals("moss_block") || id.equals("mud")
                 || id.equals("dripstone_block")
                 || id.equals("pointed_dripstone") || id.equals("calcite")
-                || id.equals("tuff")) {
+                || id.equals("tuff")
+                // Ice variants
+                || id.equals("packed_ice") || id.equals("blue_ice")
+                // Nether blocks
+                || id.equals("magma_block") || id.equals("crying_obsidian")
+                || id.equals("gilded_blackstone")
+                // Dirt/grass variants (silk touch)
+                || id.equals("grass_block") || id.equals("mycelium")
+                || id.equals("podzol") || id.equals("rooted_dirt")
+                // Coral blocks (underwater, silk touch)
+                || id.contains("coral")
+                // Ocean monument
+                || id.equals("sponge") || id.equals("wet_sponge")
+                // Archaeology blocks
+                || id.equals("suspicious_sand") || id.equals("suspicious_gravel")) {
             return new DependencyNode(item, count, StepType.GATHER, null);
         }
 
-        // Mob interaction items → KILL_MOB (these require interacting with mobs, not killing)
-        // milk_bucket: use bucket on cow. The bucket itself must be crafted separately.
+        // Mob interaction items → KILL_MOB
         if (id.equals("milk_bucket")) {
             return new DependencyNode(item, count, StepType.KILL_MOB, null);
         }
 
         // Mob drops → KILL_MOB
-        // Note: bone_meal removed — has bone→3×bone_meal crafting recipe (more efficient)
-        // Note: _wool removed — has 4×string→wool crafting recipe (more reliable than sheep drops)
         if (id.equals("leather") || id.equals("string") || id.equals("bone")
                 || id.equals("spider_eye") || id.equals("gunpowder") || id.equals("ender_pearl")
                 || id.equals("blaze_rod") || id.equals("ghast_tear") || id.equals("slime_ball")
@@ -717,7 +725,23 @@ public class RecipeResolver {
                 || id.equals("prismarine_crystals") || id.equals("magma_cream")
                 || id.contains("_meat") || id.equals("porkchop")
                 || id.equals("beef") || id.equals("chicken") || id.equals("mutton")
-                || id.equals("rabbit") || id.equals("egg")) {
+                || id.equals("rabbit") || id.equals("egg")
+                // 1.21+ mob drops
+                || id.equals("scute") || id.equals("armadillo_scute")
+                || id.equals("breeze_rod")
+                // Bee products (shears/bottle interaction)
+                || id.equals("honeycomb") || id.equals("honey_bottle")
+                // Rare mob drops / boss drops
+                || id.equals("goat_horn") || id.equals("nether_star")
+                || id.equals("dragon_egg") || id.equals("dragon_breath")
+                || id.equals("totem_of_undying") || id.equals("nautilus_shell")
+                || id.equals("trident")
+                // Mob heads (charged creeper explosion)
+                || id.equals("skeleton_skull") || id.equals("zombie_head")
+                || id.equals("creeper_head") || id.equals("piglin_head")
+                // Trial chamber drops
+                || id.equals("trial_key") || id.equals("ominous_trial_key")
+                || id.equals("ominous_bottle") || id.equals("heavy_core")) {
             return new DependencyNode(item, count, StepType.KILL_MOB, null);
         }
 
@@ -727,9 +751,15 @@ public class RecipeResolver {
             return new DependencyNode(item, count, StepType.FISH, null);
         }
 
+        // Dungeon/treasure loot — classify as UNKNOWN with advice
+        // (name_tag, saddle, heart_of_the_sea, enchanted_golden_apple have no recipe)
+        if (id.equals("name_tag") || id.equals("saddle")
+                || id.equals("heart_of_the_sea")
+                || id.equals("enchanted_golden_apple") || id.equals("elytra")) {
+            return new DependencyNode(item, count, StepType.UNKNOWN, null);
+        }
+
         // Crops / farmable → FARM
-        // Note: sugar removed — has sugar_cane→sugar crafting recipe
-        // Note: dried_kelp removed — has kelp→dried_kelp smelting recipe
         if (id.equals("wheat") || id.equals("wheat_seeds") || id.equals("carrot")
                 || id.equals("potato") || id.equals("beetroot") || id.equals("beetroot_seeds")
                 || id.equals("melon_slice") || id.equals("pumpkin") || id.equals("sugar_cane")
@@ -742,7 +772,25 @@ public class RecipeResolver {
                 || id.equals("allium") || id.equals("azure_bluet") || id.equals("cornflower")
                 || id.equals("lily_of_the_valley") || id.equals("lily_pad")
                 || id.equals("vine") || id.equals("tall_grass") || id.equals("fern")
-                || id.equals("seagrass")) {
+                || id.equals("seagrass")
+                // Saplings & propagules (tree drops)
+                || id.endsWith("_sapling") || id.equals("mangrove_propagule")
+                // Leaves (shears)
+                || id.endsWith("_leaves")
+                // 1.20+ sniffer crops
+                || id.equals("torchflower_seeds") || id.equals("torchflower")
+                || id.equals("pitcher_pod") || id.equals("pitcher_plant")
+                // Lush cave / rare plants
+                || id.equals("spore_blossom") || id.equals("big_dripleaf")
+                || id.equals("small_dripleaf") || id.equals("hanging_roots")
+                || id.equals("azalea") || id.equals("flowering_azalea")
+                // Tall flowers (no recipe, found in plains/forests)
+                || id.equals("sunflower") || id.equals("lilac")
+                || id.equals("rose_bush") || id.equals("peony")
+                // Other plants
+                || id.equals("dead_bush") || id.equals("short_grass")
+                || id.equals("large_fern") || id.equals("sea_pickle")
+                || id.equals("wither_rose")) {
             return new DependencyNode(item, count, StepType.FARM, null);
         }
 

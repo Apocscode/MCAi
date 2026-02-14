@@ -248,11 +248,21 @@ public class CraftingPlan {
             case "enderman" -> new DifficultyWarning(Difficulty.HARD, itemId,
                     "Endermen are dangerous — they teleport and hit hard. " +
                     "They spawn at night. I'll try but it's risky (need " + count + ").");
+            case "ender_dragon" -> new DifficultyWarning(Difficulty.IMPOSSIBLE, itemId,
+                    "This requires defeating the Ender Dragon — a major boss fight in The End!");
+
+            // Boss mobs
+            case "wither" -> new DifficultyWarning(Difficulty.IMPOSSIBLE, itemId,
+                    "Nether Star requires defeating the Wither boss — extremely dangerous!");
+            case "evoker" -> new DifficultyWarning(Difficulty.EXTREME, itemId,
+                    "Totem of Undying drops from Evokers in Woodland Mansions or raids.");
 
             // Underwater
             case "guardian" -> new DifficultyWarning(Difficulty.EXTREME, itemId,
                     "Guardians only spawn at Ocean Monuments (underwater). " +
                     "I can't swim and fight effectively. Bring me prismarine shards!");
+            case "drowned" -> new DifficultyWarning(Difficulty.HARD, itemId,
+                    "Drowned spawn underwater — trident/nautilus shell drops are rare.");
 
             // Explosive/dangerous overworld
             case "creeper" -> new DifficultyWarning(Difficulty.HARD, itemId,
@@ -262,7 +272,19 @@ public class CraftingPlan {
                     "Phantoms are flying mobs that spawn when you haven't slept. " +
                     "Hard to hit — I'll do my best but no guarantees.");
 
-            // Passive mobs (easy but may need searching)
+            // 1.21+ mobs
+            case "breeze" -> new DifficultyWarning(Difficulty.HARD, itemId,
+                    "Breeze mobs spawn in Trial Chambers — tricky to fight (wind attacks).");
+            case "trial_chamber" -> new DifficultyWarning(Difficulty.HARD, itemId,
+                    "Trial chambers are underground structures with mob spawners. " +
+                    "Bring good gear and help me fight!");
+
+            // Bee interaction
+            case "bee" -> new DifficultyWarning(Difficulty.MODERATE, itemId,
+                    "This requires finding a Bee Nest/Beehive. " +
+                    "Place a campfire underneath to prevent angry bees!");
+
+            // Passive/easy mobs (no warning)
             default -> null;
         };
     }
@@ -285,13 +307,19 @@ public class CraftingPlan {
                     : null;
             case "emerald" -> new DifficultyWarning(Difficulty.MODERATE, itemId,
                     "Emerald ore only spawns in Mountain biomes. May need to travel.");
+            // Sculk blocks — deep underground in deep dark biome
+            case "sculk", "sculk_vein", "sculk_catalyst", "sculk_sensor", "sculk_shrieker" ->
+                    new DifficultyWarning(Difficulty.EXTREME, itemId,
+                            itemId + " is found in the Deep Dark (Y=-64 to -1). " +
+                            "Wardens live here — extremely dangerous! Bring Silk Touch.");
             default -> null;
         };
     }
 
     private static DifficultyWarning assessGatherDifficulty(String itemId, int count) {
         return switch (itemId) {
-            case "netherrack", "soul_sand", "soul_soil", "basalt", "blackstone" ->
+            case "netherrack", "soul_sand", "soul_soil", "basalt", "blackstone",
+                 "magma_block", "crying_obsidian", "gilded_blackstone" ->
                     new DifficultyWarning(Difficulty.EXTREME, itemId,
                             itemId + " is a Nether block. I can't reach the Nether alone.");
             case "end_stone" -> new DifficultyWarning(Difficulty.EXTREME, itemId,
@@ -299,7 +327,23 @@ public class CraftingPlan {
             case "obsidian" -> new DifficultyWarning(Difficulty.HARD, itemId,
                     "Obsidian needs a diamond pickaxe and 10 seconds per block. " +
                     "Found near lava pools.");
-            default -> null;
+            case "sponge", "wet_sponge" -> new DifficultyWarning(Difficulty.EXTREME, itemId,
+                    "Sponges are only found in Ocean Monuments (Elder Guardian rooms).");
+            case "packed_ice" -> new DifficultyWarning(Difficulty.MODERATE, itemId,
+                    "Packed Ice is found in Ice Spikes biomes — may need to travel.");
+            case "blue_ice" -> new DifficultyWarning(Difficulty.MODERATE, itemId,
+                    "Blue Ice is found in icebergs — may need to travel to an ocean.");
+            case "mycelium" -> new DifficultyWarning(Difficulty.MODERATE, itemId,
+                    "Mycelium only appears in Mushroom Island biomes — very rare.");
+            case "suspicious_sand", "suspicious_gravel" -> new DifficultyWarning(Difficulty.HARD, itemId,
+                    "Suspicious blocks are found in ruins — requires a brush to excavate.");
+            default -> {
+                if (itemId.contains("coral")) {
+                    yield new DifficultyWarning(Difficulty.HARD, itemId,
+                            "Coral blocks/items must be gathered from warm ocean biomes with Silk Touch.");
+                }
+                yield null;
+            }
         };
     }
 
@@ -309,10 +353,18 @@ public class CraftingPlan {
                     "Nether Wart only grows in the Nether (on soul sand).");
             case "chorus_fruit" -> new DifficultyWarning(Difficulty.EXTREME, itemId,
                     "Chorus Fruit only grows in The End.");
+            case "wither_rose" -> new DifficultyWarning(Difficulty.EXTREME, itemId,
+                    "Wither Rose only drops when the Wither boss kills a mob. Very dangerous!");
             case "cocoa_beans" -> new DifficultyWarning(Difficulty.MODERATE, itemId,
                     "Cocoa beans grow on jungle logs — need a Jungle biome nearby.");
             case "glow_berries" -> new DifficultyWarning(Difficulty.MODERATE, itemId,
                     "Glow Berries grow on cave vines underground — can be tricky to find.");
+            case "torchflower_seeds", "pitcher_pod" -> new DifficultyWarning(Difficulty.HARD, itemId,
+                    itemId + " can only be obtained from Sniffer digging — need to find a Sniffer egg first.");
+            case "spore_blossom" -> new DifficultyWarning(Difficulty.MODERATE, itemId,
+                    "Spore Blossoms are found in Lush Cave ceilings — can be tricky to reach.");
+            case "small_dripleaf" -> new DifficultyWarning(Difficulty.MODERATE, itemId,
+                    "Small Dripleaf can be obtained from Wandering Traders using emeralds.");
             default -> null;
         };
     }
@@ -325,23 +377,24 @@ public class CraftingPlan {
         return switch (itemId) {
             case "carved_pumpkin" -> "Use shears on a pumpkin to get a Carved Pumpkin. " +
                     "Give me shears and a pumpkin and I might be able to help!";
-            case "honeycomb" -> "Use shears on a Bee Nest or Beehive to get honeycomb. " +
-                    "Watch out for angry bees! Place a campfire underneath first.";
-            case "honey_bottle" -> "Use a glass bottle on a full Bee Nest/Beehive.";
-            case "milk_bucket" -> "Right-click a cow with an empty bucket.";
             case "suspicious_stew" -> "Craft with a mushroom stew + any flower, or find in shipwrecks.";
-            case "player_head", "zombie_head", "skeleton_skull", "creeper_head" ->
-                    "Mob heads are rare drops from charged creeper explosions.";
+            case "player_head" ->
+                    "Player heads are unobtainable in normal survival gameplay.";
             case "sponge" -> "Sponges are found in Ocean Monuments (Elder Guardian rooms).";
-            case "heart_of_the_sea" -> "Found in Buried Treasure chests (use treasure maps).";
-            case "totem_of_undying" -> "Dropped by Evokers in Woodland Mansions or raids.";
-            case "elytra" -> "Found in End City ships — very late-game item.";
-            case "dragon_egg" -> "Dropped once when the Ender Dragon is first defeated.";
-            case "nether_star" -> "Dropped by the Wither boss.";
-            case "trident" -> "Rare drop from Drowned mobs (underwater zombies).";
-            case "enchanted_golden_apple" -> "Cannot be crafted — only found in dungeon/temple chests.";
-            case "name_tag" -> "Found in dungeon chests, fishing, or villager trading.";
-            case "saddle" -> "Found in dungeon chests, fishing, or villager trading.";
+            case "heart_of_the_sea" -> "Found in Buried Treasure chests (use treasure maps from cartographer villagers).";
+            case "elytra" -> "Found in End City ships — very late-game item. Defeat the Ender Dragon first!";
+            case "enchanted_golden_apple" -> "Cannot be crafted — only found in dungeon/temple/mineshaft chests.";
+            case "name_tag" -> "Found in dungeon chests, fishing, or villager trading (librarian).";
+            case "saddle" -> "Found in dungeon chests, fishing, or villager trading (leatherworker).";
+            // Decorated pot / pottery (archaeology)
+            case "decorated_pot" -> "Craft with bricks or pottery sherds. Sherds come from brushing suspicious blocks.";
+            // Powder snow
+            case "powder_snow_bucket" -> "Place a cauldron in a snowy biome — it fills with powder snow. " +
+                    "Collect with a bucket.";
+            // Recovery compass (echo shards from ancient cities)
+            case "echo_shard" -> "Echo Shards are found in Ancient City chests in the Deep Dark.";
+            // Disc fragments
+            case "disc_fragment_5" -> "Disc Fragment 5 is found in Ancient City chests.";
             default -> "This item may need special world interaction or dungeon loot. " +
                     "Try providing it manually.";
         };
@@ -508,6 +561,24 @@ public class CraftingPlan {
             case "magma_cream" -> "magma_cube";
             case "porkchop" -> "pig";
             case "mutton" -> "sheep";
+            // 1.21+ mob drops
+            case "scute" -> "turtle";
+            case "armadillo_scute" -> "armadillo";
+            case "breeze_rod" -> "breeze";
+            case "honeycomb", "honey_bottle" -> "bee";
+            case "goat_horn" -> "goat";
+            case "nether_star" -> "wither";
+            case "dragon_egg", "dragon_breath" -> "ender_dragon";
+            case "totem_of_undying" -> "evoker";
+            case "nautilus_shell" -> "drowned";
+            case "trident" -> "drowned";
+            // Mob heads (charged creeper explosions)
+            case "skeleton_skull" -> "skeleton";
+            case "zombie_head" -> "zombie";
+            case "creeper_head" -> "creeper";
+            case "piglin_head" -> "piglin";
+            // Trial chamber
+            case "trial_key", "ominous_trial_key", "ominous_bottle", "heavy_core" -> "trial_chamber";
             default -> {
                 if (itemId.contains("wool")) yield "sheep";
                 if (itemId.contains("meat")) yield "cow";
