@@ -818,6 +818,23 @@ public class CommandParser {
             "what(?:'s|s) installed",
             Pattern.CASE_INSENSITIVE);
 
+    // --- CONVERSATIONAL QUESTIONS (web search fallback) ---
+    // Detects informational questions that should trigger a web search rather
+    // than being treated as action commands. Only checked AFTER all specific
+    // action patterns, so "how do i craft X" still goes to recipe lookup.
+    private static final Pattern QUESTION_PREFIXES = Pattern.compile(
+            "^(?:what(?:'s|s| is| are| was| were| does| do| did| mod| mods)?|" +
+            "who(?:'s|s| is| are| was| were)?|" +
+            "where(?:'s|s| is| are| do| does| can)?|" +
+            "when (?:did|does|do|was|is|will|were)|" +
+            "why (?:do|does|did|is|are|can't|can|won't|would)|" +
+            "how (?:does|do|did|is|are|can|to|much|many|long|far|big|often)|" +
+            "which|is there|are there|" +
+            "tell me|explain|describe|teach me|" +
+            "search|search for|look up|google|find out|find info|" +
+            "info about|information about|learn about)\\s+.+",
+            Pattern.CASE_INSENSITIVE);
+
     // ==================== Main entry point ====================
 
     /**
@@ -1287,6 +1304,18 @@ public class CommandParser {
             return true;
         }
 
+        // === Conversational questions → web search ===
+        // Only reached if NO action pattern matched above.
+        // Catches informational questions like "what mods are good for animals?"
+        // or "tell me about Create mod" and searches the web for answers.
+        if (isConversationalQuestion(msg)) {
+            String query = extractSearchQuery(msg);
+            JsonObject args = new JsonObject();
+            args.addProperty("query", query);
+            executeToolAsync("web_search", args, player, companion, "Let me look that up...");
+            return true;
+        }
+
         // Gather blocks (catch-all for "gather cobblestone", "collect sand", etc.)
         Matcher gatherMatcher = GATHER_PATTERN.matcher(msg);
         if (gatherMatcher.matches()) {
@@ -1689,6 +1718,36 @@ public class CommandParser {
                 .replaceAll("^(?:an?|the|some)\\s+", "")
                 .replaceAll("\\s+", "_")
                 .replaceAll("[^a-z0-9_]", "");
+    }
+
+    /**
+     * Check if a message is a conversational/informational question
+     * that should trigger a web search (rather than being an action command).
+     * Only called AFTER all specific action patterns have been checked.
+     */
+    private static boolean isConversationalQuestion(String msg) {
+        // Too short to be a meaningful question
+        if (msg.length() < 12) return false;
+        // Ends with question mark — very likely a question
+        if (msg.endsWith("?")) return true;
+        // Starts with known question/info-request prefixes
+        return QUESTION_PREFIXES.matcher(msg).matches();
+    }
+
+    /**
+     * Extract a clean search query from a conversational question.
+     * Strips common filler prefixes to get a better search query.
+     * "tell me about create mod" → "create mod"
+     * "what mods are good for animals?" → "what mods are good for animals"
+     */
+    private static String extractSearchQuery(String msg) {
+        return msg
+                .replaceAll("(?i)^(?:(?:can|could|would) you |please |jim,? |hey jim,? )", "")
+                .replaceAll("(?i)^(?:tell me about |explain |describe |teach me about |" +
+                        "search for |search |look up |google |find out about |find info about |" +
+                        "info about |information about |learn about )", "")
+                .replaceAll("\\?+$", "")
+                .trim();
     }
 
     // ==================== Tool execution ====================

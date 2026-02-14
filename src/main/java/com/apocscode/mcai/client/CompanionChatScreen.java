@@ -12,7 +12,15 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.neoforged.neoforge.network.PacketDistributor;
 
+import net.minecraft.ChatFormatting;
+import net.minecraft.network.chat.ClickEvent;
+import net.minecraft.network.chat.HoverEvent;
+import net.minecraft.network.chat.MutableComponent;
+import net.minecraft.network.chat.Style;
+import net.minecraft.util.FormattedCharSequence;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Pattern;
 
 /**
  * Chat screen for interacting with the AI companion.
@@ -34,6 +42,11 @@ public class CompanionChatScreen extends Screen {
     private boolean isRecordingVoice = false;
     private long recordingStartTime = 0;
     private String companionName = "MCAi";
+
+    // URL detection for clickable links in chat
+    private static final Pattern URL_DETECT_PATTERN = Pattern.compile("(https?://[^\\s]+)");
+    private final List<RenderedLine> renderedLines = new ArrayList<>();
+    private record RenderedLine(FormattedCharSequence content, int x, int y) {}
 
     public CompanionChatScreen(int entityId) {
         super(Component.literal("MCAi Chat"));
@@ -83,6 +96,9 @@ public class CompanionChatScreen extends Screen {
                 .bounds(sendX, inputY, BUTTON_WIDTH, INPUT_HEIGHT)
                 .build();
         this.addRenderableWidget(sendButton);
+
+        // Auto-focus the input box so typing works immediately (like pressing T)
+        this.setInitialFocus(inputBox);
     }
 
     private void toggleVoiceRecording() {
@@ -198,45 +214,26 @@ public class CompanionChatScreen extends Screen {
             graphics.drawString(this.font, "§7e.g. §f!come§7, §f!follow§7, §f!status", helpX + 8, helpY, 0xAAAAAA, false);
         }
 
+        renderedLines.clear();
         int y = chatBottom;
 
-        // Render from bottom up
+        // Render messages from bottom up with clickable URL support
         for (int i = messages.size() - 1 - scrollOffset; i >= 0 && y > chatTop; i--) {
             ConversationManager.ChatMessage msg = messages.get(i);
 
-            // Word-wrap the message
-            List<net.minecraft.util.FormattedCharSequence> lines =
-                    this.font.split(Component.literal(msg.content()), chatWidth - 20);
+            // Build styled component with URL highlighting and clickable links
+            Component styledContent = buildStyledMessage(msg);
+            List<FormattedCharSequence> lines =
+                    this.font.split(styledContent, chatWidth - 20);
 
             // Draw lines bottom-up
             for (int lineIdx = lines.size() - 1; lineIdx >= 0; lineIdx--) {
                 y -= MESSAGE_LINE_HEIGHT;
                 if (y < chatTop) break;
 
-                int color;
-                String prefix = "";
-                if (lineIdx == 0) {
-                    if (msg.isPlayer()) {
-                        prefix = "§a[You]§r ";
-                        color = 0xFFAAFFAA;
-                    } else if (msg.isSystem()) {
-                        color = 0xFFFFAA00;
-                        prefix = "";
-                    } else {
-                        prefix = "§b[" + companionName + "]§r ";
-                        color = 0xFFAADDFF;
-                    }
-                } else {
-                    color = msg.isPlayer() ? 0xFFCCFFCC : 0xFFCCEEFF;
-                }
-
-                if (lineIdx == 0 && !prefix.isEmpty()) {
-                    graphics.drawString(this.font, prefix + msg.content().split("\n")[0],
-                            PADDING + 4, y, color, false);
-                } else {
-                    graphics.drawString(this.font, lines.get(lineIdx),
-                            PADDING + 4, y, color, false);
-                }
+                FormattedCharSequence line = lines.get(lineIdx);
+                graphics.drawString(this.font, line, PADDING + 4, y, 0xFFFFFF, false);
+                renderedLines.add(new RenderedLine(line, PADDING + 4, y));
             }
 
             y -= 4; // Gap between messages
@@ -247,6 +244,17 @@ public class CompanionChatScreen extends Screen {
             graphics.drawCenteredString(this.font, "§7(scroll with mouse wheel)",
                     this.width / 2, chatTop, 0x888888);
         }
+
+        // Render URL hover tooltip (rendered last so it appears on top)
+        for (RenderedLine rl : renderedLines) {
+            if (mouseY >= rl.y && mouseY < rl.y + MESSAGE_LINE_HEIGHT && mouseX >= rl.x) {
+                Style style = this.font.getSplitter().componentStyleAtWidth(rl.content, mouseX - rl.x);
+                if (style != null && style.getHoverEvent() != null) {
+                    graphics.renderComponentHoverEffect(this.font, style, mouseX, mouseY);
+                }
+                break;
+            }
+        }
     }
 
     @Override
@@ -254,6 +262,24 @@ public class CompanionChatScreen extends Screen {
         int maxScroll = Math.max(0, ConversationManager.getMessages().size() - 5);
         scrollOffset = Math.max(0, Math.min(maxScroll, scrollOffset - (int) scrollY));
         return true;
+    }
+
+    @Override
+    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        // Check for clickable URL links in chat messages
+        if (button == 0) { // Left click
+            for (RenderedLine rl : renderedLines) {
+                if (mouseY >= rl.y && mouseY < rl.y + MESSAGE_LINE_HEIGHT && mouseX >= rl.x) {
+                    Style style = this.font.getSplitter().componentStyleAtWidth(
+                            rl.content, (int) mouseX - rl.x);
+                    if (style != null && style.getClickEvent() != null) {
+                        this.handleComponentClicked(style);
+                        return true;
+                    }
+                }
+            }
+        }
+        return super.mouseClicked(mouseX, mouseY, button);
     }
 
     @Override
@@ -310,6 +336,67 @@ public class CompanionChatScreen extends Screen {
 
         // Show thinking indicator
         ConversationManager.addSystemMessage("Thinking...");
+    }
+
+    /**
+     * Build a styled Component from a chat message, with URLs highlighted and clickable.
+     * URLs are rendered in blue with underline and open in the system browser when clicked.
+     * Minecraft's standard "Open link?" confirmation dialog is shown based on player settings.
+     */
+    private Component buildStyledMessage(ConversationManager.ChatMessage msg) {
+        MutableComponent result = Component.empty();
+
+        // Add prefix
+        if (msg.isPlayer()) {
+            result.append(Component.literal("[You] ").withStyle(ChatFormatting.GREEN));
+        } else if (!msg.isSystem()) {
+            result.append(Component.literal("[" + companionName + "] ").withStyle(ChatFormatting.AQUA));
+        }
+
+        // Determine base text color
+        int textColor;
+        if (msg.isPlayer()) {
+            textColor = 0xAAFFAA; // Light green
+        } else if (msg.isSystem()) {
+            textColor = 0xFFAA00; // Orange
+        } else {
+            textColor = 0xAADDFF; // Light cyan
+        }
+
+        // Parse content for URLs and make them clickable
+        String content = msg.content();
+        java.util.regex.Matcher urlMatcher = URL_DETECT_PATTERN.matcher(content);
+        int lastEnd = 0;
+
+        while (urlMatcher.find()) {
+            // Add text before URL with base color
+            if (urlMatcher.start() > lastEnd) {
+                final int c = textColor;
+                result.append(Component.literal(content.substring(lastEnd, urlMatcher.start()))
+                        .withStyle(style -> style.withColor(c)));
+            }
+
+            // Add URL with clickable style (blue, underlined, opens browser)
+            String url = urlMatcher.group();
+            result.append(Component.literal(url)
+                    .withStyle(style -> style
+                            .withColor(0x5555FF)
+                            .withUnderlined(true)
+                            .withClickEvent(new ClickEvent(ClickEvent.Action.OPEN_URL, url))
+                            .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
+                                    Component.literal("§7Click to open link")))));
+
+            lastEnd = urlMatcher.end();
+        }
+
+        // Add remaining text after last URL
+        if (lastEnd < content.length()) {
+            final int c = textColor;
+            result.append(Component.literal(content.substring(lastEnd))
+                    .withStyle(style -> style.withColor(c)));
+        }
+
+        return result;
     }
 
     @Override
