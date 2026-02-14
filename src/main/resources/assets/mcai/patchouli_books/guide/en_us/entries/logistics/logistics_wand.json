@@ -12,7 +12,12 @@
         {
             "type": "patchouli:text",
             "title": "Wand Modes",
-            "text": "$(li)$(bold)Shift+Scroll$() — Cycle wand mode$(li)$(bold)Shift+Right-click$() container — Tag/untag it$(br2)Modes:$(br2)$(#5599FF)INPUT$() (Blue) — Item source$(br)$(#FF8800)OUTPUT$() (Orange) — Item destination$(br)$(#55FF55)STORAGE$() (Green) — General storage$(br)$(#55FFAA)HOME AREA$() (Cyan) — Click two corners to define the companion's home zone.$(br2)Tagged containers show colored outlines and floating labels when holding the wand."
+            "text": "$(li)$(bold)Shift+Scroll$() \u2014 Cycle wand mode$(li)$(bold)Shift+Right-click$() \u2014 Use current mode$(br2)Modes:$(br2)$(#5599FF)INPUT$() (Blue) \u2014 Item source$(br)$(#FF8800)OUTPUT$() (Orange) \u2014 Item destination$(br)$(#55FF55)STORAGE$() (Green) \u2014 General storage$(br)$(#55FFAA)HOME AREA$() (Cyan) \u2014 Click two corners to define the companion's home zone$(br)$(#FF5555)CLEAR HOME$() (Red) \u2014 Click any block to remove the home area$(br2)Tagged containers show colored outlines and floating labels when holding the wand."
+        },
+        {
+            "type": "patchouli:text",
+            "title": "Home Area",
+            "text": "The $(bold)Home Area$() defines a protected bounding box around your base.$(br2)To set: switch to $(#55FFAA)HOME AREA$() mode, Shift+click corner 1, then Shift+click corner 2.$(br2)To clear: switch to $(#FF5555)CLEAR HOME$() mode and Shift+click any block.$(br2)Inside the home area:$(br)$(li)Containers are never broken$(li)Crafting tables, furnaces, anvils, etc. are protected$(li)Resource scanning skips the area$(li)The companion won't dig down inside it"
         }
     ]
 }
