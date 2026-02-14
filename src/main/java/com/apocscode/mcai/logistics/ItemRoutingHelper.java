@@ -193,6 +193,89 @@ public class ItemRoutingHelper {
         return totalDeposited;
     }
 
+    /**
+     * Common mining byproducts that should always be deposited to storage,
+     * even when a continuation plan is active. These are never needed for crafting chains.
+     */
+    private static final Set<Item> ALWAYS_DEPOSIT_ITEMS = Set.of(
+            Items.COBBLESTONE, Items.COBBLED_DEEPSLATE, Items.DIRT, Items.GRAVEL,
+            Items.SAND, Items.RED_SAND, Items.CLAY_BALL, Items.FLINT,
+            Items.DIORITE, Items.GRANITE, Items.ANDESITE, Items.TUFF,
+            Items.STONE, Items.DEEPSLATE, Items.NETHERRACK, Items.BASALT,
+            Items.BLACKSTONE, Items.CALCITE, Items.MUD, Items.SOUL_SAND,
+            Items.SOUL_SOIL, Items.POINTED_DRIPSTONE
+    );
+
+    /**
+     * Route non-essential items to storage while keeping items relevant to a continuation plan.
+     * Used after mining tasks that have continuations (e.g., "mine iron" → "smelt" → "craft").
+     * Always deposits common byproducts (cobblestone, dirt, gravel, etc.).
+     * Keeps items whose names appear in the plan keywords.
+     *
+     * @param companion The companion entity
+     * @param planContext The continuation plan context (e.g., "smelt raw_iron, then craft iron_pickaxe")
+     * @return Total number of items deposited
+     */
+    public static int routeNonEssentialItems(CompanionEntity companion, String planContext) {
+        if (!hasTaggedStorage(companion)) return 0;
+
+        Level level = companion.level();
+        SimpleContainer inv = companion.getCompanionInventory();
+        int totalDeposited = 0;
+
+        // Lowercase plan for matching
+        String planLower = planContext != null ? planContext.toLowerCase() : "";
+
+        for (int i = 0; i < inv.getContainerSize(); i++) {
+            ItemStack stack = inv.getItem(i);
+            if (stack.isEmpty()) continue;
+
+            // Always deposit known byproducts
+            boolean isJunk = ALWAYS_DEPOSIT_ITEMS.contains(stack.getItem());
+
+            if (!isJunk) {
+                // Check if this item's name appears in the plan — if so, keep it
+                ResourceLocation itemId = BuiltInRegistries.ITEM.getKey(stack.getItem());
+                String itemPath = itemId.getPath().toLowerCase(); // e.g. "raw_iron"
+                if (planLower.contains(itemPath)) {
+                    continue; // Keep this item — it's probably needed
+                }
+
+                // Also check the display name
+                String displayName = stack.getItem().getDescription().getString().toLowerCase();
+                // Check each word of the display name against the plan
+                boolean matchesplan = false;
+                for (String word : displayName.split("\\s+")) {
+                    if (word.length() > 3 && planLower.contains(word)) {
+                        matchesplan = true;
+                        break;
+                    }
+                }
+                if (matchesplan) {
+                    continue; // Keep this item
+                }
+            }
+
+            // This item is junk or not mentioned in the plan — deposit it
+            int before = stack.getCount();
+            int deposited = tryInsertIntoTagged(level, companion, stack, TaggedBlock.Role.OUTPUT);
+            if (!stack.isEmpty()) {
+                deposited += tryInsertIntoTagged(level, companion, stack, TaggedBlock.Role.STORAGE);
+            }
+
+            if (deposited > 0) {
+                if (stack.isEmpty()) {
+                    inv.setItem(i, ItemStack.EMPTY);
+                } else {
+                    inv.getItem(i).setCount(stack.getCount());
+                }
+                totalDeposited += deposited;
+            }
+        }
+
+        return totalDeposited;
+    }
+
     // ========== Auto-craft and place chest when no storage exists ==========
 
     /** Any plank type counts for chest crafting. */

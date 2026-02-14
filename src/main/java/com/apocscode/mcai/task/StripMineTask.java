@@ -89,6 +89,16 @@ public class StripMineTask extends CompanionTask {
     protected void start() {
         int currentY = companion.blockPosition().getY();
 
+        // Refuse to mine inside the home area
+        if (companion.isInHomeArea(companion.blockPosition())) {
+            say("I can't mine here — this is inside the home area! I'll walk away first.");
+            // Move the companion out of the home area before starting
+            BlockPos awayPos = companion.blockPosition().relative(direction, 20);
+            navigateTo(awayPos);
+            fail("Cannot strip-mine inside the home area. Move me outside first.");
+            return;
+        }
+
         // Calculate how far to descend (if we need to reach target Y)
         if (targetY >= 0 && currentY > targetY) {
             descendTarget = currentY - targetY;
@@ -149,6 +159,13 @@ public class StripMineTask extends CompanionTask {
             BlockHelper.placeBlock(companion, aheadBelow, Blocks.COBBLESTONE);
             phase = Phase.TUNNEL;
             say("Lava detected below stairs! Sealed and tunneling at Y=" + pos.getY() + " instead.");
+            return;
+        }
+
+        // Don't dig stairs into the home area
+        if (companion.isInHomeArea(aheadBelow) || companion.isInHomeArea(ahead)) {
+            phase = Phase.TUNNEL;
+            say("Stairs reached home area boundary! Tunneling at Y=" + pos.getY() + " instead.");
             return;
         }
 
@@ -237,6 +254,13 @@ public class StripMineTask extends CompanionTask {
         if (!BlockHelper.isSafeToMine(companion.level(), nextFeet) ||
                 !BlockHelper.isSafeToMine(companion.level(), nextHead)) {
             say("Lava detected ahead! Stopping tunnel. Mined " + oresMined + " ores in " + tunnelProgress + " blocks.");
+            phase = Phase.DONE;
+            return;
+        }
+
+        // Don't tunnel into the home area
+        if (companion.isInHomeArea(nextFeet) || companion.isInHomeArea(nextHead)) {
+            say("Reached home area boundary! Stopping tunnel. Mined " + oresMined + " ores in " + tunnelProgress + " blocks.");
             phase = Phase.DONE;
             return;
         }
@@ -341,6 +365,8 @@ public class StripMineTask extends CompanionTask {
                 for (int dz = -ORE_SCAN_RADIUS; dz <= ORE_SCAN_RADIUS; dz++) {
                     if (dx == 0 && dz == 0 && (dy == 0 || dy == 1)) continue; // Skip tunnel itself
                     BlockPos checkPos = tunnelPos.offset(dx, dy, dz);
+                    // Skip blocks inside the home area
+                    if (companion.isInHomeArea(checkPos)) continue;
                     BlockState state = companion.level().getBlockState(checkPos);
 
                     boolean isTarget;

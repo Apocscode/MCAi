@@ -228,6 +228,8 @@ public class MineOresTask extends CompanionTask {
             for (int y = minY; y <= maxY; y++) {
                 for (int z = -radius; z <= radius; z++) {
                     BlockPos pos = center.offset(x, y, z);
+                    // Skip blocks inside the home area
+                    if (companion.isInHomeArea(pos)) continue;
                     BlockState state = companion.level().getBlockState(pos);
                     if (ore.matches(state)) {
                         results.add(pos);

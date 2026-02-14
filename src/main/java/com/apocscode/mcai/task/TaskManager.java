@@ -82,11 +82,20 @@ public class TaskManager {
                 // Award XP for completing a task
                 companion.awardXp(com.apocscode.mcai.entity.CompanionLevelSystem.TASK_COMPLETE_XP);
 
-                // Auto-deposit items ONLY if no continuation is set.
-                // When a continuation exists, items are needed for the next step
-                // (e.g., mined ore needed for smelting, chopped logs for crafting).
-                if (continuation == null && ItemRoutingHelper.hasTaggedStorage(companion)) {
-                    int deposited = ItemRoutingHelper.routeAllCompanionItems(companion);
+                // Auto-deposit items to tagged storage.
+                // When a continuation exists, only deposit byproducts (cobblestone, dirt, etc.)
+                // and keep items that match the plan (e.g., raw_iron for smelting).
+                // When no continuation, deposit everything.
+                if (ItemRoutingHelper.hasTaggedStorage(companion)) {
+                    int deposited;
+                    if (continuation != null) {
+                        // Selective: deposit junk, keep plan-relevant items
+                        String planContext = continuation.nextSteps() != null
+                                ? continuation.nextSteps() : continuation.planContext();
+                        deposited = ItemRoutingHelper.routeNonEssentialItems(companion, planContext);
+                    } else {
+                        deposited = ItemRoutingHelper.routeAllCompanionItems(companion);
+                    }
                     if (deposited > 0) {
                         MCAi.LOGGER.info("Auto-deposited {} item(s) to tagged storage after task: {}",
                                 deposited, taskDescription);

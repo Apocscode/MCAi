@@ -50,19 +50,11 @@ public class BlockHelper {
             return false;
         }
 
-        // 2. Inside home area: protect containers and functional blocks
+        // 2. Inside home area: protect ALL blocks — the home area is the player's base
         if (companion.isInHomeArea(pos)) {
-            BlockEntity be = level.getBlockEntity(pos);
-            if (be instanceof Container) {
-                MCAi.LOGGER.warn("BlockHelper: REFUSED to break CONTAINER {} at {} (inside home area)",
-                        state.getBlock().getName().getString(), pos);
-                return false;
-            }
-            if (isProtectedFunctionalBlock(state.getBlock())) {
-                MCAi.LOGGER.warn("BlockHelper: REFUSED to break FUNCTIONAL block {} at {} (inside home area)",
-                        state.getBlock().getName().getString(), pos);
-                return false;
-            }
+            MCAi.LOGGER.warn("BlockHelper: REFUSED to break {} at {} (inside home area)",
+                    state.getBlock().getName().getString(), pos);
+            return false;
         }
 
         // Collect drops directly into companion inventory (avoids ground-drop race condition)
@@ -78,8 +70,18 @@ public class BlockHelper {
             for (ItemStack drop : drops) {
                 ItemStack remainder = inv.addItem(drop);
                 if (!remainder.isEmpty()) {
-                    // Inventory full — spawn remainder on ground as fallback
-                    Block.popResource(level, pos, remainder);
+                    // Inventory full — try routing to tagged storage first
+                    if (com.apocscode.mcai.logistics.ItemRoutingHelper.hasTaggedStorage(companion)) {
+                        int routed = com.apocscode.mcai.logistics.ItemRoutingHelper.routeAllCompanionItems(companion);
+                        if (routed > 0) {
+                            // Made space — try inserting again
+                            remainder = inv.addItem(remainder);
+                        }
+                    }
+                    if (!remainder.isEmpty()) {
+                        // Still no space — drop on ground as last resort
+                        Block.popResource(level, pos, remainder);
+                    }
                 }
             }
         } else {

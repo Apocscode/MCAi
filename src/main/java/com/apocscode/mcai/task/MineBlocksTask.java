@@ -22,15 +22,21 @@ public class MineBlocksTask extends CompanionTask {
 
     /**
      * Mine a list of specific block positions.
+     * Filters out blocks inside the home area.
      */
     public MineBlocksTask(CompanionEntity companion, List<BlockPos> blockPositions, String description) {
         super(companion);
-        this.targets.addAll(blockPositions);
+        for (BlockPos pos : blockPositions) {
+            if (!companion.isInHomeArea(pos)) {
+                this.targets.add(pos);
+            }
+        }
         this.description = description;
     }
 
     /**
      * Mine a rectangular area (clear all non-air blocks).
+     * Filters out blocks inside the home area.
      */
     public MineBlocksTask(CompanionEntity companion, BlockPos from, BlockPos to) {
         super(companion);
@@ -47,7 +53,8 @@ public class MineBlocksTask extends CompanionTask {
             for (int x = minX; x <= maxX; x++) {
                 for (int z = minZ; z <= maxZ; z++) {
                     BlockPos pos = new BlockPos(x, y, z);
-                    if (!companion.level().getBlockState(pos).isAir()) {
+                    if (!companion.level().getBlockState(pos).isAir()
+                            && !companion.isInHomeArea(pos)) {
                         targets.add(pos);
                     }
                 }
