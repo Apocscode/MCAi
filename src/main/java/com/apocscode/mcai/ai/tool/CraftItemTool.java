@@ -321,49 +321,78 @@ public class CraftItemTool implements AiTool {
         SimpleContainer companionInv = getCompanionInventory(context);
         int fetched = 0;
 
+        // Track positions already scanned to avoid double-dipping
+        Set<BlockPos> scanned = new HashSet<>();
+
+        // === First: check tagged STORAGE blocks (any distance, chunk-loaded) ===
+        CompanionEntity companion = CompanionEntity.getLivingCompanion(context.player().getUUID());
+        if (companion != null) {
+            var storageBlocks = companion.getTaggedBlocks(
+                    com.apocscode.mcai.logistics.TaggedBlock.Role.STORAGE);
+            for (var tb : storageBlocks) {
+                if (fetched >= maxToFetch) break;
+                scanned.add(tb.pos());
+                fetched += extractFromContainer(level, tb.pos(), companionInv, context, targetItem, maxToFetch - fetched);
+            }
+        }
+
+        // === Then: scan nearby blocks around the player ===
         for (int x = -CHEST_SCAN_RADIUS; x <= CHEST_SCAN_RADIUS && fetched < maxToFetch; x++) {
             for (int y = -CHEST_SCAN_RADIUS; y <= CHEST_SCAN_RADIUS && fetched < maxToFetch; y++) {
                 for (int z = -CHEST_SCAN_RADIUS; z <= CHEST_SCAN_RADIUS && fetched < maxToFetch; z++) {
                     BlockPos pos = center.offset(x, y, z);
-                    BlockEntity be = level.getBlockEntity(pos);
-                    if (!(be instanceof Container container)) continue;
-
-                    for (int i = 0; i < container.getContainerSize() && fetched < maxToFetch; i++) {
-                        ItemStack stack = container.getItem(i);
-                        if (stack.isEmpty() || stack.getItem() != targetItem) continue;
-
-                        int toTake = Math.min(stack.getCount(), maxToFetch - fetched);
-                        ItemStack toInsert = stack.copyWithCount(toTake);
-
-                        // Route to companion inventory first, player as fallback
-                        boolean inserted = false;
-                        int actualInserted = 0;
-                        if (companionInv != null) {
-                            ItemStack rem = companionInv.addItem(toInsert);
-                            actualInserted = toTake - rem.getCount();
-                            if (!rem.isEmpty()) {
-                                // Companion full — try player for remainder
-                                if (context.player().getInventory().add(rem)) {
-                                    actualInserted = toTake;
-                                }
-                            } else {
-                                actualInserted = toTake;
-                            }
-                            inserted = actualInserted > 0;
-                        } else if (context.player().getInventory().add(toInsert)) {
-                            actualInserted = toTake - toInsert.getCount();
-                            if (toInsert.isEmpty()) actualInserted = toTake;
-                            inserted = actualInserted > 0;
-                        }
-
-                        if (inserted) {
-                            stack.shrink(actualInserted);
-                            if (stack.isEmpty()) container.setItem(i, ItemStack.EMPTY);
-                            container.setChanged();
-                            fetched += actualInserted;
-                        }
-                    }
+                    if (scanned.contains(pos)) continue; // already checked as tagged storage
+                    scanned.add(pos);
+                    fetched += extractFromContainer(level, pos, companionInv, context, targetItem, maxToFetch - fetched);
                 }
+            }
+        }
+        return fetched;
+    }
+
+    /**
+     * Extract a specific item from a container at the given position into companion/player inventory.
+     * Returns the number of items extracted.
+     */
+    private int extractFromContainer(Level level, BlockPos pos, SimpleContainer companionInv,
+                                     ToolContext context, Item targetItem, int maxToFetch) {
+        BlockEntity be = level.getBlockEntity(pos);
+        if (!(be instanceof Container container)) return 0;
+
+        int fetched = 0;
+        for (int i = 0; i < container.getContainerSize() && fetched < maxToFetch; i++) {
+            ItemStack stack = container.getItem(i);
+            if (stack.isEmpty() || stack.getItem() != targetItem) continue;
+
+            int toTake = Math.min(stack.getCount(), maxToFetch - fetched);
+            ItemStack toInsert = stack.copyWithCount(toTake);
+
+            // Route to companion inventory first, player as fallback
+            boolean inserted = false;
+            int actualInserted = 0;
+            if (companionInv != null) {
+                ItemStack rem = companionInv.addItem(toInsert);
+                actualInserted = toTake - rem.getCount();
+                if (!rem.isEmpty()) {
+                    // Companion full — try player for remainder
+                    if (context.player().getInventory().add(rem)) {
+                        actualInserted = toTake;
+                    }
+                } else {
+                    actualInserted = toTake;
+                }
+                inserted = actualInserted > 0;
+            } else if (context.player().getInventory().add(toInsert)) {
+                actualInserted = toTake - toInsert.getCount();
+                if (toInsert.isEmpty()) actualInserted = toTake;
+                inserted = actualInserted > 0;
+            }
+
+            if (inserted) {
+                stack.shrink(actualInserted);
+                if (stack.isEmpty()) container.setItem(i, ItemStack.EMPTY);
+                container.setChanged();
+                fetched += actualInserted;
             }
         }
         return fetched;
@@ -1334,17 +1363,25 @@ public class CraftItemTool implements AiTool {
             // Tagged STORAGE containers (always checked, may be outside home area)
             var storageBlocks = companion.getTaggedBlocks(
                     com.apocscode.mcai.logistics.TaggedBlock.Role.STORAGE);
+            MCAi.LOGGER.info("buildAvailableMap: checking {} tagged STORAGE block(s)", storageBlocks.size());
             for (var tb : storageBlocks) {
                 scanned.add(tb.pos());
                 net.minecraft.world.level.block.entity.BlockEntity be =
                         context.player().level().getBlockEntity(tb.pos());
                 if (be instanceof net.minecraft.world.Container container) {
+                    int itemCount = 0;
                     for (int i = 0; i < container.getContainerSize(); i++) {
                         ItemStack stack = container.getItem(i);
                         if (!stack.isEmpty()) {
                             available.merge(stack.getItem(), stack.getCount(), Integer::sum);
+                            itemCount += stack.getCount();
                         }
                     }
+                    MCAi.LOGGER.info("  STORAGE @ {} — {} items in {} slots",
+                            tb.pos().toShortString(), itemCount, container.getContainerSize());
+                } else {
+                    MCAi.LOGGER.warn("  STORAGE @ {} — not a container (be={})",
+                            tb.pos().toShortString(), be != null ? be.getClass().getSimpleName() : "null/unloaded");
                 }
             }
 
