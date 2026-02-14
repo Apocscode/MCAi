@@ -171,4 +171,179 @@ Full failure chain from logs:
 
 ---
 
-*Last updated: 2026-02-14*
+## Session 5 — 2026-02-14 (Late Evening) — Diagnostic Command & Raw Material Coverage
+
+### Focus: Test ALL vanilla items for recipe resolution
+
+### Commits
+- `8d4a447` — **`/mcai diagnose` command + 60+ raw materials**
+
+### What Was Done
+
+#### Created `/mcai diagnose` command
+- New `DiagnoseCommand.java` — tests every vanilla item through `RecipeResolver.resolve()`
+- Reports: total items tested, resolved count, error count, unique unknowns list
+- First run: **985/1151 resolved (85.6%)**, 110 unique unknowns
+
+#### Expanded `classifyRawMaterial()` with 60+ entries
+- Amethyst buds (small, medium, large, cluster)
+- Oxidized copper variants (9 items — exposed, weathered, oxidized × block, cut, slab)
+- Concrete (16 colors, pattern-matched)
+- Nether plants (10 — crimson/warped roots, nylium, weeping/twisting vines, etc.)
+- Froglights (3 — ochre, verdant, pearlescent)
+- Mob buckets (6 — axolotl, fish, tadpole, salmon, pufferfish, tropical_fish)
+- Misc: reinforced_deepslate, frogspawn, turtle_egg, sniffer_egg, sculk items
+
+#### Updated CraftingPlan.java
+- `resolveMobForDrop()` — fixed `scute` → `turtle_scute`, added froglights, mob buckets
+- `assessMobDifficulty()` — added frog variants, turtle, sniffer, axolotl
+- `assessMineDifficulty()` — added amethyst buds (HARD)
+- `assessGatherDifficulty()` — added oxidized copper, lava_bucket, concrete
+- `assessFarmDifficulty()` — added chorus_plant, nether plants
+- `getUnknownItemAdvice()` — added 15+ items (bell, dragon_head, horse armor, etc.)
+
+#### Updated CraftItemTool.java
+- Matching entries in `resolveMobForDrop()`, `resolveGatherBlocks()`, `resolveFarmBlock()`
+
+### Diagnostic Result After Fixes
+- **1094/1151 resolved (95.0%)** — up from 85.6%
+- 48 unique unknowns remaining, breakdown:
+  - 16 colored shulker boxes (circular TransmuteRecipe)
+  - 9 netherite gear (SmithingTransformRecipe not indexed)
+  - 14 loot-only items (correctly UNKNOWN)
+  - 1 white_carpet (circular dye recipe from modded)
+  - 2 quartz issues
+  - 2 modded items
+
+### JAR Deployed
+- Built & deployed to ATM10 mods folder
+
+---
+
+## Session 6 — 2026-02-14 (Night) — Manual Recipes: Shulker/Netherite/Carpet
+
+### Focus: Fix structural recipe issues that can't be solved by classifyRawMaterial
+
+### Commits
+- `455dcfc` — **Manual recipes + StripMineTask fix** (combined with Session 7)
+
+### What Was Done
+
+#### New `tryManualRecipe()` method in RecipeResolver.java
+Called in `resolveRecursive()` after raw material check but before recipe phases. Handles 3 categories:
+
+1. **Netherite gear** (9 items) — SmithingTransformRecipe not in vanilla recipe index
+   - Maps netherite_sword → diamond_sword + netherite_ingot + netherite_upgrade_smithing_template
+   - `getNetheriteDiamondBase()` helper maps all 9 tools/armor pieces
+
+2. **Colored shulker boxes** (16 items) — TransmuteRecipe creates circular dependency
+   - Maps blue_shulker_box → shulker_box + blue_dye (breaks cycle)
+   - `getDyeForColor()` helper maps all 16 color names to dye items
+
+3. **White carpet** — modded dye recipes create circular reference
+   - Manually resolves: 2 white_wool → 3 white_carpet
+
+#### Updated `pickBestVariant()`
+- Now prefers shortest-named vanilla item when resolving tags
+- Picks `shulker_box` over `blue_shulker_box` from tag results
+
+#### Added `netherite_upgrade_smithing_template` to UNKNOWN category
+- With advice: "Loot-only from bastion remnants"
+
+### JAR Deployed
+- Built & deployed to ATM10 mods folder
+
+---
+
+## Session 7 — 2026-02-14 (Night) — StripMineTask Instant-Completion Bug
+
+### Focus: Jim's strip mine completed in 50 ticks (2.5 seconds) without actually mining
+
+### Commits
+- `455dcfc` — (same commit as Session 6)
+
+### Root Cause
+`tickTunnel()` incremented `tunnelProgress` every tick without waiting for the companion to physically walk to each position. `navigateTo()` starts async pathfinding but the code immediately advanced to the next block. Same bug existed in `tickDigDown()`.
+
+Result: 48-block tunnel "completed" in 48 ticks while Jim stood in place. Block breaking happened at the same position repeatedly (or on air).
+
+### Fix Applied
+
+#### New position-tracking fields
+- `tunnelFacePos` — where companion must stand before mining next tunnel block
+- `descendTargetPos` — where companion must arrive during stair descent
+
+#### Arrival gating in both phases
+- `tickTunnel()`: uses `isInReach(tunnelFacePos, 2.5)` before breaking next block
+- `tickDigDown()`: uses `isInReach(descendTargetPos, 2.5)` before digging next stair step
+- Both have stuck detection (60-tick timeout → abort with message)
+
+#### Additional improvements
+- Floor safety: places cobblestone over voids/lava under tunnel floor
+- Progress logging every 8 blocks for verification
+- All DIG_DOWN → TUNNEL transitions now set `tunnelFacePos`
+
+### Crash Analysis (same session)
+- **Server crash (3:28 PM)**: `NoClassDefFoundError: HomeBaseManager` — caused by hot-swapping JAR while game was running. Class exists in JAR. Fix: restart game after deploy.
+- **Client crash (4:15 PM)**: `ConcurrentModificationException` in `AbstractContainerScreen.render()` — mod mixin conflict in creative inventory (accessories, emi, fancymenu, owo, ae2). Not MCAi-related.
+
+### JAR Deployed
+- Built & deployed to ATM10 mods folder
+
+---
+
+## Environment Reference
+
+### Build & Deploy
+```powershell
+cd F:\MCAi
+.\gradlew build -x test
+Copy-Item "build\libs\mcai-0.1.0.jar" "C:\Users\travf\curseforge\minecraft\Instances\All the Mods 10 - ATM10\mods\mcai-0.1.0.jar" -Force
+```
+
+### Git
+```powershell
+$env:Path = "C:\Program Files\Git\bin;" + $env:Path
+cd F:\MCAi
+git add -A
+git commit -m "description"
+```
+
+### Key Files
+| File | Purpose |
+|------|---------|
+| `src/.../MCAi.java` | Mod entry point, LOGGER, registry init |
+| `src/.../ai/AIService.java` | 3-tier AI routing (cloud → fallback → Ollama), agent loop, tool execution |
+| `src/.../ai/CommandParser.java` | Local command parser, 30+ patterns, fuzzy match, web search questions |
+| `src/.../ai/AiLogger.java` | Debug logger → `logs/mcai_debug.log`, categories, rotation at 10MB |
+| `src/.../ai/planner/RecipeResolver.java` | Recursive recipe resolution, tryManualRecipe, classifyRawMaterial |
+| `src/.../ai/planner/CraftingPlan.java` | Ordered crafting steps, difficulty analysis, mob/mine/gather/farm assessment |
+| `src/.../ai/tool/CraftItemTool.java` | Crafting orchestrator — resolve recipes, fetch materials, execute crafting |
+| `src/.../task/StripMineTask.java` | Strip mine tunnel with arrival gating, ore scanning, torch crafting |
+| `src/.../task/TaskManager.java` | Async task queue, continuations, deterministic execution |
+| `src/.../command/DiagnoseCommand.java` | `/mcai diagnose` — tests all vanilla items for resolution |
+| `src/.../entity/CompanionEntity.java` | Jim entity, AI, inventory, equipment, hazard safety, behaviors |
+| `src/.../logistics/HomeBaseManager.java` | Auto-setup crafting infrastructure (table, furnace, cauldron) |
+| `src/.../network/ChatMessageHandler.java` | Server-side message routing: ! → CommandParser → AI |
+| `src/.../client/CompanionChatScreen.java` | Chat GUI, auto-focus, URL clicking, Component rendering |
+| `src/.../config/AiConfig.java` | Mod configuration (API keys, models, radii, etc.) |
+
+### Architecture
+- **Message Flow**: Player types in CompanionChatScreen → ChatMessagePacket → server ChatMessageHandler → `!` prefix? CommandParser : AIService.chat()
+- **AI Flow**: AIService → cloud API (OpenRouter) → tool calls → execute tools → loop until text response
+- **Task Flow**: Tool returns [ASYNC_TASK] → TaskManager queues → tick-based execution → [TASK_COMPLETE]/[TASK_FAILED] → continuation with plan parameter
+- **Fallback Chain**: Cloud primary (Scout 17B) → Cloud fallback (Llama 70B) → Local Ollama (llama3.1)
+- **Recipe Resolution**: resolve() → resolveRecursive() → [raw material | tryManualRecipe | Phase 1-4 recipe lookup | fallback raw]
+- **Hazard Safety**: Pathfinding malus (lava/fire/damage -1.0) + hazardCheck() every 10 ticks (void teleport, lava flee, suffocation break) + isSafeToMine() on all block breaks
+
+### Diagnostic Results
+| Run | Resolved | Total | Rate | Unknowns |
+|-----|----------|-------|------|----------|
+| 1st | 985 | 1151 | 85.6% | 110 |
+| 2nd | 1094 | 1151 | 95.0% | 48 |
+| 3rd | Pending — need to run after shulker/netherite/carpet fixes | | ~97%+ expected | ~20 |
+
+---
+
+*Last updated: 2026-02-14 — Session 7*
+*Rule: Update this log with every JAR deployment.*
