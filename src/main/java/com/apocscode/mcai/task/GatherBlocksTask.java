@@ -3,7 +3,9 @@ package com.apocscode.mcai.task;
 import com.apocscode.mcai.MCAi;
 import com.apocscode.mcai.entity.CompanionEntity;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.tags.BlockTags;
+import net.minecraft.tags.FluidTags;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
@@ -31,6 +33,8 @@ public class GatherBlocksTask extends CompanionTask {
     private int totalBlocks = 0;
     private boolean diggingDown = false;
     private BlockPos digTarget = null;
+    private Direction digDirection = null;
+    private int descendProgress = 0;
 
     public GatherBlocksTask(CompanionEntity companion, Block targetBlock, int radius, int maxBlocks) {
         this(companion, new Block[]{targetBlock}, radius, maxBlocks);
@@ -81,8 +85,10 @@ public class GatherBlocksTask extends CompanionTask {
                 MCAi.LOGGER.info("GatherBlocksTask: no surface {}, will try digging down",
                         targetBlocks[0].getName().getString());
                 diggingDown = true;
-                digTarget = companion.blockPosition().below();
-                say("No exposed " + targetBlocks[0].getName().getString() + " nearby — digging down to find some!");
+                digTarget = companion.blockPosition();
+                digDirection = companion.getDirection(); // face direction for staircase
+                descendProgress = 0;
+                say("No exposed " + targetBlocks[0].getName().getString() + " nearby \u2014 digging stairs down to find some!");
                 return;
             }
             MCAi.LOGGER.warn("GatherBlocksTask: no {} blocks found within r={}",
@@ -151,84 +157,102 @@ public class GatherBlocksTask extends CompanionTask {
     }
 
     /**
-     * Dig down through soft blocks (dirt, grass, gravel, sand) to reach stone-type blocks.
-     * Used when no stone/cobblestone is found on the surface.
-     * Once stone is found, switches to normal gather mode.
+     * Dig down via staircase pattern to reach stone-type blocks.
+     * Uses the same safe approach as StripMineTask: 1 forward + 1 down per step,
+     * creating walkable stairs. Checks for lava, places floor if needed.
      */
     private void tickDigDown() {
-        if (digTarget == null) {
-            fail("Dig target lost");
+        if (digDirection == null) {
+            fail("Dig direction lost");
             return;
         }
 
-        // Check how far we've dug
-        int depth = companion.blockPosition().getY() - digTarget.getY();
-        if (depth > DIG_DOWN_MAX) {
-            MCAi.LOGGER.warn("GatherBlocksTask: dug down {} blocks without finding target",
+        // Check depth limit
+        if (descendProgress >= DIG_DOWN_MAX) {
+            MCAi.LOGGER.warn("GatherBlocksTask: dug down {} steps without finding target",
                     DIG_DOWN_MAX);
-            fail("Dug down " + DIG_DOWN_MAX + " blocks but couldn't find "
+            fail("Dug down " + DIG_DOWN_MAX + " steps but couldn't find "
                     + targetBlocks[0].getName().getString());
             return;
         }
 
+        BlockPos pos = companion.blockPosition();
         Level level = companion.level();
-        BlockState belowState = level.getBlockState(digTarget);
-        Block below = belowState.getBlock();
 
-        // Check if we hit a target block
-        for (Block t : targetBlocks) {
-            if (below == t) {
-                MCAi.LOGGER.info("GatherBlocksTask: found {} at depth {}, switching to gather mode",
-                        t.getName().getString(), depth + 1);
-                diggingDown = false;
-                // Now do a fresh scan — we've exposed stone
-                List<BlockPos> found = BlockHelper.scanForBlocks(companion, targetBlocks, 4, maxBlocks);
-                if (!found.isEmpty()) {
-                    targets.addAll(found);
-                    totalBlocks = targets.size();
-                    say("Found " + totalBlocks + " " + targetBlocks[0].getName().getString() + " underground!");
-                } else {
-                    // At minimum, the block below us is a target
-                    targets.add(digTarget);
-                    totalBlocks = 1;
-                }
-                return;
-            }
-        }
-
-        // Not a target block yet — break it if it's soft enough
-        if (belowState.isAir()) {
-            // Air — just fall or move down
-            digTarget = digTarget.below();
+        // Safety: near world bottom
+        if (pos.getY() <= level.getMinBuildHeight() + 2) {
+            MCAi.LOGGER.warn("GatherBlocksTask: near world bottom at Y={}", pos.getY());
+            fail("Reached world bottom without finding "
+                    + targetBlocks[0].getName().getString());
             return;
         }
 
-        // Break soft blocks (dirt, grass, gravel, sand, etc.)
-        // Stone-type blocks that aren't our targets get broken too if we have a tool
-        boolean isSoft = below == Blocks.DIRT || below == Blocks.GRASS_BLOCK
-                || below == Blocks.COARSE_DIRT || below == Blocks.PODZOL
-                || below == Blocks.SAND || below == Blocks.RED_SAND
-                || below == Blocks.GRAVEL || below == Blocks.CLAY
-                || below == Blocks.ROOTED_DIRT || below == Blocks.MUD
-                || below == Blocks.MUDDY_MANGROVE_ROOTS
-                || below == Blocks.SOUL_SAND || below == Blocks.SOUL_SOIL
-                || belowState.is(BlockTags.DIRT);
+        // Staircase pattern: dig 1 forward + 1 down each step
+        // This creates walkable stairs the companion can climb back up
+        BlockPos ahead = pos.relative(digDirection);    // one step forward
+        BlockPos aheadBelow = ahead.below();              // the step-down position (new feet)
+        BlockPos aheadHead = ahead;                       // head clearance at step-down
+        BlockPos aheadAbove = ahead.above();              // extra clearance above
 
-        if (isSoft || isInReach(digTarget, 3.0)) {
-            companion.equipBestToolForBlock(belowState);
-            BlockHelper.breakBlock(companion, digTarget);
-            digTarget = digTarget.below();
-        } else {
-            // Can't reach or break — try navigating closer
-            navigateTo(digTarget);
-            stuckTimer++;
-            if (stuckTimer > 60) {
-                MCAi.LOGGER.warn("GatherBlocksTask: stuck while digging down at {}",
-                        digTarget);
-                fail("Got stuck while digging down to find "
-                        + targetBlocks[0].getName().getString());
+        // Safety: check for lava at the step-down position
+        if (!BlockHelper.isSafeToMine(level, aheadBelow)) {
+            MCAi.LOGGER.warn("GatherBlocksTask: lava detected at stairs, aborting dig-down");
+            fail("Lava detected while digging stairs — aborting for safety");
+            return;
+        }
+
+        // Check if any of the 3 blocks we're about to clear are target blocks
+        for (BlockPos checkPos : new BlockPos[]{aheadAbove, aheadHead, aheadBelow}) {
+            BlockState checkState = level.getBlockState(checkPos);
+            for (Block t : targetBlocks) {
+                if (checkState.getBlock() == t) {
+                    MCAi.LOGGER.info("GatherBlocksTask: found {} at stair step {}, switching to gather mode",
+                            t.getName().getString(), descendProgress + 1);
+                    diggingDown = false;
+                    // Fresh scan around exposed stone
+                    List<BlockPos> found = BlockHelper.scanForBlocks(companion, targetBlocks, 6, maxBlocks);
+                    if (!found.isEmpty()) {
+                        targets.addAll(found);
+                        totalBlocks = targets.size();
+                        say("Found " + totalBlocks + " " + targetBlocks[0].getName().getString() + " underground!");
+                    } else {
+                        targets.add(checkPos);
+                        totalBlocks = 1;
+                    }
+                    return;
+                }
             }
         }
+
+        // Clear 3 blocks for the step: above, head, and step-down
+        BlockState aboveState = level.getBlockState(aheadAbove);
+        if (!aboveState.isAir()) {
+            companion.equipBestToolForBlock(aboveState);
+            BlockHelper.breakBlock(companion, aheadAbove);
+        }
+
+        BlockState headState = level.getBlockState(aheadHead);
+        if (!headState.isAir()) {
+            companion.equipBestToolForBlock(headState);
+            BlockHelper.breakBlock(companion, aheadHead);
+        }
+
+        BlockState belowState = level.getBlockState(aheadBelow);
+        if (!belowState.isAir()) {
+            companion.equipBestToolForBlock(belowState);
+            BlockHelper.breakBlock(companion, aheadBelow);
+        }
+
+        // Ensure solid floor under the new step (prevent falling into caves)
+        BlockPos floorCheck = aheadBelow.below();
+        BlockState floorState = level.getBlockState(floorCheck);
+        if (floorState.isAir() || floorState.getFluidState().is(FluidTags.LAVA)) {
+            BlockHelper.placeBlock(companion, floorCheck, Blocks.COBBLESTONE);
+        }
+
+        // Navigate to the new lower position
+        navigateTo(aheadBelow);
+        descendProgress++;
     }
 
     /**

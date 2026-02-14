@@ -69,6 +69,11 @@ public class LogisticsWandItem extends Item {
             return handleHomeAreaClick(level, player, pos);
         }
 
+        // --- CLEAR_HOME mode: clear the home area ---
+        if (mode == WandMode.CLEAR_HOME) {
+            return handleClearHomeArea(level, player);
+        }
+
         // --- Container tagging modes (INPUT/OUTPUT/STORAGE) ---
         return handleContainerTagging(level, player, pos, mode);
     }
@@ -138,6 +143,35 @@ public class LogisticsWandItem extends Item {
             level.playSound(null, pos, SoundEvents.AMETHYST_BLOCK_CHIME, SoundSource.PLAYERS, 0.8F, 0.8F);
             return InteractionResult.sidedSuccess(level.isClientSide);
         }
+    }
+
+    /**
+     * Handle CLEAR_HOME mode: clear the home area bounding box.
+     */
+    private InteractionResult handleClearHomeArea(Level level, Player player) {
+        UUID playerUUID = player.getUUID();
+        CompanionEntity companion = CompanionEntity.getLivingCompanion(playerUUID);
+
+        // Clear player persistent data
+        player.getPersistentData().remove("mcai:home_corner1");
+        player.getPersistentData().remove("mcai:home_corner2");
+        player.getPersistentData().putInt(TAG_HOME_CORNER_NEXT, 0);
+
+        // Clear companion data
+        if (companion != null) {
+            companion.setHomeCorner1(null);
+            companion.setHomeCorner2(null);
+        }
+
+        // Sync clear to client (0L, 0L clears rendering)
+        if (player instanceof ServerPlayer sp) {
+            PacketDistributor.sendToPlayer(sp, new SyncHomeAreaPacket(0L, 0L));
+        }
+
+        player.sendSystemMessage(Component.literal(
+                "§c[MCAi]§r Home Area §ccleared§r!"));
+        level.playSound(null, player.blockPosition(), SoundEvents.ITEM_PICKUP, SoundSource.PLAYERS, 0.6F, 0.8F);
+        return InteractionResult.sidedSuccess(level.isClientSide);
     }
 
     /**
@@ -237,7 +271,7 @@ public class LogisticsWandItem extends Item {
                                 List<Component> tooltipComponents, TooltipFlag tooltipFlag) {
         tooltipComponents.add(Component.literal("§5Shift+right-click container to tag/untag"));
         tooltipComponents.add(Component.literal("§5Shift+scroll to cycle mode"));
-        tooltipComponents.add(Component.literal("§8Modes: §9Input §8| §6Output §8| §aStorage §8| §2Home Area"));
+        tooltipComponents.add(Component.literal("§8Modes: §9Input §8| §6Output §8| §aStorage §8| §2Home Area §8| §cClear Home"));
         super.appendHoverText(stack, context, tooltipComponents, tooltipFlag);
     }
 

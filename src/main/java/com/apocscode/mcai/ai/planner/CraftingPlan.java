@@ -124,14 +124,14 @@ public class CraftingPlan {
     /**
      * Prepend prerequisite steps to the front of the plan.
      * Used for tool prerequisites (e.g., craft stone_pickaxe before mining iron).
-     * Steps are inserted in order, before existing steps, respecting priority.
+     * Prereqs are inserted in their existing order BEFORE the main plan steps.
+     * No re-sorting — prereqs must execute first (e.g., craft pickaxe before mining).
      */
     public void prependSteps(List<Step> prereqs) {
-        // Insert at the beginning, maintaining priority order
+        // Prereqs go first (already correctly ordered from fromTree),
+        // then the original plan steps follow
         List<Step> merged = new ArrayList<>(prereqs);
         merged.addAll(steps);
-        // Re-sort by priority to maintain correct execution order
-        merged.sort(Comparator.comparingInt(s -> typePriority(s.type)));
         steps.clear();
         steps.addAll(merged);
     }

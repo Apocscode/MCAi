@@ -10,7 +10,8 @@ public enum WandMode {
     INPUT("Input", 0xFF5599FF, "§9"),
     OUTPUT("Output", 0xFFFF8800, "§6"),
     STORAGE("Storage", 0xFF55FF55, "§a"),
-    HOME_AREA("Home Area", 0xFF55FFAA, "§2");
+    HOME_AREA("Home Area", 0xFF55FFAA, "§2"),
+    CLEAR_HOME("Clear Home", 0xFFFF5555, "§c");
 
     private final String label;
     private final int color;
