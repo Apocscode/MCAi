@@ -213,12 +213,21 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
         this.setPathfindingMalus(net.minecraft.world.level.pathfinder.PathType.DAMAGE_OTHER, -1.0F);
         this.setPathfindingMalus(net.minecraft.world.level.pathfinder.PathType.DANGER_FIRE, 8.0F);
         this.setPathfindingMalus(net.minecraft.world.level.pathfinder.PathType.DANGER_OTHER, 8.0F);
-        this.setPathfindingMalus(net.minecraft.world.level.pathfinder.PathType.WATER, 4.0F);
+        this.setPathfindingMalus(net.minecraft.world.level.pathfinder.PathType.WATER, 0.0F);  // Allow water traversal
+        this.setPathfindingMalus(net.minecraft.world.level.pathfinder.PathType.WATER_BORDER, 0.0F);
 
         // === Door navigation — walk through doors like villagers ===
         this.setPathfindingMalus(net.minecraft.world.level.pathfinder.PathType.DOOR_OPEN, 0.0F);
         this.setPathfindingMalus(net.minecraft.world.level.pathfinder.PathType.DOOR_WOOD_CLOSED, 0.0F);
         this.setPathfindingMalus(net.minecraft.world.level.pathfinder.PathType.DOOR_IRON_CLOSED, 0.0F);
+
+        // === Fence gates — goal opens them proactively, no PathType override needed ===
+        // Note: FENCE PathType covers fences, walls, AND closed fence gates — we can't
+        // set it to 0 or Jim would try to walk through solid fences/walls.
+        // The CompanionOpenFenceGateGoal detects stuck-near-gate and opens it.
+
+        // === Trapdoors — treat as passable (companion has a goal to open them) ===
+        this.setPathfindingMalus(net.minecraft.world.level.pathfinder.PathType.TRAPDOOR, 0.0F);
     }
 
     @Override
@@ -319,7 +328,8 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
                 .add(Attributes.ARMOR, 4.0D)
                 .add(Attributes.ATTACK_DAMAGE, 3.0D)
                 .add(Attributes.ATTACK_SPEED, 4.0D)
-                .add(Attributes.KNOCKBACK_RESISTANCE, 0.2D);
+                .add(Attributes.KNOCKBACK_RESISTANCE, 0.2D)
+                .add(Attributes.STEP_HEIGHT, 1.0D);  // Step up full blocks like iron golems (default 0.6)
     }
 
     // ================================================================
@@ -334,6 +344,10 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
         this.goalSelector.addGoal(1, new OpenDoorGoal(this, true));  // true = close door after passing
         // Iron door handling — press buttons/levers to open iron doors (and modded non-hand-openable doors)
         this.goalSelector.addGoal(1, new CompanionOpenIronDoorGoal(this));
+        // Fence gate handling — open/close fence gates when pathfinding through them
+        this.goalSelector.addGoal(1, new CompanionOpenFenceGateGoal(this, true));  // true = close after passing
+        // Trapdoor handling — open/close wooden trapdoors when pathfinding through them
+        this.goalSelector.addGoal(1, new CompanionOpenTrapdoorGoal(this));
         this.goalSelector.addGoal(1, new CompanionCombatGoal(this, 1.2D, true));
         this.goalSelector.addGoal(2, new CompanionEatFoodGoal(this));
         this.goalSelector.addGoal(2, new CompanionFetchFoodGoal(this));   // Fetch food from chests when hungry
@@ -450,6 +464,16 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
     @Override
     public boolean isInvulnerable() {
         return false;
+    }
+
+    /**
+     * Companion never loses air — prevents drowning so he can
+     * traverse water paths, swim across rivers, and work in flooded areas.
+     * (canBreatheUnderwater() is final in LivingEntity, so we prevent air loss instead)
+     */
+    @Override
+    protected int decreaseAirSupply(int currentAir) {
+        return currentAir; // Never lose air — effectively breathe underwater
     }
 
     @Override
