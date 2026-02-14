@@ -12,6 +12,7 @@ import net.minecraft.world.entity.player.Player;
 import java.util.ArrayDeque;
 import java.util.Deque;
 
+
 /**
  * Manages a queue of CompanionTasks for a companion entity.
  *
@@ -307,8 +308,14 @@ public class TaskManager {
     }
 
     /**
-     * Fire a task continuation — triggers an AI follow-up chat to continue a multi-step plan.
-     * Called on the server tick thread when a task with a continuation completes successfully.
+     * Fire a task continuation — either deterministically (direct tool call) or via AI.
+     *
+     * For SUCCESS continuations: parse the nextSteps string for structured tool calls
+     * like "Call tool_name({...})". If parseable, execute the tool directly without
+     * involving the AI — this is faster and immune to rate limits or LLM mistakes.
+     * Falls back to AI if the format is unrecognized.
+     *
+     * For FAILURE continuations: always use AI — it needs to reason about alternatives.
      */
     private void fireContinuation(TaskContinuation continuation, String taskDescription) {
         Player owner = companion.getOwner();
@@ -321,11 +328,95 @@ public class TaskManager {
         MCAi.LOGGER.info("Firing task continuation for '{}': plan='{}'",
                 taskDescription, continuation.planContext());
 
+        // Try deterministic execution first — parse "Call tool_name({...})" from nextSteps
+        String nextSteps = continuation.nextSteps();
+        if (nextSteps != null && tryDeterministicContinuation(nextSteps, serverPlayer, companionName, taskDescription)) {
+            return; // Successfully executed without AI
+        }
+
+        // Fall back to AI
+        MCAi.LOGGER.info("Deterministic continuation not possible, falling back to AI");
         companion.getChat().say(CompanionChat.Category.TASK,
                 "Continuing the plan...");
 
         AIService.continueAfterTask(continuation, "Completed: " + taskDescription,
                 serverPlayer, companionName);
+    }
+
+
+
+    /**
+     * Try to execute a continuation deterministically by parsing the tool call from nextSteps.
+     * Returns true if successful (tool was called), false if the format couldn't be parsed.
+     */
+    private boolean tryDeterministicContinuation(String nextSteps, ServerPlayer player,
+                                                   String companionName, String taskDescription) {
+        // nextSteps format: "Call tool_name({\"arg\":\"val\",...})"
+        // or for final crafts: "Call craft_item({\"item\":\"iron_pickaxe\",\"count\":1}) — all materials should be gathered now."
+        String trimmed = nextSteps.trim();
+
+        // Strip trailing commentary after the closing paren
+        // e.g., "Call craft_item({...}) — all materials should be gathered now."
+        int callStart = trimmed.indexOf("Call ");
+        if (callStart < 0) return false;
+        trimmed = trimmed.substring(callStart);
+
+        if (!trimmed.startsWith("Call ")) return false;
+
+        int parenOpen = trimmed.indexOf('(');
+        if (parenOpen < 0) return false;
+
+        String toolName = trimmed.substring(5, parenOpen).trim(); // "Call " = 5 chars
+        if (toolName.isEmpty()) return false;
+
+        // Extract the JSON args — find the matching closing paren
+        // The args are JSON inside parens: tool_name({...json...})
+        String argsStr = null;
+        int braceDepth = 0;
+        int jsonStart = -1;
+        for (int i = parenOpen + 1; i < trimmed.length(); i++) {
+            char c = trimmed.charAt(i);
+            if (c == '{' && jsonStart < 0) jsonStart = i;
+            if (c == '{') braceDepth++;
+            if (c == '}') braceDepth--;
+            if (braceDepth == 0 && jsonStart >= 0) {
+                argsStr = trimmed.substring(jsonStart, i + 1);
+                break;
+            }
+        }
+
+        if (argsStr == null) return false;
+
+        MCAi.LOGGER.info("Deterministic continuation: tool='{}', args='{}'", toolName, argsStr);
+
+        // Parse args JSON
+        com.google.gson.JsonObject args;
+        try {
+            args = com.google.gson.JsonParser.parseString(argsStr).getAsJsonObject();
+        } catch (Exception e) {
+            MCAi.LOGGER.warn("Failed to parse tool args JSON: {}", e.getMessage());
+            return false;
+        }
+
+        // Verify tool exists
+        com.apocscode.mcai.ai.tool.AiTool tool = com.apocscode.mcai.ai.tool.ToolRegistry.get(toolName);
+        if (tool == null) {
+            MCAi.LOGGER.warn("Deterministic continuation: unknown tool '{}'", toolName);
+            return false;
+        }
+
+        companion.getChat().say(CompanionChat.Category.TASK,
+                "Continuing: " + toolName.replace('_', ' ') + "...");
+
+        // Add system note to conversation history
+        com.apocscode.mcai.ai.ConversationManager.addSystemMessage(
+                "[Task completed: " + taskDescription + " → auto-continuing with " + toolName + "]");
+
+        // Execute tool on background thread (tools use ToolContext.runOnServer() internally)
+        final com.google.gson.JsonObject finalArgs = args;
+        AIService.executeToolDeterministic(toolName, finalArgs, player, companionName);
+
+        return true;
     }
 
     /**

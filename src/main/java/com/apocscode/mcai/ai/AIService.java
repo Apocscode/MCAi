@@ -1312,4 +1312,58 @@ public class AIService {
             }
         });
     }
+
+    /**
+     * Execute a tool deterministically (bypassing the AI agent loop).
+     * Used by TaskManager for continuation chains where the next tool call is already known.
+     * Runs on the AI background executor to avoid blocking the server tick thread.
+     *
+     * The tool result is handled automatically:
+     * - If the result contains [ASYNC_TASK], a new task was queued (it will have its own continuation)
+     * - If the tool returns a normal result, it's sent to the player as a chat message
+     * - If the tool fails, the error is sent to the player
+     */
+    public static void executeToolDeterministic(String toolName, JsonObject args,
+                                                 ServerPlayer player, String companionName) {
+        if (executor == null || executor.isShutdown()) {
+            MCAi.LOGGER.warn("Cannot execute deterministic tool — executor not running");
+            return;
+        }
+
+        executor.submit(() -> {
+            try {
+                ToolContext toolCtx = new ToolContext(player, player.getServer());
+                MCAi.LOGGER.info("Deterministic tool execution: {} with args {}", toolName, args);
+
+                String result = executeTool(toolName, args, toolCtx);
+
+                MCAi.LOGGER.info("Deterministic tool result: {}", result);
+
+                // If an async task was started, the task system will handle the rest
+                // (the task will fire its own continuation when it completes)
+                if (result != null && result.contains("[ASYNC_TASK]")) {
+                    MCAi.LOGGER.info("Deterministic continuation queued async task — task system will handle next steps");
+                    player.getServer().execute(() -> {
+                        net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(
+                                player, new ChatResponsePacket(result.replaceAll("\\[ASYNC_TASK]", "").trim()));
+                    });
+                    return;
+                }
+
+                // For synchronous tools (like craft_item), send result and check
+                // if the result itself indicates further continuation is needed
+                player.getServer().execute(() -> {
+                    net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(
+                            player, new ChatResponsePacket(result != null ? result : "Done."));
+                });
+
+            } catch (Exception e) {
+                MCAi.LOGGER.error("Deterministic tool execution failed: {}", e.getMessage(), e);
+                player.getServer().execute(() -> {
+                    net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(
+                            player, new ChatResponsePacket("Tool execution failed: " + e.getMessage()));
+                });
+            }
+        });
+    }
 }
