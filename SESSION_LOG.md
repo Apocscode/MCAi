@@ -414,5 +414,64 @@ Previously Jim had no door awareness — pathfinder treated all doors as solid w
 
 ---
 
-*Last updated: 2026-02-14 — Session 9*
+## Session 10 — 2026-02-14 (Night) — Traversal Mechanics
+
+### Commit: `06f802e`
+
+### Problem
+Jim could only handle doors. No support for fence gates, trapdoors, water traversal, climbing, or stepping up blocks. Default step height (0.6) meant he couldn't even step up a slab.
+
+### Changes
+
+#### Step Height (trivial, high impact)
+- Added `Attributes.STEP_HEIGHT = 1.0` in `createAttributes()` (was 0.6 default)
+- Jim can now smoothly step up full blocks without jumping, like iron golems
+
+#### Fence Gates
+- New `CompanionOpenFenceGateGoal` — proactive approach:
+  - Scans 2-block radius for closed `FenceGateBlock` instances
+  - Walks to gate and opens it when within 1.5 blocks
+  - Closes gate 1.5 seconds after passing (prevents mob intrusion)
+  - Works for ALL vanilla + modded fence gates
+- FENCE PathType left at default (-1) — can't set to 0 because it covers fences AND walls
+  - Goal doesn't rely on pathfinding routing through gates
+  - Instead detects nearby gates proactively and opens them
+
+#### Trapdoors
+- New `CompanionOpenTrapdoorGoal` — handles wooden trapdoors:
+  - Opens closed wooden trapdoors in 1-block radius when navigating
+  - Closes after passing through
+  - Safety: refuses to open bottom-half trapdoors over voids (prevents falls)
+  - Excludes `Blocks.IRON_TRAPDOOR` (requires redstone)
+- Set `PathType.TRAPDOOR = 0.0F` — pathfinder includes trapdoors in routes
+
+#### Water Traversal
+- Set `PathType.WATER = 0.0F` (was 4.0) — paths through water freely
+- Set `PathType.WATER_BORDER = 0.0F` — no penalty for water-adjacent blocks
+- Override `decreaseAirSupply()` to return same value — Jim never loses air
+  - `canBreatheUnderwater()` is final in LivingEntity, so we prevent air loss instead
+- Already had `FloatGoal` and `setCanFloat(true)` from Session 9
+
+#### Ladders / Vines / Scaffolding
+- Already handled by `GroundPathNavigation` node evaluator for `BlockTags.CLIMBABLE`
+- `LivingEntity.onClimbable()` provides vertical movement — inherited by CompanionEntity
+- No additional code needed
+
+### Files Created
+- `src/.../entity/goal/CompanionOpenFenceGateGoal.java` (~170 lines)
+- `src/.../entity/goal/CompanionOpenTrapdoorGoal.java` (~150 lines)
+
+### Files Modified
+- `src/.../entity/CompanionEntity.java`:
+  - `createAttributes()` — added STEP_HEIGHT 1.0
+  - Constructor — WATER/WATER_BORDER/TRAPDOOR malus, fence comment
+  - `registerGoals()` — registered FenceGate + Trapdoor goals
+  - `decreaseAirSupply()` — override to prevent drowning
+
+### JAR Deployed
+- Built & deployed to ATM10 mods folder
+
+---
+
+*Last updated: 2026-02-14 — Session 10*
 *Rule: Update this log with every JAR deployment.*
