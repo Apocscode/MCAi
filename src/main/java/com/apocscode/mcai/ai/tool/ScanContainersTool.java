@@ -73,8 +73,12 @@ public class ScanContainersTool implements AiTool {
         // Collect all containers
         List<ContainerInfo> containers = new ArrayList<>();
 
+        // Clamp Y to world bounds (-64 to 319 in overworld)
+        int minY = Math.max(-radius, level.getMinBuildHeight() - center.getY());
+        int maxY = Math.min(radius, level.getMaxBuildHeight() - 1 - center.getY());
+
         for (int x = -radius; x <= radius; x++) {
-            for (int y = -radius; y <= radius; y++) {
+            for (int y = minY; y <= maxY; y++) {
                 for (int z = -radius; z <= radius; z++) {
                     BlockPos pos = center.offset(x, y, z);
                     BlockEntity be = level.getBlockEntity(pos);

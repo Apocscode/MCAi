@@ -3,6 +3,7 @@ package com.apocscode.mcai.task;
 import com.apocscode.mcai.MCAi;
 import com.apocscode.mcai.entity.CompanionEntity;
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 
 import javax.annotation.Nullable;
@@ -216,10 +217,15 @@ public class MineOresTask extends CompanionTask {
     private static List<BlockPos> scanForSpecificOre(CompanionEntity companion, OreGuide.Ore ore,
                                                       int radius, int maxResults) {
         BlockPos center = companion.blockPosition();
+        Level level = companion.level();
         List<BlockPos> results = new ArrayList<>();
 
+        // Clamp Y to world bounds (-64 to 319 in overworld)
+        int minY = Math.max(-radius, level.getMinBuildHeight() - center.getY());
+        int maxY = Math.min(radius, level.getMaxBuildHeight() - 1 - center.getY());
+
         for (int x = -radius; x <= radius; x++) {
-            for (int y = -radius; y <= radius; y++) {
+            for (int y = minY; y <= maxY; y++) {
                 for (int z = -radius; z <= radius; z++) {
                     BlockPos pos = center.offset(x, y, z);
                     BlockState state = companion.level().getBlockState(pos);

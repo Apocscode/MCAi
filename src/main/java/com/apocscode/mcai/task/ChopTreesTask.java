@@ -383,8 +383,12 @@ public class ChopTreesTask extends CompanionTask {
         BlockPos center = companion.blockPosition();
         Set<BlockPos> foundBases = new LinkedHashSet<>();
 
+        // Clamp Y to world bounds (-64 to 319 in overworld)
+        int minY = Math.max(-4, level.getMinBuildHeight() - center.getY());
+        int maxY = Math.min(radius, level.getMaxBuildHeight() - 1 - center.getY());
+
         for (int x = -radius; x <= radius; x++) {
-            for (int y = -4; y <= radius; y++) { // Full vertical range to catch trees on hills/valleys
+            for (int y = minY; y <= maxY; y++) { // Full vertical range to catch trees on hills/valleys
                 for (int z = -radius; z <= radius; z++) {
                     BlockPos pos = center.offset(x, y, z);
                     BlockState state = level.getBlockState(pos);

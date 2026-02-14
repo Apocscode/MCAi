@@ -278,10 +278,15 @@ public class BlockHelper {
     public static List<BlockPos> scanForBlocks(CompanionEntity companion, Block targetBlock,
                                                 int radius, int maxResults) {
         BlockPos center = companion.blockPosition();
+        Level level = companion.level();
         List<BlockPos> results = new ArrayList<>();
 
+        // Clamp Y to world bounds (-64 to 319 in overworld)
+        int minY = Math.max(-radius / 2, level.getMinBuildHeight() - center.getY());
+        int maxY = Math.min(radius / 2, level.getMaxBuildHeight() - 1 - center.getY());
+
         for (int x = -radius; x <= radius; x++) {
-            for (int y = -radius / 2; y <= radius / 2; y++) {
+            for (int y = minY; y <= maxY; y++) {
                 for (int z = -radius; z <= radius; z++) {
                     BlockPos pos = center.offset(x, y, z);
                     if (companion.level().getBlockState(pos).getBlock() == targetBlock) {
@@ -309,10 +314,15 @@ public class BlockHelper {
      */
     public static List<BlockPos> scanForLogs(CompanionEntity companion, int radius, int maxResults) {
         BlockPos center = companion.blockPosition();
+        Level level = companion.level();
         List<BlockPos> results = new ArrayList<>();
 
+        // Clamp Y to world bounds
+        int minY = Math.max(-2, level.getMinBuildHeight() - center.getY());
+        int maxY = Math.min(radius, level.getMaxBuildHeight() - 1 - center.getY());
+
         for (int x = -radius; x <= radius; x++) {
-            for (int y = -2; y <= radius; y++) { // Search up for tall trees
+            for (int y = minY; y <= maxY; y++) { // Search up for tall trees
                 for (int z = -radius; z <= radius; z++) {
                     BlockPos pos = center.offset(x, y, z);
                     BlockState state = companion.level().getBlockState(pos);
@@ -338,10 +348,15 @@ public class BlockHelper {
      */
     public static List<BlockPos> scanForOres(CompanionEntity companion, int radius, int maxResults) {
         BlockPos center = companion.blockPosition();
+        Level level = companion.level();
         List<BlockPos> results = new ArrayList<>();
 
+        // Clamp Y to world bounds (-64 to 319 in overworld)
+        int minY = Math.max(-radius, level.getMinBuildHeight() - center.getY());
+        int maxY = Math.min(radius, level.getMaxBuildHeight() - 1 - center.getY());
+
         for (int x = -radius; x <= radius; x++) {
-            for (int y = -radius; y <= radius; y++) {
+            for (int y = minY; y <= maxY; y++) {
                 for (int z = -radius; z <= radius; z++) {
                     BlockPos pos = center.offset(x, y, z);
                     BlockState state = companion.level().getBlockState(pos);

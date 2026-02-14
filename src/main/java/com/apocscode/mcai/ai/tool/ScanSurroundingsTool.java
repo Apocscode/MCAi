@@ -68,8 +68,12 @@ public class ScanSurroundingsTool implements AiTool {
         Map<String, Integer> blockCounts = new LinkedHashMap<>();
         Map<String, BlockPos> firstSeen = new LinkedHashMap<>();
 
+        // Clamp Y to world bounds (-64 to 319 in overworld)
+        int minY = Math.max(-radius, level.getMinBuildHeight() - center.getY());
+        int maxY = Math.min(radius, level.getMaxBuildHeight() - 1 - center.getY());
+
         for (int x = -radius; x <= radius; x++) {
-            for (int y = -radius; y <= radius; y++) {
+            for (int y = minY; y <= maxY; y++) {
                 for (int z = -radius; z <= radius; z++) {
                     BlockPos pos = center.offset(x, y, z);
                     BlockState state = level.getBlockState(pos);
