@@ -1323,10 +1323,11 @@ public class CraftItemTool implements AiTool {
             case "flint" -> new Block[]{Blocks.GRAVEL};
             case "clay_ball" -> new Block[]{Blocks.CLAY};
             case "snowball" -> new Block[]{Blocks.SNOW_BLOCK};
-            case "sand", "red_sand" -> new Block[]{Blocks.SAND};
+            case "sand" -> new Block[]{Blocks.SAND};
+            case "red_sand" -> new Block[]{Blocks.RED_SAND};
             case "gravel" -> new Block[]{Blocks.GRAVEL};
             case "dirt" -> new Block[]{Blocks.DIRT};
-            case "stone" -> new Block[]{Blocks.STONE};
+            case "snow_block" -> new Block[]{Blocks.SNOW_BLOCK};
             case "obsidian" -> new Block[]{Blocks.OBSIDIAN};
             case "ice" -> new Block[]{Blocks.ICE};
             case "netherrack" -> new Block[]{Blocks.NETHERRACK};
@@ -1375,12 +1376,13 @@ public class CraftItemTool implements AiTool {
             case "beetroot", "beetroot_seeds" -> Blocks.BEETROOTS;
             case "melon_slice" -> Blocks.MELON;
             case "pumpkin" -> Blocks.PUMPKIN;
-            case "sugar_cane", "sugar" -> Blocks.SUGAR_CANE;
+            case "sugar_cane" -> Blocks.SUGAR_CANE;
             case "bamboo" -> Blocks.BAMBOO;
             case "cactus" -> Blocks.CACTUS;
             case "cocoa_beans" -> Blocks.COCOA;
             case "sweet_berries" -> Blocks.SWEET_BERRY_BUSH;
-            case "kelp", "dried_kelp" -> Blocks.KELP;
+            case "glow_berries" -> Blocks.CAVE_VINES;
+            case "kelp" -> Blocks.KELP;
             case "nether_wart" -> Blocks.NETHER_WART;
             case "chorus_fruit" -> Blocks.CHORUS_PLANT;
             // Flowers

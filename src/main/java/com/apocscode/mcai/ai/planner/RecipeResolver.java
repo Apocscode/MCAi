@@ -677,17 +677,23 @@ public class RecipeResolver {
             return new DependencyNode(item, count, StepType.CHOP, null);
         }
 
-        // Stone, cobblestone, dirt, sand, gravel, clay → GATHER
+        // Surface blocks, loose materials → GATHER
+        // Note: stone removed — mining stone drops cobblestone (without silk touch),
+        //   so stone should resolve via smelting: cobblestone → stone.
+        // Note: packed_mud removed — has crafting recipe (mud + wheat), rarely found raw.
+        // Note: id.contains("sand") changed to equals — was matching sandstone/red_sandstone
+        //   which are craftable blocks, not raw gatherables.
         if (id.equals("cobblestone") || id.equals("cobbled_deepslate")
-                || id.contains("sand") || id.equals("gravel") || id.equals("clay_ball")
+                || id.equals("sand") || id.equals("red_sand")
+                || id.equals("gravel") || id.equals("clay_ball")
                 || id.equals("clay") || id.equals("dirt") || id.equals("flint")
                 || id.equals("obsidian") || id.equals("ice") || id.equals("snow_block")
                 || id.equals("snowball") || id.equals("netherrack") || id.equals("soul_sand")
                 || id.equals("soul_soil") || id.equals("basalt") || id.equals("blackstone")
                 || id.equals("end_stone") || id.equals("moss_block") || id.equals("mud")
-                || id.equals("packed_mud") || id.equals("dripstone_block")
+                || id.equals("dripstone_block")
                 || id.equals("pointed_dripstone") || id.equals("calcite")
-                || id.equals("tuff") || id.equals("stone")) {
+                || id.equals("tuff")) {
             return new DependencyNode(item, count, StepType.GATHER, null);
         }
 
