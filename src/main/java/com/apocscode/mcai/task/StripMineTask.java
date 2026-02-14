@@ -320,9 +320,15 @@ public class StripMineTask extends CompanionTask {
             }
             companion.equipBestToolForBlock(state);
             BlockHelper.breakBlock(companion, currentMiningTarget);
-            oresMined++;
+            // Only count toward completion if it's the target ore (or no target specified)
             OreGuide.Ore minedOre = OreGuide.identifyOre(state);
-            MCAi.LOGGER.debug("Strip-mine: mined {} at {}", minedOre != null ? minedOre.name : "ore", currentMiningTarget);
+            if (targetOre == null || (minedOre != null && minedOre == targetOre)) {
+                oresMined++;
+            }
+            MCAi.LOGGER.debug("Strip-mine: mined {} at {} (target: {}, counted: {})",
+                    minedOre != null ? minedOre.name : "ore", currentMiningTarget,
+                    targetOre != null ? targetOre.name : "all",
+                    targetOre == null || (minedOre != null && minedOre == targetOre));
             currentMiningTarget = null;
             phase = Phase.TUNNEL;
         } else {
@@ -359,6 +365,12 @@ public class StripMineTask extends CompanionTask {
      * Scan the walls, ceiling, and floor around a tunnel position for ores.
      * Ores found within ORE_SCAN_RADIUS are added to the queue for mining.
      */
+    /**
+     * Scan the walls, ceiling, and floor around a tunnel position for ores.
+     * Always mines ALL ores found (not just the target) — this ensures Jim picks up
+     * coal, copper, etc. as free bonus resources (especially coal for fuel!).
+     * Only the target ore counts toward the completion condition.
+     */
     private void scanTunnelWalls(BlockPos tunnelPos) {
         for (int dx = -ORE_SCAN_RADIUS; dx <= ORE_SCAN_RADIUS; dx++) {
             for (int dy = -1; dy <= 2; dy++) { // floor to just above head
@@ -369,14 +381,9 @@ public class StripMineTask extends CompanionTask {
                     if (companion.isInHomeArea(checkPos)) continue;
                     BlockState state = companion.level().getBlockState(checkPos);
 
-                    boolean isTarget;
-                    if (targetOre != null) {
-                        isTarget = targetOre.matches(state);
-                    } else {
-                        isTarget = OreGuide.isOre(state);
-                    }
-
-                    if (isTarget && !oreQueue.contains(checkPos)) {
+                    // Mine ALL ores found in the walls, not just the target.
+                    // This ensures Jim picks up coal (fuel), copper, etc. as bonus.
+                    if (OreGuide.isOre(state) && !oreQueue.contains(checkPos)) {
                         oreQueue.add(checkPos);
                     }
                 }

@@ -360,9 +360,10 @@ public class SmeltItemsTask extends CompanionTask {
     }
 
     /**
-     * Try to gather fuel by breaking nearby logs.
-     * Scans for log blocks within a short radius and breaks them.
-     * Logs burn for 300 ticks (1.5 items each), so 4 logs smelt 6 items.
+     * Try to gather fuel from multiple sources (in priority order):
+     * 1. Mine nearby coal ore (common underground, each drops 1 coal = 8 smelt operations)
+     * 2. Break nearby logs (common on surface, each burns 1.5 items)
+     * 3. Pull fuel from tagged storage containers and home area chests
      *
      * @return true if fuel was found/gathered
      */
@@ -372,6 +373,39 @@ public class SmeltItemsTask extends CompanionTask {
         int gathered = 0;
         int needed = Math.max(2, (count + 1) / 2); // Rough fuel estimate
 
+        // Strategy 1: Mine nearby coal ore (best underground fuel source)
+        // Coal ore is abundant at all Y-levels, and each drops 1+ coal (8 smelts each!)
+        for (int radius = 1; radius <= 16 && gathered < needed; radius++) {
+            for (int x = -radius; x <= radius && gathered < needed; x++) {
+                for (int y = -4; y <= 8 && gathered < needed; y++) {
+                    for (int z = -radius; z <= radius && gathered < needed; z++) {
+                        if (Math.abs(x) != radius && Math.abs(z) != radius) continue;
+                        BlockPos pos = center.offset(x, y, z);
+                        if (companion.isInHomeArea(pos)) continue;
+                        BlockState state = level.getBlockState(pos);
+                        if (state.is(BlockTags.COAL_ORES)) {
+                            if (companion.canHarvestBlock(state)
+                                    && BlockHelper.isSafeToMine(level, pos)) {
+                                companion.equipBestToolForBlock(state);
+                                if (BlockHelper.breakBlock(companion, pos)) {
+                                    gathered++;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (hasFuel()) {
+            if (gathered > 0) {
+                MCAi.LOGGER.info("SmeltItemsTask: mined {} coal ore for fuel", gathered);
+                say("Mined " + gathered + " coal ore for fuel.");
+            }
+            return true;
+        }
+
+        // Strategy 2: Break nearby logs (surface fuel source)
         for (int radius = 1; radius <= 16 && gathered < needed; radius++) {
             for (int x = -radius; x <= radius && gathered < needed; x++) {
                 for (int y = -2; y <= 8 && gathered < needed; y++) {
@@ -379,7 +413,7 @@ public class SmeltItemsTask extends CompanionTask {
                         if (Math.abs(x) != radius && Math.abs(z) != radius) continue;
                         BlockPos pos = center.offset(x, y, z);
                         BlockState state = level.getBlockState(pos);
-                        if (state.is(net.minecraft.tags.BlockTags.LOGS)) {
+                        if (state.is(BlockTags.LOGS)) {
                             companion.equipBestToolForBlock(state);
                             if (BlockHelper.breakBlock(companion, pos)) {
                                 gathered++;
@@ -390,11 +424,120 @@ public class SmeltItemsTask extends CompanionTask {
             }
         }
 
-        if (gathered > 0) {
-            MCAi.LOGGER.info("SmeltItemsTask: auto-gathered {} logs for fuel", gathered);
-            say("Gathered " + gathered + " logs for fuel.");
+        if (hasFuel()) {
+            if (gathered > 0) {
+                MCAi.LOGGER.info("SmeltItemsTask: auto-gathered {} logs for fuel", gathered);
+                say("Gathered " + gathered + " logs for fuel.");
+            }
+            return true;
+        }
+
+        // Strategy 3: Pull fuel from tagged storage containers and home area chests
+        int pulled = tryPullFuelFromStorage();
+        if (pulled > 0) {
+            MCAi.LOGGER.info("SmeltItemsTask: pulled {} fuel items from storage", pulled);
+            say("Grabbed fuel from storage.");
+        }
+
+        if (gathered > 0 && !hasFuel()) {
+            MCAi.LOGGER.info("SmeltItemsTask: gathered {} blocks but still no usable fuel", gathered);
         }
         return hasFuel();
+    }
+
+    /**
+     * Try to pull fuel items from nearby storage containers (tagged STORAGE + home area).
+     * Looks for coal, charcoal, logs, planks, or any burnable item.
+     */
+    private int tryPullFuelFromStorage() {
+        int totalPulled = 0;
+        SimpleContainer inv = companion.getCompanionInventory();
+        java.util.Set<BlockPos> scanned = new java.util.HashSet<>();
+
+        // Preferred fuel items to look for (in priority order)
+        Item[] fuelItems = {
+                Items.COAL, Items.CHARCOAL,
+                Items.OAK_LOG, Items.BIRCH_LOG, Items.SPRUCE_LOG,
+                Items.DARK_OAK_LOG, Items.JUNGLE_LOG, Items.ACACIA_LOG,
+                Items.OAK_PLANKS, Items.BIRCH_PLANKS, Items.SPRUCE_PLANKS
+        };
+
+        // Search tagged STORAGE containers
+        var storageBlocks = companion.getTaggedBlocks(
+                com.apocscode.mcai.logistics.TaggedBlock.Role.STORAGE);
+        for (var tb : storageBlocks) {
+            if (hasFuel()) return totalPulled;
+            scanned.add(tb.pos());
+            totalPulled += extractFuelFromContainer(companion.level(), tb.pos(), inv, fuelItems, 8);
+        }
+
+        // Search home area containers
+        if (!hasFuel() && companion.hasHomeArea()) {
+            BlockPos c1 = companion.getHomeCorner1();
+            BlockPos c2 = companion.getHomeCorner2();
+            if (c1 != null && c2 != null) {
+                int minX = Math.min(c1.getX(), c2.getX());
+                int minY = Math.min(c1.getY(), c2.getY());
+                int minZ = Math.min(c1.getZ(), c2.getZ());
+                int maxX = Math.max(c1.getX(), c2.getX());
+                int maxY = Math.max(c1.getY(), c2.getY());
+                int maxZ = Math.max(c1.getZ(), c2.getZ());
+                for (int x = minX; x <= maxX; x++) {
+                    for (int y = minY; y <= maxY; y++) {
+                        for (int z = minZ; z <= maxZ; z++) {
+                            if (hasFuel()) return totalPulled;
+                            BlockPos pos = new BlockPos(x, y, z);
+                            if (scanned.contains(pos)) continue;
+                            scanned.add(pos);
+                            totalPulled += extractFuelFromContainer(
+                                    companion.level(), pos, inv, fuelItems, 8);
+                        }
+                    }
+                }
+            }
+        }
+        return totalPulled;
+    }
+
+    /**
+     * Extract fuel items from a container into companion inventory.
+     */
+    private int extractFuelFromContainer(Level level, BlockPos pos,
+                                          SimpleContainer inv, Item[] fuelItems, int maxExtract) {
+        net.minecraft.world.level.block.entity.BlockEntity be = level.getBlockEntity(pos);
+        if (!(be instanceof net.minecraft.world.Container container)) return 0;
+
+        int extracted = 0;
+        for (int i = 0; i < container.getContainerSize() && extracted < maxExtract; i++) {
+            ItemStack stack = container.getItem(i);
+            if (stack.isEmpty()) continue;
+            // Check if this item is one of our preferred fuels
+            boolean isFuelItem = false;
+            for (Item fuel : fuelItems) {
+                if (stack.getItem() == fuel) { isFuelItem = true; break; }
+            }
+            // Also accept any item MC considers fuel
+            if (!isFuelItem && AbstractFurnaceBlockEntity.isFuel(stack)) {
+                isFuelItem = true;
+            }
+            if (isFuelItem) {
+                int take = Math.min(maxExtract - extracted, stack.getCount());
+                ItemStack toInsert = stack.copy();
+                toInsert.setCount(take);
+                ItemStack remainder = inv.addItem(toInsert);
+                int actuallyInserted = take - remainder.getCount();
+                if (actuallyInserted > 0) {
+                    stack.shrink(actuallyInserted);
+                    if (stack.isEmpty()) container.setItem(i, ItemStack.EMPTY);
+                    extracted += actuallyInserted;
+                }
+                if (!remainder.isEmpty()) break; // Inventory full
+            }
+        }
+        if (extracted > 0) {
+            container.setChanged();
+        }
+        return extracted;
     }
 
     /**
