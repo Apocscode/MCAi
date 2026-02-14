@@ -16,7 +16,7 @@ import java.util.List;
 public class GatherBlocksTask extends CompanionTask {
 
     private static final int[] EXPAND_RADII = {32, 48}; // fallback search radii
-    private final Block targetBlock;
+    private final Block[] targetBlocks;
     private int radius;
     private final int maxBlocks;
     private final Deque<BlockPos> targets = new ArrayDeque<>();
@@ -26,15 +26,19 @@ public class GatherBlocksTask extends CompanionTask {
     private int totalBlocks = 0;
 
     public GatherBlocksTask(CompanionEntity companion, Block targetBlock, int radius, int maxBlocks) {
+        this(companion, new Block[]{targetBlock}, radius, maxBlocks);
+    }
+
+    public GatherBlocksTask(CompanionEntity companion, Block[] targetBlocks, int radius, int maxBlocks) {
         super(companion);
-        this.targetBlock = targetBlock;
+        this.targetBlocks = targetBlocks;
         this.radius = radius;
         this.maxBlocks = maxBlocks > 0 ? maxBlocks : 999;
     }
 
     @Override
     public String getTaskName() {
-        return "Gather " + targetBlock.getName().getString() + " (r=" + radius + ")";
+        return "Gather " + targetBlocks[0].getName().getString() + " (r=" + radius + ")";
     }
 
     @Override
@@ -44,38 +48,38 @@ public class GatherBlocksTask extends CompanionTask {
 
     @Override
     protected void start() {
-        List<BlockPos> found = BlockHelper.scanForBlocks(companion, targetBlock, radius, maxBlocks);
+        List<BlockPos> found = BlockHelper.scanForBlocks(companion, targetBlocks, radius, maxBlocks);
         targets.addAll(found);
         if (targets.isEmpty()) {
             // Expand search radius progressively before giving up
             for (int expandRadius : EXPAND_RADII) {
                 if (expandRadius <= radius) continue;
                 MCAi.LOGGER.info("GatherBlocksTask: no {} at r={}, expanding to r={}",
-                        targetBlock.getName().getString(), radius, expandRadius);
+                        targetBlocks[0].getName().getString(), radius, expandRadius);
                 radius = expandRadius;
-                found = BlockHelper.scanForBlocks(companion, targetBlock, radius, maxBlocks);
+                found = BlockHelper.scanForBlocks(companion, targetBlocks, radius, maxBlocks);
                 targets.addAll(found);
                 if (!targets.isEmpty()) break;
             }
         }
         if (targets.isEmpty()) {
             MCAi.LOGGER.warn("GatherBlocksTask: no {} blocks found within r={}",
-                    targetBlock.getName().getString(), radius);
-            say("Couldn't find any " + targetBlock.getName().getString() + " nearby.");
-            fail("No " + targetBlock.getName().getString() + " found within radius " + radius);
+                    targetBlocks[0].getName().getString(), radius);
+            say("Couldn't find any " + targetBlocks[0].getName().getString() + " nearby.");
+            fail("No " + targetBlocks[0].getName().getString() + " found within radius " + radius);
             return;
         }
         totalBlocks = targets.size();
-        say("Found " + totalBlocks + " " + targetBlock.getName().getString() + " to gather!");
+        say("Found " + totalBlocks + " " + targetBlocks[0].getName().getString() + " to gather!");
     }
 
     @Override
     protected void tick() {
         if (blocksGathered >= maxBlocks || targets.isEmpty()) {
             MCAi.LOGGER.info("GatherBlocksTask: finished — gathered {}/{} {} blocks",
-                    blocksGathered, maxBlocks, targetBlock.getName().getString());
+                    blocksGathered, maxBlocks, targetBlocks[0].getName().getString());
             if (blocksGathered == 0) {
-                fail("Found " + targetBlock.getName().getString() + " blocks but couldn't reach any (0 gathered)");
+                fail("Found " + targetBlocks[0].getName().getString() + " blocks but couldn't reach any (0 gathered)");
             } else {
                 complete();
             }
@@ -87,8 +91,14 @@ public class GatherBlocksTask extends CompanionTask {
             stuckTimer = 0;
         }
 
-        if (companion.level().getBlockState(currentTarget).isAir()
-                || companion.level().getBlockState(currentTarget).getBlock() != targetBlock) {
+        // Check if block is still a valid target (not already mined or changed)
+        Block currentBlock = companion.level().getBlockState(currentTarget).getBlock();
+        boolean isTarget = false;
+        for (Block t : targetBlocks) {
+            if (currentBlock == t) { isTarget = true; break; }
+        }
+
+        if (companion.level().getBlockState(currentTarget).isAir() || !isTarget) {
             targets.poll();
             currentTarget = null;
             return;

@@ -277,6 +277,17 @@ public class BlockHelper {
      */
     public static List<BlockPos> scanForBlocks(CompanionEntity companion, Block targetBlock,
                                                 int radius, int maxResults) {
+        return scanForBlocks(companion, new Block[]{targetBlock}, radius, maxResults);
+    }
+
+    /**
+     * Scan for any of the given block types within a radius.
+     * Useful when an item can come from multiple blocks (e.g., cobblestone from stone OR cobblestone).
+     *
+     * @return List of matching block positions, sorted by distance
+     */
+    public static List<BlockPos> scanForBlocks(CompanionEntity companion, Block[] targetBlocks,
+                                                int radius, int maxResults) {
         BlockPos center = companion.blockPosition();
         Level level = companion.level();
         List<BlockPos> results = new ArrayList<>();
@@ -289,8 +300,12 @@ public class BlockHelper {
             for (int y = minY; y <= maxY; y++) {
                 for (int z = -radius; z <= radius; z++) {
                     BlockPos pos = center.offset(x, y, z);
-                    if (companion.level().getBlockState(pos).getBlock() == targetBlock) {
-                        results.add(pos);
+                    Block block = level.getBlockState(pos).getBlock();
+                    for (Block target : targetBlocks) {
+                        if (block == target) {
+                            results.add(pos);
+                            break;
+                        }
                     }
                 }
             }

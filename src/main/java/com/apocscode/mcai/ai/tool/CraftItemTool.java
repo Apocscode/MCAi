@@ -815,16 +815,19 @@ public class CraftItemTool implements AiTool {
     private void ensureToolPrerequisites(CraftingPlan plan, Map<Item, Integer> available,
                                           CompanionEntity companion,
                                           RecipeManager recipeManager, RegistryAccess registryAccess) {
-        // Determine the highest mining tier required by MINE steps in the plan
+        // Determine the highest mining tier required by MINE or GATHER steps in the plan
         int requiredTier = 0;
         for (CraftingPlan.Step step : plan.getSteps()) {
             if (step.type == RecipeResolver.StepType.MINE) {
                 int tier = getRequiredMiningTier(step.itemId);
                 if (tier > requiredTier) requiredTier = tier;
+            } else if (step.type == RecipeResolver.StepType.GATHER) {
+                int tier = getRequiredGatherTier(step.itemId);
+                if (tier > requiredTier) requiredTier = tier;
             }
         }
 
-        if (requiredTier == 0) return; // Wood pick or bare hands suffice
+        if (requiredTier < 0) return; // Bare hands suffice
 
         // Check what pickaxe the companion already has
         int companionTier = getCompanionPickaxeTier(companion, available);
@@ -1004,6 +1007,24 @@ public class CraftItemTool implements AiTool {
      * Get the mining tier required for a specific ore/item.
      * Returns 0-3 matching Minecraft mining levels.
      */
+    /**
+     * Returns the minimum pickaxe tier needed to gather a block.
+     * Returns -1 for blocks that don't need a pick (sand, dirt, gravel, etc.).
+     * Returns 0 for stone-type blocks (wood pick suffices).
+     * Returns 3 for obsidian.
+     */
+    private static int getRequiredGatherTier(String itemId) {
+        return switch (itemId) {
+            case "cobblestone", "stone", "cobbled_deepslate", "deepslate",
+                 "basalt", "blackstone", "end_stone", "netherrack",
+                 "calcite", "tuff", "dripstone_block", "pointed_dripstone",
+                 "moss_block" -> 0;  // Any pickaxe
+            case "obsidian" -> 3;    // Diamond pick
+            case "ice" -> 0;         // Any pickaxe (silk touch ideal but wood works)
+            default -> -1;           // No pick needed (sand, dirt, gravel, clay, etc.)
+        };
+    }
+
     private static int getRequiredMiningTier(String itemId) {
         // Tier 1 (Stone pick required)
         if (itemId.contains("iron") || itemId.contains("copper") || itemId.contains("lapis")) {
@@ -1144,9 +1165,9 @@ public class CraftItemTool implements AiTool {
                 yield new MineOresTask(companion, 16, Math.max(step.count, 3), targetOre);
             }
             case GATHER -> {
-                Block block = resolveGatherBlock(step.itemId);
-                yield block != null
-                        ? new GatherBlocksTask(companion, block, 16, step.count)
+                Block[] blocks = resolveGatherBlocks(step.itemId);
+                yield blocks != null
+                        ? new GatherBlocksTask(companion, blocks, 16, step.count)
                         : null;
             }
             case KILL_MOB -> {
@@ -1226,43 +1247,56 @@ public class CraftItemTool implements AiTool {
     /**
      * Resolve an item ID to a Block for gathering. Maps items to their block forms.
      */
-    private Block resolveGatherBlock(String itemId) {
-        // Common mappings where the gatherable block differs from the item
+    /**
+     * Resolve a GATHER item ID to one or more Block types to scan for.
+     * Some items come from multiple block sources:
+     *   - cobblestone drops from both Stone and Cobblestone blocks
+     *   - cobbled_deepslate drops from Deepslate
+     */
+    private Block[] resolveGatherBlocks(String itemId) {
         return switch (itemId) {
-            case "cobblestone" -> Blocks.STONE;  // Breaking stone gives cobblestone
-            case "cobbled_deepslate" -> Blocks.DEEPSLATE;
-            case "flint" -> Blocks.GRAVEL;  // Gravel drops flint
-            case "clay_ball" -> Blocks.CLAY;
-            case "snowball" -> Blocks.SNOW_BLOCK;
-            case "sand", "red_sand" -> Blocks.SAND;
-            case "gravel" -> Blocks.GRAVEL;
-            case "dirt" -> Blocks.DIRT;
-            case "stone" -> Blocks.STONE;
-            case "obsidian" -> Blocks.OBSIDIAN;
-            case "ice" -> Blocks.ICE;
-            case "netherrack" -> Blocks.NETHERRACK;
-            case "soul_sand" -> Blocks.SOUL_SAND;
-            case "soul_soil" -> Blocks.SOUL_SOIL;
-            case "basalt" -> Blocks.BASALT;
-            case "blackstone" -> Blocks.BLACKSTONE;
-            case "end_stone" -> Blocks.END_STONE;
-            case "moss_block" -> Blocks.MOSS_BLOCK;
-            case "mud" -> Blocks.MUD;
-            case "calcite" -> Blocks.CALCITE;
-            case "tuff" -> Blocks.TUFF;
-            case "dripstone_block" -> Blocks.DRIPSTONE_BLOCK;
-            case "pointed_dripstone" -> Blocks.POINTED_DRIPSTONE;
-            case "clay" -> Blocks.CLAY;
+            // Cobblestone drops from mining stone OR is already placed cobblestone
+            case "cobblestone" -> new Block[]{Blocks.STONE, Blocks.COBBLESTONE};
+            case "cobbled_deepslate" -> new Block[]{Blocks.DEEPSLATE, Blocks.COBBLED_DEEPSLATE};
+            case "flint" -> new Block[]{Blocks.GRAVEL};
+            case "clay_ball" -> new Block[]{Blocks.CLAY};
+            case "snowball" -> new Block[]{Blocks.SNOW_BLOCK};
+            case "sand", "red_sand" -> new Block[]{Blocks.SAND};
+            case "gravel" -> new Block[]{Blocks.GRAVEL};
+            case "dirt" -> new Block[]{Blocks.DIRT};
+            case "stone" -> new Block[]{Blocks.STONE};
+            case "obsidian" -> new Block[]{Blocks.OBSIDIAN};
+            case "ice" -> new Block[]{Blocks.ICE};
+            case "netherrack" -> new Block[]{Blocks.NETHERRACK};
+            case "soul_sand" -> new Block[]{Blocks.SOUL_SAND};
+            case "soul_soil" -> new Block[]{Blocks.SOUL_SOIL};
+            case "basalt" -> new Block[]{Blocks.BASALT};
+            case "blackstone" -> new Block[]{Blocks.BLACKSTONE};
+            case "end_stone" -> new Block[]{Blocks.END_STONE};
+            case "moss_block" -> new Block[]{Blocks.MOSS_BLOCK};
+            case "mud" -> new Block[]{Blocks.MUD};
+            case "calcite" -> new Block[]{Blocks.CALCITE};
+            case "tuff" -> new Block[]{Blocks.TUFF};
+            case "dripstone_block" -> new Block[]{Blocks.DRIPSTONE_BLOCK};
+            case "pointed_dripstone" -> new Block[]{Blocks.POINTED_DRIPSTONE};
+            case "clay" -> new Block[]{Blocks.CLAY};
             default -> {
                 // Try to find block by registry name
                 for (var entry : BuiltInRegistries.BLOCK.entrySet()) {
                     if (entry.getKey().location().getPath().equals(itemId)) {
-                        yield entry.getValue();
+                        yield new Block[]{entry.getValue()};
                     }
                 }
-                yield Blocks.STONE; // fallback
+                yield new Block[]{Blocks.STONE}; // fallback
             }
         };
+    }
+
+    // Keep old method for backward compatibility (GatherBlocksTool uses it)
+    @SuppressWarnings("unused")
+    private Block resolveGatherBlock(String itemId) {
+        Block[] blocks = resolveGatherBlocks(itemId);
+        return blocks != null && blocks.length > 0 ? blocks[0] : Blocks.STONE;
     }
 
     /**
