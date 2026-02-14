@@ -1,5 +1,6 @@
 package com.apocscode.mcai.task;
 
+import com.apocscode.mcai.MCAi;
 import com.apocscode.mcai.entity.CompanionEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.state.BlockState;
@@ -14,10 +15,12 @@ import java.util.List;
  * Task: Mine ores nearby.
  * Supports targeted ore type (e.g. only iron) or all ores.
  * Uses OreGuide for ore identification and tool-tier checks.
+ * Expands search radius progressively (16→32→48→64) if no ores found.
  */
 public class MineOresTask extends CompanionTask {
 
-    private final int radius;
+    private static final int[] EXPAND_RADII = {32, 48, 64}; // fallback search radii
+    private int radius;
     private final int maxOres;
     @Nullable
     private final OreGuide.Ore targetOre; // null = mine all ores
@@ -58,6 +61,16 @@ public class MineOresTask extends CompanionTask {
     @Override
     protected void start() {
         scanForOres();
+        if (targets.isEmpty()) {
+            // Expand search radius progressively before giving up
+            for (int expandRadius : EXPAND_RADII) {
+                if (expandRadius <= radius) continue;
+                MCAi.LOGGER.info("MineOresTask: no ores at r={}, expanding to r={}", radius, expandRadius);
+                radius = expandRadius;
+                scanForOres();
+                if (!targets.isEmpty()) break;
+            }
+        }
         if (targets.isEmpty()) {
             String oreLabel = targetOre != null ? targetOre.name + " ore" : "ores";
             int currentY = companion.blockPosition().getY();
