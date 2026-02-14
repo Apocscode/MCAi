@@ -100,7 +100,7 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
 
     @Nullable
     private UUID ownerUUID;
-    private String companionName = "MCAi";
+    private String companionName = "Jim";
 
     private final SimpleContainer inventory = new SimpleContainer(INVENTORY_SIZE);
     private int eatCooldown = 0;
@@ -432,16 +432,21 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
 
     @Override
     public Component getDisplayName() {
+        // Prefer the synced custom name (available on both client & server)
+        Component custom = this.getCustomName();
+        if (custom != null) return custom;
         return Component.literal(companionName);
     }
 
     /**
-     * Override getName() so health bar mods (Jade, Neat, WTHIT, etc.) show the
-     * companion's actual name instead of the entity type description ("Companion").
-     * This is the method most mods call to get the entity's display name.
+     * Override getName() so health bar mods (Jade, Neat, WTHIT, HealthBars, etc.)
+     * show the companion's actual name instead of the entity type description.
+     * Uses getCustomName() which is synced to the client via SynchedEntityData.
      */
     @Override
     public Component getName() {
+        Component custom = this.getCustomName();
+        if (custom != null) return custom;
         return Component.literal(companionName);
     }
 
