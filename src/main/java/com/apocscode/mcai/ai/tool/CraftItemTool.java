@@ -412,6 +412,8 @@ public class CraftItemTool implements AiTool {
 
         Map<Item, Integer> grouped = getGroupedNeeds(ingredients, craftsNeeded);
         int typesFetched = 0;
+        MCAi.LOGGER.info("fetchMaterialsFromContainers: {} ingredient types needed for {} crafts",
+                grouped.size(), craftsNeeded);
 
         for (Map.Entry<Item, Integer> entry : grouped.entrySet()) {
             Item neededItem = entry.getKey();
@@ -526,6 +528,8 @@ public class CraftItemTool implements AiTool {
     private void autoResolveIntermediates(ToolContext context, RecipeManager recipeManager,
                                           RegistryAccess registryAccess, List<Ingredient> ingredients,
                                           int craftsNeeded, StringBuilder log) {
+        MCAi.LOGGER.info("autoResolveIntermediates: starting {} passes for {} ingredient types, craftsNeeded={}",
+                MAX_RESOLVE_PASSES, ingredients.stream().filter(i -> !i.isEmpty()).count(), craftsNeeded);
         for (int pass = 0; pass < MAX_RESOLVE_PASSES; pass++) {
             boolean madeProgress = false;
 
@@ -539,11 +543,22 @@ public class CraftItemTool implements AiTool {
                 if (matchingIng == null) continue;
 
                 int have = countInInventory(context, matchingIng);
-                if (have >= totalNeeded) continue;
+                if (have >= totalNeeded) {
+                    MCAi.LOGGER.info("  autoResolve pass {}: {} — have {}/{}, OK",
+                            pass + 1, neededItem.getDescription().getString(), have, totalNeeded);
+                    continue;
+                }
 
                 int deficit = totalNeeded - have;
+                MCAi.LOGGER.info("  autoResolve pass {}: {} — have {}/{}, deficit={}, trying auto-craft",
+                        pass + 1, neededItem.getDescription().getString(), have, totalNeeded, deficit);
                 if (tryAutoCraftItem(context, recipeManager, registryAccess, matchingIng, deficit, log, 0)) {
                     madeProgress = true;
+                    MCAi.LOGGER.info("  autoResolve pass {}: {} — auto-craft SUCCESS",
+                            pass + 1, neededItem.getDescription().getString());
+                } else {
+                    MCAi.LOGGER.warn("  autoResolve pass {}: {} — auto-craft FAILED (no recipe or missing materials)",
+                            pass + 1, neededItem.getDescription().getString());
                 }
             }
 
@@ -563,13 +578,20 @@ public class CraftItemTool implements AiTool {
 
         for (ItemStack variant : ingredient.getItems()) {
             Item targetItem = variant.getItem();
+            String targetName = BuiltInRegistries.ITEM.getKey(targetItem).getPath();
             RecipeHolder<?> subRecipe = findCraftingTableRecipe(recipeManager, registryAccess, targetItem, context);
-            if (subRecipe == null) continue;
+            if (subRecipe == null) {
+                MCAi.LOGGER.debug("    tryAutoCraft(depth={}): no crafting recipe for {}", depth, targetName);
+                continue;
+            }
 
             Recipe<?> sub = subRecipe.value();
 
             // Skip 3x3 sub-recipes if no crafting table access (can't auto-place during auto-craft phase)
-            if (!sub.canCraftInDimensions(2, 2) && !hasCraftingAccess(context)) continue;
+            if (!sub.canCraftInDimensions(2, 2) && !hasCraftingAccess(context)) {
+                MCAi.LOGGER.info("    tryAutoCraft(depth={}): {} needs 3x3 grid but no crafting table access", depth, targetName);
+                continue;
+            }
 
             int outputPerCraft = RecipeResolver.safeGetResult(sub, registryAccess).getCount();
             if (outputPerCraft <= 0) outputPerCraft = 1;
@@ -587,7 +609,11 @@ public class CraftItemTool implements AiTool {
             }
 
             int maxSub = calculateMaxCrafts(context, subIngs);
-            if (maxSub <= 0) continue;
+            if (maxSub <= 0) {
+                MCAi.LOGGER.info("    tryAutoCraft(depth={}): {} — recipe found but still missing sub-ingredients (maxCrafts=0)",
+                        depth, targetName);
+                continue;
+            }
 
             int actualSub = Math.min(subCraftsNeeded, maxSub);
 
@@ -869,6 +895,7 @@ public class CraftItemTool implements AiTool {
         // === Furnace check ===
         // If no furnace nearby, companion needs 8 cobblestone to auto-craft one
         boolean hasFurnace = hasFurnaceNearby(companion);
+        MCAi.LOGGER.info("ensureSmeltPrereqs: hasFurnace={}", hasFurnace);
         if (!hasFurnace) {
             int cobble = available.getOrDefault(Items.COBBLESTONE, 0);
             cobble += BlockHelper.countItem(companion, Items.COBBLESTONE);
@@ -912,6 +939,7 @@ public class CraftItemTool implements AiTool {
         // Check if plan already has a CHOP step (logs are excellent fuel)
         boolean planChops = plan.getSteps().stream()
                 .anyMatch(s -> s.type == RecipeResolver.StepType.CHOP);
+        MCAi.LOGGER.info("ensureSmeltPrereqs: hasFuel={}, planChops={}", hasFuel, planChops);
         if (!hasFuel && !planChops) {
             prereqs.add(new CraftingPlan.Step(RecipeResolver.StepType.CHOP,
                     Items.OAK_LOG, 4));
@@ -951,10 +979,15 @@ public class CraftItemTool implements AiTool {
      */
     private void addToolChainSteps(List<CraftingPlan.Step> steps, Item tool,
                                     Map<Item, Integer> available, RecipeResolver resolver) {
+        String toolName = BuiltInRegistries.ITEM.getKey(tool).getPath();
         // Check if already available
-        if (available.getOrDefault(tool, 0) > 0) return;
+        if (available.getOrDefault(tool, 0) > 0) {
+            MCAi.LOGGER.info("addToolChainSteps: {} already in available map — skipping", toolName);
+            return;
+        }
 
         RecipeResolver.DependencyNode tree = resolver.resolve(tool, 1, new HashMap<>(available));
+        MCAi.LOGGER.info("addToolChainSteps: {} dependency tree:\n{}", toolName, RecipeResolver.printTree(tree));
         CraftingPlan toolPlan = CraftingPlan.fromTree(tree);
 
         for (CraftingPlan.Step step : toolPlan.getSteps()) {
@@ -1098,6 +1131,7 @@ public class CraftItemTool implements AiTool {
      * Create a CompanionTask for a plan step.
      */
     private CompanionTask createTaskForStep(CraftingPlan.Step step, CompanionEntity companion) {
+        MCAi.LOGGER.info("createTaskForStep: type={}, item={}, count={}", step.type, step.itemId, step.count);
         return switch (step.type) {
             case CHOP -> new ChopTreesTask(companion, 16, Math.max(step.count, 4));
             case MINE -> {

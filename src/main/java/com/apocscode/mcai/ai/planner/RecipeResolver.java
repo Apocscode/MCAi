@@ -362,16 +362,21 @@ public class RecipeResolver {
 
     private DependencyNode resolveRecursive(Item item, int count, Map<Item, Integer> available,
                                              Set<Item> visited, int depth) {
+        String itemId = BuiltInRegistries.ITEM.getKey(item).getPath();
+        String indent = "  ".repeat(depth);
+
         if (depth > MAX_DEPTH) {
+            MCAi.LOGGER.warn("{}resolveRecursive: MAX_DEPTH exceeded for '{}' x{}", indent, itemId, count);
             return new DependencyNode(item, count, StepType.UNKNOWN, null);
         }
 
-        String itemId = BuiltInRegistries.ITEM.getKey(item).getPath();
+        MCAi.LOGGER.info("{}resolveRecursive: '{}' x{} (depth={})", indent, itemId, count, depth);
 
         // Check if already available (inventory/chests)
         int avail = available.getOrDefault(item, 0);
         if (avail >= count) {
             available.put(item, avail - count); // "consume" from available
+            MCAi.LOGGER.info("{}  -> AVAILABLE (have {} >= need {})", indent, avail, count);
             return new DependencyNode(item, count, StepType.AVAILABLE, null);
         }
 
@@ -380,10 +385,12 @@ public class RecipeResolver {
         if (avail > 0) {
             remaining = count - avail;
             available.put(item, 0);
+            MCAi.LOGGER.info("{}  -> partially available: have {}, still need {}", indent, avail, remaining);
         }
 
         // Prevent infinite recursion (item A needs B which needs A)
         if (visited.contains(item)) {
+            MCAi.LOGGER.info("{}  -> CYCLE detected for '{}', classifying as raw", indent, itemId);
             return classifyRawMaterial(item, remaining);
         }
 
@@ -393,53 +400,55 @@ public class RecipeResolver {
         // which is absurd — raw_iron drops from mining iron_ore.
         DependencyNode rawCheck = classifyRawMaterial(item, remaining);
         if (rawCheck.type != StepType.UNKNOWN) {
+            MCAi.LOGGER.info("{}  -> early-exit raw material: '{}' classified as {}", indent, itemId, rawCheck.type);
             return rawCheck;
         }
 
         visited.add(item);
 
         boolean hasHeatRecipe = heatByOutput.containsKey(item);
+        MCAi.LOGGER.info("{}  -> not raw, hasHeatRecipe={}, trying recipe phases...", indent, hasHeatRecipe);
 
         // === Phase 1: Try heat (smelting) FIRST when a heat recipe exists ===
-        // Smelting recipes are simpler (1 input → 1 output) and avoid circular
-        // crafting chains. Example: iron_ingot should smelt from raw_iron, NOT craft
-        // from 9× iron_nugget (which itself needs iron_ingot → circular dependency).
         if (hasHeatRecipe) {
             DependencyNode heatNode = tryHeatRecipe(item, remaining, available, visited, depth);
             if (heatNode != null && !hasDeepUnknown(heatNode)) {
+                MCAi.LOGGER.info("{}  -> Phase 1 HEAT success for '{}'", indent, itemId);
                 visited.remove(item);
                 return heatNode;
             }
-            // Heat recipe had UNKNOWN descendants — fall through to try crafting
+            MCAi.LOGGER.info("{}  -> Phase 1 HEAT failed/had UNKNOWN for '{}'", indent, itemId);
         }
 
         // === Phase 2: Try crafting recipe ===
         DependencyNode craftNode = tryCraftingRecipe(item, remaining, available, visited, depth);
         if (craftNode != null) {
             if (!hasDeepUnknown(craftNode)) {
-                // Clean crafting tree — use it
+                MCAi.LOGGER.info("{}  -> Phase 2 CRAFT success for '{}'", indent, itemId);
                 visited.remove(item);
                 return craftNode;
             }
-            // Crafting has deep UNKNOWN descendants — try heat as fallback
+            MCAi.LOGGER.info("{}  -> Phase 2 CRAFT had deep UNKNOWN for '{}', trying heat fallback", indent, itemId);
             if (hasHeatRecipe) {
                 DependencyNode heatFallback = tryHeatRecipe(item, remaining, available, visited, depth);
                 if (heatFallback != null) {
-                    MCAi.LOGGER.info("RecipeResolver: preferring heat over crafting for {} (crafting had deep UNKNOWN descendants)",
-                            BuiltInRegistries.ITEM.getKey(item));
+                    MCAi.LOGGER.info("{}  -> heat fallback success for '{}'", indent, itemId);
                     visited.remove(item);
                     return heatFallback;
                 }
             }
-            // Accept crafting despite deep UNKNOWN (better than nothing)
+            MCAi.LOGGER.info("{}  -> accepting CRAFT despite deep UNKNOWN for '{}'", indent, itemId);
             visited.remove(item);
             return craftNode;
+        } else {
+            MCAi.LOGGER.info("{}  -> Phase 2 no CRAFT recipe found for '{}'", indent, itemId);
         }
 
         // === Phase 3: Try heat recipe (for items without pre-indexed heat recipes) ===
         if (!hasHeatRecipe) {
             DependencyNode heatNode = tryHeatRecipe(item, remaining, available, visited, depth);
             if (heatNode != null) {
+                MCAi.LOGGER.info("{}  -> Phase 3 late HEAT success for '{}'", indent, itemId);
                 visited.remove(item);
                 return heatNode;
             }
@@ -448,6 +457,7 @@ public class RecipeResolver {
         // === Phase 4: Try stonecutting ===
         DependencyNode stonecutNode = tryStonecutRecipe(item, remaining, available, visited, depth);
         if (stonecutNode != null) {
+            MCAi.LOGGER.info("{}  -> Phase 4 STONECUT success for '{}'", indent, itemId);
             visited.remove(item);
             return stonecutNode;
         }
@@ -455,6 +465,7 @@ public class RecipeResolver {
         visited.remove(item);
 
         // No recipe found — classify as raw material (mineable, choppable, etc.)
+        MCAi.LOGGER.warn("{}  -> NO RECIPE found for '{}' x{}, falling back to raw classification", indent, itemId, remaining);
         return classifyRawMaterial(item, remaining);
     }
 
@@ -482,6 +493,9 @@ public class RecipeResolver {
         List<RecipeHolder<?>> candidates = craftingByOutput.get(item);
         if (candidates == null || candidates.isEmpty()) return null;
 
+        String itemId = BuiltInRegistries.ITEM.getKey(item).getPath();
+        MCAi.LOGGER.info("RecipeResolver: tryCraftingRecipe '{}' x{}, {} candidates", itemId, count, candidates.size());
+
         // Try each candidate in score order (best/vanilla first)
         for (RecipeHolder<?> best : candidates) {
             try {
@@ -497,12 +511,15 @@ public class RecipeResolver {
 
                 // Resolve each ingredient recursively
                 Map<Item, Integer> grouped = groupIngredients(recipe.getIngredients(), craftsNeeded, available);
+                MCAi.LOGGER.info("  recipe {} -> output={}/craft, craftsNeeded={}, ingredients: {}",
+                        best.id(), outputPerCraft, craftsNeeded, grouped.entrySet().stream()
+                                .map(e -> BuiltInRegistries.ITEM.getKey(e.getKey()).getPath() + "=" + e.getValue())
+                                .collect(java.util.stream.Collectors.joining(", ")));
                 boolean hasUnresolvable = false;
                 for (Map.Entry<Item, Integer> entry : grouped.entrySet()) {
                     DependencyNode child = resolveRecursive(entry.getKey(), entry.getValue(),
                             available, new HashSet<>(visited), depth + 1);
                     node.children.add(child);
-                    // If ANY child is UNKNOWN and this is a modded recipe, try next candidate
                     if (child.type == StepType.UNKNOWN) hasUnresolvable = true;
                 }
 
@@ -640,17 +657,24 @@ public class RecipeResolver {
         String id = BuiltInRegistries.ITEM.getKey(item).getPath();
 
         // Ores and raw metals → MINE
-        if (id.contains("raw_") || id.contains("_ore") || id.equals("diamond")
+        // Use endsWith for "deepslate" to avoid matching craftable items like
+        // "deepslate_bricks", "deepslate_tiles", "chiseled_deepslate"
+        if (id.startsWith("raw_") || id.endsWith("_ore") || id.equals("diamond")
                 || id.equals("emerald") || id.equals("coal") || id.equals("lapis_lazuli")
                 || id.equals("redstone") || id.equals("quartz") || id.equals("amethyst_shard")
                 || id.equals("ancient_debris") || id.equals("glowstone_dust")
-                || id.contains("deepslate")) {
+                || id.equals("deepslate")) {
             return new DependencyNode(item, count, StepType.MINE, null);
         }
 
         // Wood / logs → CHOP
-        if (id.contains("log") || id.contains("wood") || id.contains("stem")
-                || id.contains("hyphae")) {
+        // Use endsWith/startsWith to avoid false matches:
+        //   "wooden_pickaxe".contains("wood") was incorrectly classified as CHOP!
+        //   "wooden_sword", "wooden_hoe", etc. are craftable items, NOT raw wood.
+        if (id.endsWith("_log") || id.endsWith("_wood") || id.endsWith("_stem")
+                || id.endsWith("_hyphae")
+                || id.startsWith("stripped_")
+                || id.equals("bamboo_block")) {
             return new DependencyNode(item, count, StepType.CHOP, null);
         }
 
@@ -708,7 +732,7 @@ public class RecipeResolver {
         }
 
         // Default: unknown — AI will need to figure out creative solutions
-        MCAi.LOGGER.debug("RecipeResolver: unknown raw material '{}' — classified as UNKNOWN", id);
+        MCAi.LOGGER.info("RecipeResolver: classifyRawMaterial '{}' — UNKNOWN (not a recognized raw material)", id);
         return new DependencyNode(item, count, StepType.UNKNOWN, null);
     }
 
