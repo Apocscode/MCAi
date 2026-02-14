@@ -345,5 +345,37 @@ git commit -m "description"
 
 ---
 
-*Last updated: 2026-02-14 — Session 7*
+## Session 8 — 2026-02-14 (Night) — Home Area Walkout + Live Testing
+
+### Focus: Jim can't strip mine because he's inside the home area
+
+### Commits
+- `d3ec291` — **StripMineTask WALK_OUT phase**
+
+### Live Test Results (diamond boots)
+1. `mine_ores diamond` (r=16→64) — FAILED: no diamond ore at Y=119
+2. AI correctly called `strip_mine(ore=diamond)` as fallback
+3. `strip_mine` — FAILED instantly: "Cannot strip-mine inside the home area" (old code called `fail()` immediately)
+4. Both cloud APIs rate-limited (429) — fell to Ollama
+5. Ollama ignored "DO NOT call craft_item" warning → called `craft_item` → BLOCKED recursive guard
+6. Chain died — no diamonds mined, no boots crafted
+
+### Also observed: `tryAutoCraft` diamond ↔ diamond_block loop
+- When `craft_item` tries to auto-resolve diamond, it finds `9 diamond → 1 diamond_block` and `1 diamond_block → 9 diamond` recipes
+- Bounces between depth 2 and 3 repeatedly until hitting max depth
+- Not a crash, just log spam and wasted time
+
+### Fix Applied
+- Added `WALK_OUT` phase to StripMineTask
+- When started inside home area: walks 25 blocks in mining direction, then transitions to DIG_DOWN or TUNNEL
+- 9-second generous stuck timeout before failing
+- Previously: `navigateTo()` then immediate `fail()` — companion never moved
+
+### JAR Deployed
+- Built & deployed to ATM10 mods folder
+- **Requires game restart** (mid-session JAR swap causes ClassNotFoundError)
+
+---
+
+*Last updated: 2026-02-14 — Session 8*
 *Rule: Update this log with every JAR deployment.*
