@@ -165,7 +165,11 @@ public class MineOresTool implements AiTool {
             }
 
             // Pre-check: skip if companion already has enough of the target ore drop
-            if (targetOre != null) {
+            // BUT: don't skip if this is part of a crafting plan (has "plan" parameter),
+            // because the plan's total requirement may be higher than maxOres.
+            // The craft plan already calculated exact needs — trust it.
+            boolean hasPlan = args.has("plan") && !args.get("plan").getAsString().isBlank();
+            if (targetOre != null && !hasPlan) {
                 net.minecraft.world.item.Item dropItem = resolveOreDrop(targetOre.name);
                 if (dropItem != null) {
                     int have = BlockHelper.countItem(companion, dropItem);

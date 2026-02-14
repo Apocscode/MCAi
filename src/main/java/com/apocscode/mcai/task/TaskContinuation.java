@@ -45,13 +45,17 @@ public record TaskContinuation(
                 "\nThe previous step FAILED. You MUST adapt and try an alternative approach." +
                 "\nYou MUST call a tool. Do NOT just respond with text." +
                 "\n" +
+                "\n*** CRITICAL: Do NOT call craft_item again! That would restart the entire plan and create an infinite loop. ***" +
+                "\n*** Instead, fix the specific step that failed using the appropriate tool directly. ***" +
+                "\n" +
                 "\nFallback strategies:" +
                 "\n- If mine_ores failed (could not reach ores / no ores found): use strip_mine(ore=X, plan=\"<remaining steps>\") instead — it digs a tunnel at the optimal Y-level." +
+                "\n- If smelt_items failed (no furnace/no fuel/no cobblestone): use gather_blocks({\"block\":\"cobblestone\",\"count\":8}) to get furnace materials, or chop_trees for fuel." +
                 "\n- If gather_blocks failed: try a larger radius or different location." +
                 "\n- If the task timed out or got stuck: retry with adjusted parameters." +
                 "\n" +
                 "\n*** IMPORTANT: Look at 'Remaining steps' above. You MUST pass those EXACT remaining steps as the 'plan' parameter in your tool call. ***" +
-                "\n*** DO NOT call a different tool than what the remaining steps specify. Follow the plan. ***" +
+                "\n*** DO NOT call craft_item — use the specific tool for the failed step instead. ***" +
                 "\nExample: strip_mine({\"ore\":\"iron\",\"plan\":\"smelt iron_ingot, then craft bucket\"})" +
                 "\nThis ensures the crafting chain continues automatically after the fallback task completes." +
                 "\nDo NOT give up — find an alternative way to get the materials needed.";

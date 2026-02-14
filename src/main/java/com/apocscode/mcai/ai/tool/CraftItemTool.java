@@ -39,6 +39,7 @@ import net.minecraft.world.level.block.SmokerBlock;
 
 import javax.annotation.Nullable;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Smart crafting tool that behaves like a real player:
@@ -61,6 +62,15 @@ public class CraftItemTool implements AiTool {
     private static final int MAX_RESOLVE_PASSES = 3;
     private static final int CHEST_SCAN_RADIUS = 16;
     private static final int CRAFTING_TABLE_RADIUS = 8;
+
+    /**
+     * Tracks recent autoCraftPlan calls to prevent infinite recursion.
+     * Maps item registry path → System.currentTimeMillis() of last attempt.
+     * If craft_item is called for the same item within CRAFT_COOLDOWN_MS,
+     * it refuses to restart the plan and returns an error.
+     */
+    private static final Map<String, Long> recentCraftAttempts = new ConcurrentHashMap<>();
+    private static final long CRAFT_COOLDOWN_MS = 120_000; // 2 minutes
 
     @Override
     public String name() {
@@ -676,6 +686,24 @@ public class CraftItemTool implements AiTool {
 
         String targetName = targetItem.getDescription().getString();
         String targetId = BuiltInRegistries.ITEM.getKey(targetItem).getPath();
+
+        // === Recursion guard: prevent infinite craft loops ===
+        // If we already attempted an autoCraftPlan for this item recently, refuse to restart.
+        // This catches the pattern: craft_item → plan → step fails → AI calls craft_item again.
+        Long lastAttempt = recentCraftAttempts.get(targetId);
+        long now = System.currentTimeMillis();
+        if (lastAttempt != null && (now - lastAttempt) < CRAFT_COOLDOWN_MS) {
+            long secsAgo = (now - lastAttempt) / 1000;
+            MCAi.LOGGER.warn("autoCraftPlan: BLOCKED recursive attempt for '{}' (last attempt {}s ago). " +
+                    "A crafting plan for this item was already started recently.", targetId, secsAgo);
+            return craftLog.toString() + "I already tried to craft " + targetName +
+                    " " + secsAgo + " seconds ago but a step in the plan failed. " +
+                    "I need help — please check if I have enough materials, a furnace, and fuel. " +
+                    "You can tell me to try again in a couple of minutes.";
+        }
+        recentCraftAttempts.put(targetId, now);
+        // Clean up old entries
+        recentCraftAttempts.entrySet().removeIf(e -> (now - e.getValue()) > CRAFT_COOLDOWN_MS);
 
         // === Build available inventory map ===
         Map<Item, Integer> available = buildAvailableMap(context);

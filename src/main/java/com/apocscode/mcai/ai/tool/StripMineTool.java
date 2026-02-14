@@ -37,7 +37,7 @@ public class StripMineTool implements AiTool {
                 "for the target ore (e.g. Y=-59 for diamonds, Y=16 for iron), then tunnels horizontally " +
                 "while mining any ores exposed in the walls. Use this when mine_ores finds nothing nearby — " +
                 "the companion needs to dig to expose ore veins. " +
-                "Specify 'ore' for targeted mining, 'length' for tunnel length (default 32), " +
+                "Specify 'ore' for targeted mining, 'length' for tunnel length (default 48), " +
                 "and 'count' for how many ores to find before stopping.";
     }
 
@@ -58,7 +58,7 @@ public class StripMineTool implements AiTool {
 
         JsonObject length = new JsonObject();
         length.addProperty("type", "integer");
-        length.addProperty("description", "Tunnel length in blocks. Default: 32, max: 64");
+        length.addProperty("description", "Tunnel length in blocks. Default: 48, max: 128");
         props.add("length", length);
 
         JsonObject count = new JsonObject();
@@ -100,8 +100,8 @@ public class StripMineTool implements AiTool {
             }
 
             // Parse tunnel length
-            int length = args.has("length") ? args.get("length").getAsInt() : 32;
-            length = Math.max(4, Math.min(length, 64));
+            int length = args.has("length") ? args.get("length").getAsInt() : 48;
+            length = Math.max(4, Math.min(length, 128));
 
             // Parse target ore count
             int count = args.has("count") ? args.get("count").getAsInt() : 0;

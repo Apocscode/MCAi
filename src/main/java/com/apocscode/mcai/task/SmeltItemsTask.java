@@ -76,12 +76,30 @@ public class SmeltItemsTask extends CompanionTask {
 
         furnacePos = findNearbyFurnace();
         if (furnacePos == null) {
-            // If not enough cobblestone for a furnace, try to mine some stone nearby
-            int cobble = BlockHelper.countItem(companion, Items.COBBLESTONE);
+            // Make inventory space: route excess items to storage before trying to craft a furnace
+            if (com.apocscode.mcai.logistics.ItemRoutingHelper.hasTaggedStorage(companion)) {
+                int routed = com.apocscode.mcai.logistics.ItemRoutingHelper.routeAllCompanionItems(companion);
+                if (routed > 0) {
+                    MCAi.LOGGER.info("SmeltItemsTask: routed {} items to storage to free inventory space", routed);
+                }
+            }
+
+            // If not enough cobblestone for a furnace, try multiple strategies
+            int cobble = countCobblestoneInInventory();
             if (cobble < 8) {
+                // Strategy 1: Mine nearby stone blocks
                 int gathered = tryGatherCobblestone(8 - cobble);
-                MCAi.LOGGER.info("Auto-gathered {} cobblestone for furnace (had {}, need 8)",
+                cobble += gathered;
+                MCAi.LOGGER.info("Auto-gathered {} cobblestone for furnace (now have {}, need 8)",
                         gathered, cobble);
+            }
+            if (cobble < 8) {
+                // Strategy 2: Pull cobblestone from tagged STORAGE containers
+                int pulled = tryPullCobblestoneFromStorage(8 - cobble);
+                cobble += pulled;
+                if (pulled > 0) {
+                    MCAi.LOGGER.info("Pulled {} cobblestone from storage (now have {}, need 8)", pulled, cobble);
+                }
             }
 
             // Try to auto-craft and place a furnace
@@ -543,6 +561,7 @@ public class SmeltItemsTask extends CompanionTask {
     /**
      * Try to gather cobblestone by breaking nearby stone blocks.
      * Stone drops cobblestone when mined with a pickaxe.
+     * Searches up to 16 blocks away (was 8, but that's too tight in tunnels).
      *
      * @param needed number of cobblestone blocks needed
      * @return number actually gathered
@@ -552,7 +571,7 @@ public class SmeltItemsTask extends CompanionTask {
         BlockPos center = companion.blockPosition();
         int gathered = 0;
 
-        for (int radius = 1; radius <= 8 && gathered < needed; radius++) {
+        for (int radius = 1; radius <= 16 && gathered < needed; radius++) {
             for (int x = -radius; x <= radius && gathered < needed; x++) {
                 for (int y = -3; y <= 2 && gathered < needed; y++) {
                     for (int z = -radius; z <= radius && gathered < needed; z++) {
@@ -576,6 +595,114 @@ public class SmeltItemsTask extends CompanionTask {
             }
         }
         return gathered;
+    }
+
+    /**
+     * Count cobblestone only in companion's inventory (not storage).
+     */
+    private int countCobblestoneInInventory() {
+        SimpleContainer inv = companion.getCompanionInventory();
+        int count = 0;
+        for (int i = 0; i < inv.getContainerSize(); i++) {
+            ItemStack stack = inv.getItem(i);
+            if (!stack.isEmpty() && stack.getItem() == Items.COBBLESTONE) {
+                count += stack.getCount();
+            }
+        }
+        return count;
+    }
+
+    /**
+     * Pull cobblestone from tagged STORAGE containers and home area chests
+     * into companion inventory. Used when companion needs cobblestone for
+     * furnace auto-craft but has already routed it all to storage during mining.
+     *
+     * @param needed maximum cobblestone to pull
+     * @return number actually pulled
+     */
+    private int tryPullCobblestoneFromStorage(int needed) {
+        int totalPulled = 0;
+        SimpleContainer inv = companion.getCompanionInventory();
+        java.util.Set<BlockPos> scanned = new java.util.HashSet<>();
+
+        // Items to look for (cobblestone + variants that can substitute)
+        Item[] cobbleItems = { Items.COBBLESTONE, Items.COBBLED_DEEPSLATE };
+
+        // Search tagged STORAGE containers
+        var storageBlocks = companion.getTaggedBlocks(
+                com.apocscode.mcai.logistics.TaggedBlock.Role.STORAGE);
+        for (var tb : storageBlocks) {
+            if (totalPulled >= needed) return totalPulled;
+            scanned.add(tb.pos());
+            totalPulled += extractItemsFromContainer(
+                    companion.level(), tb.pos(), inv, cobbleItems, needed - totalPulled);
+        }
+
+        // Search home area containers
+        if (totalPulled < needed && companion.hasHomeArea()) {
+            BlockPos c1 = companion.getHomeCorner1();
+            BlockPos c2 = companion.getHomeCorner2();
+            if (c1 != null && c2 != null) {
+                int minX = Math.min(c1.getX(), c2.getX());
+                int minY = Math.min(c1.getY(), c2.getY());
+                int minZ = Math.min(c1.getZ(), c2.getZ());
+                int maxX = Math.max(c1.getX(), c2.getX());
+                int maxY = Math.max(c1.getY(), c2.getY());
+                int maxZ = Math.max(c1.getZ(), c2.getZ());
+                for (int x = minX; x <= maxX && totalPulled < needed; x++) {
+                    for (int y = minY; y <= maxY && totalPulled < needed; y++) {
+                        for (int z = minZ; z <= maxZ && totalPulled < needed; z++) {
+                            BlockPos pos = new BlockPos(x, y, z);
+                            if (scanned.contains(pos)) continue;
+                            scanned.add(pos);
+                            totalPulled += extractItemsFromContainer(
+                                    companion.level(), pos, inv, cobbleItems, needed - totalPulled);
+                        }
+                    }
+                }
+            }
+        }
+
+        if (totalPulled > 0) {
+            MCAi.LOGGER.info("SmeltItemsTask: pulled {} cobblestone from storage containers", totalPulled);
+        }
+        return totalPulled;
+    }
+
+    /**
+     * Extract specific items from a container into companion inventory.
+     */
+    private int extractItemsFromContainer(Level level, BlockPos pos,
+                                           SimpleContainer inv, Item[] targetItems, int maxExtract) {
+        net.minecraft.world.level.block.entity.BlockEntity be = level.getBlockEntity(pos);
+        if (!(be instanceof net.minecraft.world.Container container)) return 0;
+
+        int extracted = 0;
+        for (int i = 0; i < container.getContainerSize() && extracted < maxExtract; i++) {
+            ItemStack stack = container.getItem(i);
+            if (stack.isEmpty()) continue;
+            boolean isTarget = false;
+            for (Item target : targetItems) {
+                if (stack.getItem() == target) { isTarget = true; break; }
+            }
+            if (isTarget) {
+                int take = Math.min(maxExtract - extracted, stack.getCount());
+                ItemStack toInsert = stack.copy();
+                toInsert.setCount(take);
+                ItemStack remainder = inv.addItem(toInsert);
+                int actuallyInserted = take - remainder.getCount();
+                if (actuallyInserted > 0) {
+                    stack.shrink(actuallyInserted);
+                    if (stack.isEmpty()) container.setItem(i, ItemStack.EMPTY);
+                    extracted += actuallyInserted;
+                }
+                if (!remainder.isEmpty()) break; // Inventory full
+            }
+        }
+        if (extracted > 0 && be instanceof net.minecraft.world.level.block.entity.BlockEntity blockEntity) {
+            blockEntity.setChanged();
+        }
+        return extracted;
     }
 
     // ========== Auto-place furnace ==========
