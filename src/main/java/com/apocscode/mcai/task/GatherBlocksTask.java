@@ -59,9 +59,13 @@ public class GatherBlocksTask extends CompanionTask {
     @Override
     protected void tick() {
         if (blocksGathered >= maxBlocks || targets.isEmpty()) {
-            MCAi.LOGGER.info("GatherBlocksTask: completed — gathered {}/{} {} blocks",
+            MCAi.LOGGER.info("GatherBlocksTask: finished — gathered {}/{} {} blocks",
                     blocksGathered, maxBlocks, targetBlock.getName().getString());
-            complete();
+            if (blocksGathered == 0) {
+                fail("Found " + targetBlock.getName().getString() + " blocks but couldn't reach any (0 gathered)");
+            } else {
+                complete();
+            }
             return;
         }
 

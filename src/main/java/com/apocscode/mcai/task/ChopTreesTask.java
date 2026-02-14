@@ -327,6 +327,13 @@ public class ChopTreesTask extends CompanionTask {
     private void finishTask() {
         MCAi.LOGGER.info("ChopTreesTask complete: {} trees felled, {} logs total, {} leaves cleared, {} saplings planted",
                 treesFelled, logsChopped, leavesCleared, saplingsPlanted);
+
+        // If trees were found but none could be reached/felled, report failure
+        if (logsChopped == 0) {
+            fail("Found trees but couldn't reach or fell any (0 logs collected)");
+            return;
+        }
+
         StringBuilder msg = new StringBuilder();
         msg.append("Done! Felled ").append(treesFelled).append(" tree")
            .append(treesFelled != 1 ? "s" : "")
