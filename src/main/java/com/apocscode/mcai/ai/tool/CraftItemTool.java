@@ -501,8 +501,8 @@ public class CraftItemTool implements AiTool {
 
             Recipe<?> sub = subRecipe.value();
 
-            // Skip 3x3 sub-recipes if no crafting table access (can't auto-place during fetch phase)
-            if (!sub.canCraftInDimensions(2, 2) && !hasCraftingAccess(context)) continue;
+            // Skip 3x3 sub-recipes if no crafting table access AND can't ensure one
+            if (!sub.canCraftInDimensions(2, 2) && !canEnsureCraftingAccess(context)) continue;
 
             int outputPerCraft = RecipeResolver.safeGetResult(sub, registryAccess).getCount();
             if (outputPerCraft <= 0) outputPerCraft = 1;
@@ -616,10 +616,16 @@ public class CraftItemTool implements AiTool {
 
             Recipe<?> sub = subRecipe.value();
 
-            // Skip 3x3 sub-recipes if no crafting table access (can't auto-place during auto-craft phase)
-            if (!sub.canCraftInDimensions(2, 2) && !hasCraftingAccess(context)) {
-                MCAi.LOGGER.info("    tryAutoCraft(depth={}): {} needs 3x3 grid but no crafting table access", depth, targetName);
-                continue;
+            // For 3x3 sub-recipes, ensure crafting table access (craft one if needed)
+            CraftingBlockHelper.StationResult subStationResult = null;
+            if (!sub.canCraftInDimensions(2, 2)) {
+                subStationResult = CraftingBlockHelper.ensureStation(
+                        CraftingBlockHelper.StationType.CRAFTING_TABLE, context);
+                if (!subStationResult.success) {
+                    MCAi.LOGGER.info("    tryAutoCraft(depth={}): {} needs 3x3 grid but cannot ensure crafting table: {}",
+                            depth, targetName, subStationResult.message);
+                    continue;
+                }
             }
 
             int outputPerCraft = RecipeResolver.safeGetResult(sub, registryAccess).getCount();
@@ -641,6 +647,8 @@ public class CraftItemTool implements AiTool {
             if (maxSub <= 0) {
                 MCAi.LOGGER.info("    tryAutoCraft(depth={}): {} — recipe found but still missing sub-ingredients (maxCrafts=0)",
                         depth, targetName);
+                // Pick up table if we placed one and can't proceed
+                if (subStationResult != null) CraftingBlockHelper.pickUpStation(subStationResult, context);
                 continue;
             }
 
@@ -653,6 +661,9 @@ public class CraftItemTool implements AiTool {
                     consumeIngredient(context, si, 1);
                 }
             }
+
+            // Pick up the crafting table after use (if we placed one and it's not near home)
+            if (subStationResult != null) CraftingBlockHelper.pickUpStation(subStationResult, context);
 
             // Place results in companion inventory (where tasks consume from)
             int produced = actualSub * outputPerCraft;
@@ -1265,6 +1276,7 @@ public class CraftItemTool implements AiTool {
         return switch (itemId) {
             case "leather" -> "cow";
             case "beef" -> "cow";
+            case "milk_bucket" -> "cow";  // Right-click cow with bucket
             case "string" -> "spider";
             case "spider_eye" -> "spider";
             case "bone", "bone_meal" -> "skeleton";
@@ -1821,15 +1833,18 @@ public class CraftItemTool implements AiTool {
      * Used for sub-recipe checks where we don't want to auto-place.
      */
     private boolean hasCraftingAccess(ToolContext context) {
-        // Check for nearby crafting table
+        // Check for nearby crafting table (limited Y range to avoid false positives
+        // from crafting tables in caves below or structures above)
         Level level = context.player().level();
         BlockPos center = context.player().blockPosition();
         int r = CRAFTING_TABLE_RADIUS;
         for (int x = -r; x <= r; x++) {
-            for (int y = -r; y <= r; y++) {
+            for (int y = -3; y <= 3; y++) {
                 for (int z = -r; z <= r; z++) {
                     BlockPos pos = center.offset(x, y, z);
                     if (level.getBlockState(pos).is(Blocks.CRAFTING_TABLE)) {
+                        MCAi.LOGGER.info("hasCraftingAccess: found crafting table at {} (player at {})",
+                                pos, center);
                         return true;
                     }
                 }
@@ -1837,6 +1852,60 @@ public class CraftItemTool implements AiTool {
         }
         // Check for portable crafting items
         return CraftingBlockHelper.hasPortableCraftingItem(context);
+    }
+
+    /**
+     * Checks if the player/companion CAN ensure a 3x3 crafting grid — either they
+     * already have access (table nearby, portable item) OR they have the materials
+     * to craft and place one (crafting table item, planks, or logs in inventory).
+     * Used as a filter for sub-recipe paths to avoid skipping 3x3 recipes that
+     * CraftingBlockHelper.ensureStation() could handle.
+     */
+    private boolean canEnsureCraftingAccess(ToolContext context) {
+        // First check if we already have direct access
+        if (hasCraftingAccess(context)) return true;
+
+        // Check if we have a crafting table item ready to place
+        if (countInAllInventories(context, Items.CRAFTING_TABLE) > 0) return true;
+
+        // Check if we have materials to craft a crafting table (4 planks of any type)
+        for (Item plank : List.of(Items.OAK_PLANKS, Items.SPRUCE_PLANKS, Items.BIRCH_PLANKS,
+                Items.JUNGLE_PLANKS, Items.ACACIA_PLANKS, Items.DARK_OAK_PLANKS,
+                Items.MANGROVE_PLANKS, Items.CHERRY_PLANKS, Items.BAMBOO_PLANKS,
+                Items.CRIMSON_PLANKS, Items.WARPED_PLANKS)) {
+            if (countInAllInventories(context, plank) >= 4) return true;
+        }
+
+        // Check if we have any log type (1 log = 4 planks = 1 crafting table)
+        for (Item log : List.of(Items.OAK_LOG, Items.SPRUCE_LOG, Items.BIRCH_LOG,
+                Items.JUNGLE_LOG, Items.ACACIA_LOG, Items.DARK_OAK_LOG,
+                Items.MANGROVE_LOG, Items.CHERRY_LOG, Items.BAMBOO_BLOCK,
+                Items.CRIMSON_STEM, Items.WARPED_STEM)) {
+            if (countInAllInventories(context, log) >= 1) return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Count a specific item across player and companion inventories.
+     */
+    private int countInAllInventories(ToolContext context, Item item) {
+        int count = 0;
+        var playerInv = context.player().getInventory();
+        for (int i = 0; i < playerInv.getContainerSize(); i++) {
+            ItemStack stack = playerInv.getItem(i);
+            if (!stack.isEmpty() && stack.getItem() == item) count += stack.getCount();
+        }
+        CompanionEntity companion = CompanionEntity.getLivingCompanion(context.player().getUUID());
+        if (companion != null) {
+            SimpleContainer companionInv = companion.getCompanionInventory();
+            for (int i = 0; i < companionInv.getContainerSize(); i++) {
+                ItemStack stack = companionInv.getItem(i);
+                if (!stack.isEmpty() && stack.getItem() == item) count += stack.getCount();
+            }
+        }
+        return count;
     }
 
     // ========== Inventory helpers ==========

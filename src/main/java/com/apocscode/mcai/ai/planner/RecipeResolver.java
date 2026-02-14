@@ -329,21 +329,20 @@ public class RecipeResolver {
         /** Flatten the tree into an ordered list of steps (leaves first = gather first). */
         public List<DependencyNode> flatten() {
             List<DependencyNode> result = new ArrayList<>();
-            flattenRecursive(result, new HashSet<>());
+            flattenRecursive(result);
             return result;
         }
 
-        private void flattenRecursive(List<DependencyNode> result, Set<String> seen) {
+        private void flattenRecursive(List<DependencyNode> result) {
             // Children first (raw materials before crafting)
             for (DependencyNode child : children) {
-                child.flattenRecursive(result, seen);
+                child.flattenRecursive(result);
             }
-            // Then self (only if not already added — dedup by item+type)
-            String key = type + ":" + itemId;
-            if (!seen.contains(key)) {
-                seen.add(key);
-                result.add(this);
-            }
+            // Add self — duplicates are merged by CraftingPlan.fromTree() which
+            // sums counts by type:itemId key. Previous dedup here silently dropped
+            // duplicate nodes, losing their counts (e.g., logs needed for BOTH
+            // sticks AND furnace would only keep the first branch's count).
+            result.add(this);
         }
     }
 
@@ -692,17 +691,25 @@ public class RecipeResolver {
             return new DependencyNode(item, count, StepType.GATHER, null);
         }
 
+        // Mob interaction items → KILL_MOB (these require interacting with mobs, not killing)
+        // milk_bucket: use bucket on cow. The bucket itself must be crafted separately.
+        if (id.equals("milk_bucket")) {
+            return new DependencyNode(item, count, StepType.KILL_MOB, null);
+        }
+
         // Mob drops → KILL_MOB
+        // Note: bone_meal removed — has bone→3×bone_meal crafting recipe (more efficient)
+        // Note: _wool removed — has 4×string→wool crafting recipe (more reliable than sheep drops)
         if (id.equals("leather") || id.equals("string") || id.equals("bone")
                 || id.equals("spider_eye") || id.equals("gunpowder") || id.equals("ender_pearl")
                 || id.equals("blaze_rod") || id.equals("ghast_tear") || id.equals("slime_ball")
                 || id.equals("phantom_membrane") || id.equals("rabbit_hide")
                 || id.equals("rabbit_foot") || id.equals("feather") || id.equals("ink_sac")
                 || id.equals("glow_ink_sac") || id.equals("rotten_flesh")
-                || id.equals("bone_meal") || id.equals("wither_skeleton_skull")
+                || id.equals("wither_skeleton_skull")
                 || id.equals("shulker_shell") || id.equals("prismarine_shard")
                 || id.equals("prismarine_crystals") || id.equals("magma_cream")
-                || id.contains("_wool") || id.contains("_meat") || id.equals("porkchop")
+                || id.contains("_meat") || id.equals("porkchop")
                 || id.equals("beef") || id.equals("chicken") || id.equals("mutton")
                 || id.equals("rabbit") || id.equals("egg")) {
             return new DependencyNode(item, count, StepType.KILL_MOB, null);
@@ -715,10 +722,12 @@ public class RecipeResolver {
         }
 
         // Crops / farmable → FARM
+        // Note: sugar removed — has sugar_cane→sugar crafting recipe
+        // Note: dried_kelp removed — has kelp→dried_kelp smelting recipe
         if (id.equals("wheat") || id.equals("wheat_seeds") || id.equals("carrot")
                 || id.equals("potato") || id.equals("beetroot") || id.equals("beetroot_seeds")
                 || id.equals("melon_slice") || id.equals("pumpkin") || id.equals("sugar_cane")
-                || id.equals("sugar") || id.equals("bamboo") || id.equals("cactus")
+                || id.equals("bamboo") || id.equals("cactus")
                 || id.equals("kelp") || id.equals("cocoa_beans") || id.equals("sweet_berries")
                 || id.equals("glow_berries") || id.equals("nether_wart")
                 || id.equals("chorus_fruit") || id.equals("apple")
@@ -727,7 +736,7 @@ public class RecipeResolver {
                 || id.equals("allium") || id.equals("azure_bluet") || id.equals("cornflower")
                 || id.equals("lily_of_the_valley") || id.equals("lily_pad")
                 || id.equals("vine") || id.equals("tall_grass") || id.equals("fern")
-                || id.equals("seagrass") || id.equals("dried_kelp")) {
+                || id.equals("seagrass")) {
             return new DependencyNode(item, count, StepType.FARM, null);
         }
 

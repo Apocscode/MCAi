@@ -262,6 +262,7 @@ public class CraftingPlan {
     private static String resolveMobForDrop(String itemId) {
         return switch (itemId) {
             case "leather", "beef" -> "cow";
+            case "milk_bucket" -> "cow";  // Right-click cow with bucket
             case "string", "spider_eye" -> "spider";
             case "bone", "bone_meal" -> "skeleton";
             case "gunpowder" -> "creeper";
