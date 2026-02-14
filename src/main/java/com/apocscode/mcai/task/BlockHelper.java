@@ -265,6 +265,37 @@ public class BlockHelper {
     }
 
     /**
+     * Count how many of a specific item are in the companion's INVENTORY ONLY (not storage).
+     * Use this when you need items physically in the companion's hands,
+     * not just logically available via storage.
+     */
+    public static int countItemInInventory(CompanionEntity companion, net.minecraft.world.item.Item item) {
+        var inv = companion.getCompanionInventory();
+        int count = 0;
+        for (int i = 0; i < inv.getContainerSize(); i++) {
+            ItemStack stack = inv.getItem(i);
+            if (!stack.isEmpty() && stack.getItem() == item) {
+                count += stack.getCount();
+            }
+        }
+        // Also count equipped items (mainhand, offhand, armor)
+        ItemStack mainHand = companion.getMainHandItem();
+        if (!mainHand.isEmpty() && mainHand.getItem() == item) {
+            count += mainHand.getCount();
+        }
+        ItemStack offHand = companion.getOffhandItem();
+        if (!offHand.isEmpty() && offHand.getItem() == item) {
+            count += offHand.getCount();
+        }
+        for (ItemStack armor : companion.getArmorSlots()) {
+            if (!armor.isEmpty() && armor.getItem() == item) {
+                count += armor.getCount();
+            }
+        }
+        return count;
+    }
+
+    /**
      * Count items in the companion's inventory matching a predicate.
      * Useful for tag-based checks (e.g., count all log-type items).
      *

@@ -57,12 +57,32 @@ public class SmeltItemsTask extends CompanionTask {
 
     @Override
     protected void start() {
-        // Check companion has the items
+        // First, ensure the smelting input items are in companion inventory
+        // (they might be in tagged storage — pull them in first)
+        int inInventory = BlockHelper.countItemInInventory(companion, inputItem);
+        if (inInventory < count) {
+            int needed = count - inInventory;
+            int pulled = com.apocscode.mcai.logistics.ItemRoutingHelper.pullItemFromStorage(
+                    companion, inputItem, needed);
+            if (pulled > 0) {
+                MCAi.LOGGER.info("SmeltItemsTask: pulled {}x {} from storage into inventory",
+                        pulled, inputItem.getDescription().getString());
+            }
+            inInventory += pulled;
+        }
+
+        // Check companion has the items (inventory + storage)
         int available = BlockHelper.countItem(companion, inputItem);
         if (available < count) {
             fail("Not enough " + inputItem.getDescription().getString() +
-                    " in inventory (have " + available + ", need " + count + ")");
+                    " (have " + available + ", need " + count + ")");
             return;
+        }
+        // If items are in storage but couldn't pull enough, warn but try anyway
+        if (inInventory < count && available >= count) {
+            MCAi.LOGGER.warn("SmeltItemsTask: have {} in inventory, {} in storage+inv — " +
+                    "some materials may not be accessible if storage is in unloaded chunks",
+                    inInventory, available);
         }
 
         // Check companion has fuel — if not, try to gather some
@@ -76,30 +96,47 @@ public class SmeltItemsTask extends CompanionTask {
 
         furnacePos = findNearbyFurnace();
         if (furnacePos == null) {
-            // Make inventory space: route excess items to storage before trying to craft a furnace
-            if (com.apocscode.mcai.logistics.ItemRoutingHelper.hasTaggedStorage(companion)) {
-                int routed = com.apocscode.mcai.logistics.ItemRoutingHelper.routeAllCompanionItems(companion);
-                if (routed > 0) {
-                    MCAi.LOGGER.info("SmeltItemsTask: routed {} items to storage to free inventory space", routed);
+            // If not enough cobblestone for a furnace, try multiple strategies
+            int cobble = countCobblestoneInInventory();
+
+            if (cobble < 8) {
+                // Strategy 1: Pull cobblestone from tagged STORAGE containers
+                // (This is the most common case — strip mining routes all cobblestone to storage)
+                int pulled = com.apocscode.mcai.logistics.ItemRoutingHelper.pullItemFromStorage(
+                        companion, Items.COBBLESTONE, 8 - cobble);
+                cobble += pulled;
+                if (pulled > 0) {
+                    MCAi.LOGGER.info("SmeltItemsTask: pulled {} cobblestone from storage (now have {})", pulled, cobble);
                 }
             }
 
-            // If not enough cobblestone for a furnace, try multiple strategies
-            int cobble = countCobblestoneInInventory();
             if (cobble < 8) {
-                // Strategy 1: Mine nearby stone blocks
+                // Strategy 2: Route NON-essential items to storage to free inventory space,
+                // then mine nearby stone
+                if (com.apocscode.mcai.logistics.ItemRoutingHelper.hasTaggedStorage(companion)) {
+                    int routed = com.apocscode.mcai.logistics.ItemRoutingHelper.routeAllCompanionItems(companion);
+                    if (routed > 0) {
+                        MCAi.LOGGER.info("SmeltItemsTask: routed {} items to storage to free inventory space", routed);
+                    }
+                    // Re-pull our smelting inputs and cobblestone after routing
+                    com.apocscode.mcai.logistics.ItemRoutingHelper.pullItemFromStorage(
+                            companion, inputItem, count);
+                    // Re-check cobblestone after routing (routing may have not sent cobble if none was in inv)
+                    cobble = countCobblestoneInInventory();
+                }
                 int gathered = tryGatherCobblestone(8 - cobble);
                 cobble += gathered;
-                MCAi.LOGGER.info("Auto-gathered {} cobblestone for furnace (now have {}, need 8)",
+                MCAi.LOGGER.info("SmeltItemsTask: gathered {} cobblestone by mining (now have {}, need 8)",
                         gathered, cobble);
             }
+
             if (cobble < 8) {
-                // Strategy 2: Pull cobblestone from tagged STORAGE containers
-                int pulled = tryPullCobblestoneFromStorage(8 - cobble);
+                // Strategy 3: Also try cobbled deepslate from storage
+                int pulled = com.apocscode.mcai.logistics.ItemRoutingHelper.pullItemFromStorage(
+                        companion, Items.COBBLED_DEEPSLATE, 8 - cobble);
+                // Convert cobbled deepslate count — furnace recipe only uses cobblestone
+                // Actually the furnace recipe uses "cobblestone" tag, deepslate works as substitute
                 cobble += pulled;
-                if (pulled > 0) {
-                    MCAi.LOGGER.info("Pulled {} cobblestone from storage (now have {}, need 8)", pulled, cobble);
-                }
             }
 
             // Try to auto-craft and place a furnace
@@ -598,14 +635,16 @@ public class SmeltItemsTask extends CompanionTask {
     }
 
     /**
-     * Count cobblestone only in companion's inventory (not storage).
+     * Count cobblestone + cobbled deepslate in companion's inventory only (not storage).
+     * Both can be used for furnace auto-crafting.
      */
     private int countCobblestoneInInventory() {
         SimpleContainer inv = companion.getCompanionInventory();
         int count = 0;
         for (int i = 0; i < inv.getContainerSize(); i++) {
             ItemStack stack = inv.getItem(i);
-            if (!stack.isEmpty() && stack.getItem() == Items.COBBLESTONE) {
+            if (!stack.isEmpty() && (stack.getItem() == Items.COBBLESTONE
+                    || stack.getItem() == Items.COBBLED_DEEPSLATE)) {
                 count += stack.getCount();
             }
         }
@@ -715,25 +754,38 @@ public class SmeltItemsTask extends CompanionTask {
     private BlockPos tryAutoPlaceFurnace() {
         SimpleContainer inv = companion.getCompanionInventory();
 
-        // Count cobblestone
+        // Count cobblestone and cobbled deepslate (both work for furnace recipe)
         int cobbleCount = 0;
+        int deepslateCount = 0;
         for (int i = 0; i < inv.getContainerSize(); i++) {
             ItemStack stack = inv.getItem(i);
-            if (!stack.isEmpty() && stack.getItem() == Items.COBBLESTONE) {
-                cobbleCount += stack.getCount();
+            if (!stack.isEmpty()) {
+                if (stack.getItem() == Items.COBBLESTONE) cobbleCount += stack.getCount();
+                else if (stack.getItem() == Items.COBBLED_DEEPSLATE) deepslateCount += stack.getCount();
             }
         }
 
-        if (cobbleCount < 8) {
-            MCAi.LOGGER.debug("Cannot auto-craft furnace: only {} cobblestone (need 8)", cobbleCount);
+        int totalStone = cobbleCount + deepslateCount;
+        if (totalStone < 8) {
+            MCAi.LOGGER.debug("Cannot auto-craft furnace: only {} cobblestone + {} deepslate = {} (need 8)",
+                    cobbleCount, deepslateCount, totalStone);
             return null;
         }
 
-        // Consume 8 cobblestone
+        // Consume 8 stone materials (prefer cobblestone first)
         int toConsume = 8;
         for (int i = 0; i < inv.getContainerSize() && toConsume > 0; i++) {
             ItemStack stack = inv.getItem(i);
             if (!stack.isEmpty() && stack.getItem() == Items.COBBLESTONE) {
+                int take = Math.min(toConsume, stack.getCount());
+                stack.shrink(take);
+                if (stack.isEmpty()) inv.setItem(i, ItemStack.EMPTY);
+                toConsume -= take;
+            }
+        }
+        for (int i = 0; i < inv.getContainerSize() && toConsume > 0; i++) {
+            ItemStack stack = inv.getItem(i);
+            if (!stack.isEmpty() && stack.getItem() == Items.COBBLED_DEEPSLATE) {
                 int take = Math.min(toConsume, stack.getCount());
                 stack.shrink(take);
                 if (stack.isEmpty()) inv.setItem(i, ItemStack.EMPTY);

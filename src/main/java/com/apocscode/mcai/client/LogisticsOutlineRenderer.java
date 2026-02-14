@@ -16,6 +16,9 @@ import net.minecraft.client.renderer.RenderType;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.level.block.ChestBlock;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.ChestType;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.api.distmarker.Dist;
@@ -94,8 +97,8 @@ public class LogisticsOutlineRenderer {
                 default -> { r = 1.0f; g = 1.0f; b = 1.0f; a = 1.0f; }
             }
 
-            // Slightly inflated AABB so the outline doesn't z-fight with the block
-            AABB box = new AABB(pos).inflate(0.005);
+            // Build AABB — expand for double chests if applicable
+            AABB box = getContainerAABB(mc, pos).inflate(0.005);
 
             LevelRenderer.renderLineBox(poseStack, lineConsumer,
                     box.minX, box.minY, box.minZ,
@@ -155,11 +158,13 @@ public class LogisticsOutlineRenderer {
                 case STORAGE -> 0xFF55FF55;
             };
 
+            // Position label at the center of the container (accounts for double chests)
+            AABB labelBox = getContainerAABB(mc, pos);
             poseStack.pushPose();
             poseStack.translate(
-                    pos.getX() + 0.5 - camera.x,
-                    pos.getY() + 1.3 - camera.y,
-                    pos.getZ() + 0.5 - camera.z);
+                    labelBox.getCenter().x - camera.x,
+                    labelBox.maxY + 0.3 - camera.y,
+                    labelBox.getCenter().z - camera.z);
 
             // Billboard: face camera (vanilla nametag pattern)
             poseStack.mulPose(mc.getEntityRenderDispatcher().cameraOrientation());
@@ -203,6 +208,35 @@ public class LogisticsOutlineRenderer {
         }
 
         bufferSource.endBatch();
+    }
+
+    /**
+     * Get the AABB for a container at the given position.
+     * For single blocks, returns a standard 1×1×1 AABB.
+     * For double chests, expands to cover both halves.
+     */
+    private static AABB getContainerAABB(Minecraft mc, BlockPos pos) {
+        if (mc.level == null) return new AABB(pos);
+
+        BlockState state = mc.level.getBlockState(pos);
+        if (state.getBlock() instanceof ChestBlock && state.hasProperty(ChestBlock.TYPE)) {
+            ChestType type = state.getValue(ChestBlock.TYPE);
+            if (type != ChestType.SINGLE) {
+                // Find the other half based on chest facing direction
+                net.minecraft.core.Direction facing = state.getValue(ChestBlock.FACING);
+                BlockPos otherHalf = pos.relative(ChestBlock.getConnectedDirection(state));
+
+                // Build an AABB covering both halves
+                double minX = Math.min(pos.getX(), otherHalf.getX());
+                double minY = Math.min(pos.getY(), otherHalf.getY());
+                double minZ = Math.min(pos.getZ(), otherHalf.getZ());
+                double maxX = Math.max(pos.getX(), otherHalf.getX()) + 1.0;
+                double maxY = Math.max(pos.getY(), otherHalf.getY()) + 1.0;
+                double maxZ = Math.max(pos.getZ(), otherHalf.getZ()) + 1.0;
+                return new AABB(minX, minY, minZ, maxX, maxY, maxZ);
+            }
+        }
+        return new AABB(pos);
     }
 
     /**

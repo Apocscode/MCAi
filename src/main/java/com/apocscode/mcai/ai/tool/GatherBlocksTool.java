@@ -2,6 +2,7 @@ package com.apocscode.mcai.ai.tool;
 
 import com.apocscode.mcai.MCAi;
 import com.apocscode.mcai.entity.CompanionEntity;
+import com.apocscode.mcai.logistics.ItemRoutingHelper;
 import com.apocscode.mcai.task.BlockHelper;
 import com.apocscode.mcai.task.GatherBlocksTask;
 import com.apocscode.mcai.task.TaskContinuation;
@@ -92,14 +93,34 @@ public class GatherBlocksTool implements AiTool {
             }
 
             // Pre-check: skip if companion already has enough of this block item
+            // If items are in storage but not in inventory, PULL them instead of skipping
             net.minecraft.world.item.Item blockItem = targetBlock.asItem();
             if (blockItem != null && blockItem != net.minecraft.world.item.Items.AIR) {
-                int have = BlockHelper.countItem(companion, blockItem);
-                if (have >= maxBlocks) {
-                    MCAi.LOGGER.info("GatherBlocks: SKIPPING — already have {}x {} in inventory+storage (need {})",
-                            have, blockItem.getDescription().getString(), maxBlocks);
-                    return "Already have " + have + "x " + blockItem.getDescription().getString() +
-                            " in inventory/storage (need " + maxBlocks + "). Skipping gather — proceed to next step.";
+                int totalHave = BlockHelper.countItem(companion, blockItem);
+                if (totalHave >= maxBlocks) {
+                    // Count what's actually in companion inventory (not storage)
+                    int inInventory = BlockHelper.countItemInInventory(companion, blockItem);
+                    if (inInventory >= maxBlocks) {
+                        MCAi.LOGGER.info("GatherBlocks: SKIPPING — already have {}x {} in inventory (need {})",
+                                inInventory, blockItem.getDescription().getString(), maxBlocks);
+                        return "Already have " + inInventory + "x " + blockItem.getDescription().getString() +
+                                " in inventory (need " + maxBlocks + "). Skipping gather — proceed to next step.";
+                    }
+                    // Items are in storage — pull them into inventory
+                    int needed = maxBlocks - inInventory;
+                    int pulled = ItemRoutingHelper.pullItemFromStorage(companion, blockItem, needed);
+                    if (pulled > 0) {
+                        MCAi.LOGGER.info("GatherBlocks: pulled {}x {} from storage into inventory",
+                                pulled, blockItem.getDescription().getString());
+                    }
+                    int afterPull = inInventory + pulled;
+                    if (afterPull >= maxBlocks) {
+                        return "Pulled " + pulled + "x " + blockItem.getDescription().getString() +
+                                " from storage (now have " + afterPull + "). Proceed to next step.";
+                    }
+                    // Still not enough even after pulling — fall through to gather more
+                    MCAi.LOGGER.info("GatherBlocks: after storage pull, have {} in inventory (need {}), gathering more",
+                            afterPull, maxBlocks);
                 }
             }
 

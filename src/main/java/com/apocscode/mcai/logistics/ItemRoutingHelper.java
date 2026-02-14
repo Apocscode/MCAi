@@ -143,6 +143,105 @@ public class ItemRoutingHelper {
     }
 
     /**
+     * Pull a specific item FROM tagged storage/home area containers INTO companion inventory.
+     * This is the reverse of routeToStorage — retrieves items the companion needs.
+     * Checks STORAGE and INPUT tagged containers, plus all containers in the home area.
+     *
+     * @param companion The companion entity
+     * @param item      The item to pull
+     * @param maxCount  Maximum number to pull
+     * @return Number of items actually transferred into companion inventory
+     */
+    public static int pullItemFromStorage(CompanionEntity companion, Item item, int maxCount) {
+        if (maxCount <= 0) return 0;
+        Level level = companion.level();
+        SimpleContainer inv = companion.getCompanionInventory();
+        int totalPulled = 0;
+        java.util.Set<BlockPos> scanned = new java.util.HashSet<>();
+
+        // Search tagged STORAGE containers first
+        for (TaggedBlock tb : companion.getTaggedBlocks(TaggedBlock.Role.STORAGE)) {
+            if (totalPulled >= maxCount) break;
+            BlockPos pos = tb.pos();
+            if (scanned.contains(pos) || !level.isLoaded(pos)) continue;
+            scanned.add(pos);
+            totalPulled += extractItemFromContainer(level, pos, inv, item, maxCount - totalPulled);
+        }
+
+        // Then INPUT containers
+        for (TaggedBlock tb : companion.getTaggedBlocks(TaggedBlock.Role.INPUT)) {
+            if (totalPulled >= maxCount) break;
+            BlockPos pos = tb.pos();
+            if (scanned.contains(pos) || !level.isLoaded(pos)) continue;
+            scanned.add(pos);
+            totalPulled += extractItemFromContainer(level, pos, inv, item, maxCount - totalPulled);
+        }
+
+        // Then home area containers
+        if (totalPulled < maxCount && companion.hasHomeArea()) {
+            BlockPos c1 = companion.getHomeCorner1();
+            BlockPos c2 = companion.getHomeCorner2();
+            if (c1 != null && c2 != null) {
+                int minX = Math.min(c1.getX(), c2.getX());
+                int minY = Math.min(c1.getY(), c2.getY());
+                int minZ = Math.min(c1.getZ(), c2.getZ());
+                int maxX = Math.max(c1.getX(), c2.getX());
+                int maxY = Math.max(c1.getY(), c2.getY());
+                int maxZ = Math.max(c1.getZ(), c2.getZ());
+                for (int x = minX; x <= maxX && totalPulled < maxCount; x++) {
+                    for (int y = minY; y <= maxY && totalPulled < maxCount; y++) {
+                        for (int z = minZ; z <= maxZ && totalPulled < maxCount; z++) {
+                            BlockPos pos = new BlockPos(x, y, z);
+                            if (scanned.contains(pos) || !level.isLoaded(pos)) continue;
+                            scanned.add(pos);
+                            totalPulled += extractItemFromContainer(level, pos, inv, item, maxCount - totalPulled);
+                        }
+                    }
+                }
+            }
+        }
+
+        if (totalPulled > 0) {
+            MCAi.LOGGER.info("Pulled {}x {} from storage into companion inventory",
+                    totalPulled, item.getDescription().getString());
+        }
+        return totalPulled;
+    }
+
+    /**
+     * Extract a specific item from a container at the given position into companion inventory.
+     * Uses IItemHandler capability for NeoForge compatibility (works with modded containers).
+     *
+     * @return Number of items extracted
+     */
+    private static int extractItemFromContainer(Level level, BlockPos pos,
+                                                 SimpleContainer inv, Item item, int maxExtract) {
+        IItemHandler handler = level.getCapability(Capabilities.ItemHandler.BLOCK, pos, null);
+        if (handler == null) return 0;
+
+        int extracted = 0;
+        for (int slot = 0; slot < handler.getSlots() && extracted < maxExtract; slot++) {
+            ItemStack inSlot = handler.getStackInSlot(slot);
+            if (inSlot.isEmpty() || inSlot.getItem() != item) continue;
+
+            int toExtract = Math.min(maxExtract - extracted, inSlot.getCount());
+            ItemStack pulled = handler.extractItem(slot, toExtract, false);
+            if (pulled.isEmpty()) continue;
+
+            ItemStack remainder = inv.addItem(pulled);
+            int actuallyInserted = pulled.getCount() - remainder.getCount();
+            extracted += actuallyInserted;
+
+            // If inventory was full, put the remainder back
+            if (!remainder.isEmpty()) {
+                handler.insertItem(slot, remainder, false);
+                break; // Inventory full
+            }
+        }
+        return extracted;
+    }
+
+    /**
      * Route all items in the companion's inventory to tagged storage.
      * Useful after task completion (e.g. chopping trees, mining, farming).
      *
@@ -286,6 +385,14 @@ public class ItemRoutingHelper {
             Items.CRIMSON_PLANKS, Items.WARPED_PLANKS
     );
 
+    /** Log items that can be converted to planks (1 log = 4 planks). */
+    private static final Set<Item> LOG_ITEMS = Set.of(
+            Items.OAK_LOG, Items.SPRUCE_LOG, Items.BIRCH_LOG,
+            Items.JUNGLE_LOG, Items.ACACIA_LOG, Items.DARK_OAK_LOG,
+            Items.MANGROVE_LOG, Items.CHERRY_LOG,
+            Items.CRIMSON_STEM, Items.WARPED_STEM
+    );
+
     /**
      * Ensure there's STORAGE container capacity available.
      * If no tagged storage exists, or if called for expansion (existing chests full),
@@ -322,8 +429,39 @@ public class ItemRoutingHelper {
         // If no chest, try to craft one from 8 planks (any type)
         if (!hasChest) {
             int plankCount = countPlanks(inv);
+
+            // Try pulling planks from storage if we don't have enough
             if (plankCount < 8) {
-                MCAi.LOGGER.debug("Cannot auto-craft chest: only {} planks (need 8)", plankCount);
+                for (Item plankItem : PLANK_ITEMS) {
+                    int needed = 8 - plankCount;
+                    if (needed <= 0) break;
+                    int pulled = pullItemFromStorage(companion, plankItem, needed);
+                    plankCount += pulled;
+                }
+            }
+
+            // Still not enough planks? Try pulling logs and converting to planks
+            if (plankCount < 8) {
+                int planksNeeded = 8 - plankCount;
+                int logsNeeded = (planksNeeded + 3) / 4; // Each log makes 4 planks
+                for (Item logItem : LOG_ITEMS) {
+                    if (logsNeeded <= 0) break;
+                    int pulled = pullItemFromStorage(companion, logItem, logsNeeded);
+                    if (pulled > 0) {
+                        // Convert logs to planks in inventory
+                        consumeLogs(inv, logItem, pulled);
+                        Item plankType = logToPlanks(logItem);
+                        inv.addItem(new ItemStack(plankType, pulled * 4));
+                        MCAi.LOGGER.info("Converted {}x {} to {}x planks for chest crafting",
+                                pulled, BuiltInRegistries.ITEM.getKey(logItem), pulled * 4);
+                        plankCount += pulled * 4;
+                        logsNeeded -= pulled;
+                    }
+                }
+            }
+
+            if (plankCount < 8) {
+                MCAi.LOGGER.debug("Cannot auto-craft chest: only {} planks (need 8), no logs available", plankCount);
                 return false;
             }
 
@@ -451,5 +589,34 @@ public class ItemRoutingHelper {
             }
         }
         return false;
+    }
+
+    /** Consume a specific log type from inventory. */
+    private static void consumeLogs(SimpleContainer inv, Item logItem, int amount) {
+        int remaining = amount;
+        for (int i = 0; i < inv.getContainerSize() && remaining > 0; i++) {
+            ItemStack stack = inv.getItem(i);
+            if (!stack.isEmpty() && stack.getItem() == logItem) {
+                int take = Math.min(remaining, stack.getCount());
+                stack.shrink(take);
+                if (stack.isEmpty()) inv.setItem(i, ItemStack.EMPTY);
+                remaining -= take;
+            }
+        }
+    }
+
+    /** Map a log item to its corresponding plank item. */
+    private static Item logToPlanks(Item log) {
+        if (log == Items.OAK_LOG) return Items.OAK_PLANKS;
+        if (log == Items.SPRUCE_LOG) return Items.SPRUCE_PLANKS;
+        if (log == Items.BIRCH_LOG) return Items.BIRCH_PLANKS;
+        if (log == Items.JUNGLE_LOG) return Items.JUNGLE_PLANKS;
+        if (log == Items.ACACIA_LOG) return Items.ACACIA_PLANKS;
+        if (log == Items.DARK_OAK_LOG) return Items.DARK_OAK_PLANKS;
+        if (log == Items.MANGROVE_LOG) return Items.MANGROVE_PLANKS;
+        if (log == Items.CHERRY_LOG) return Items.CHERRY_PLANKS;
+        if (log == Items.CRIMSON_STEM) return Items.CRIMSON_PLANKS;
+        if (log == Items.WARPED_STEM) return Items.WARPED_PLANKS;
+        return Items.OAK_PLANKS; // fallback
     }
 }
