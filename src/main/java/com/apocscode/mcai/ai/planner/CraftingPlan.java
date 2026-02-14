@@ -121,6 +121,232 @@ public class CraftingPlan {
         return steps.stream().filter(s -> s.type == StepType.CRAFT).toList();
     }
 
+    // ========== Difficulty Analysis ==========
+
+    /**
+     * Difficulty levels for crafting plan steps.
+     * Used to warn the player about challenging/impossible requirements.
+     */
+    public enum Difficulty {
+        EASY,       // Normal overworld gathering (chop, mine coal/iron, farm wheat)
+        MODERATE,   // Needs specific biomes or uncommon resources
+        HARD,       // Dangerous combat or rare materials
+        EXTREME,    // Requires Nether/End access or underwater monuments
+        IMPOSSIBLE  // Cannot be automated (shears interaction, etc.)
+    }
+
+    /**
+     * A single difficulty warning about a step in the plan.
+     */
+    public record DifficultyWarning(Difficulty level, String itemId, String warning) {}
+
+    /**
+     * Analyze the plan for difficulty warnings.
+     * Returns a list of warnings about dangerous, rare, or impossible steps.
+     * Used to inform the player in chat before Jim attempts the plan.
+     */
+    public List<DifficultyWarning> analyzeDifficulty() {
+        List<DifficultyWarning> warnings = new ArrayList<>();
+
+        for (Step step : steps) {
+            // Check UNKNOWN steps — these are dead ends
+            if (step.type == StepType.UNKNOWN) {
+                String advice = getUnknownItemAdvice(step.itemId);
+                warnings.add(new DifficultyWarning(Difficulty.IMPOSSIBLE, step.itemId,
+                        "I don't know how to get " + step.displayName + ". " + advice));
+                continue;
+            }
+
+            // Check KILL_MOB steps for difficulty
+            if (step.type == StepType.KILL_MOB) {
+                String mob = resolveMobForDrop(step.itemId);
+                DifficultyWarning mobWarning = assessMobDifficulty(step.itemId, mob, step.count);
+                if (mobWarning != null) warnings.add(mobWarning);
+                continue;
+            }
+
+            // Check MINE steps for Nether/End/rare materials
+            if (step.type == StepType.MINE) {
+                DifficultyWarning mineWarning = assessMineDifficulty(step.itemId, step.count);
+                if (mineWarning != null) warnings.add(mineWarning);
+                continue;
+            }
+
+            // Check GATHER steps for dimension-locked blocks
+            if (step.type == StepType.GATHER) {
+                DifficultyWarning gatherWarning = assessGatherDifficulty(step.itemId, step.count);
+                if (gatherWarning != null) warnings.add(gatherWarning);
+                continue;
+            }
+
+            // Check FARM steps for Nether/End crops
+            if (step.type == StepType.FARM) {
+                DifficultyWarning farmWarning = assessFarmDifficulty(step.itemId);
+                if (farmWarning != null) warnings.add(farmWarning);
+            }
+
+            // Large material counts
+            if (step.count >= 20 && step.isAsync()) {
+                warnings.add(new DifficultyWarning(Difficulty.MODERATE, step.itemId,
+                        "Need " + step.count + "x " + step.displayName + " — this will take a while!"));
+            }
+        }
+
+        return warnings;
+    }
+
+    /**
+     * Get the highest difficulty level in the warnings list.
+     */
+    public static Difficulty getMaxDifficulty(List<DifficultyWarning> warnings) {
+        Difficulty max = Difficulty.EASY;
+        for (DifficultyWarning w : warnings) {
+            if (w.level.ordinal() > max.ordinal()) max = w.level;
+        }
+        return max;
+    }
+
+    /**
+     * Format difficulty warnings as a chat-friendly string.
+     */
+    public static String formatWarnings(List<DifficultyWarning> warnings) {
+        if (warnings.isEmpty()) return "";
+        StringBuilder sb = new StringBuilder();
+        for (DifficultyWarning w : warnings) {
+            String prefix = switch (w.level) {
+                case IMPOSSIBLE -> "§c[IMPOSSIBLE]§r ";
+                case EXTREME -> "§c[DANGEROUS]§r ";
+                case HARD -> "§e[WARNING]§r ";
+                case MODERATE -> "§6[NOTE]§r ";
+                case EASY -> "";
+            };
+            sb.append("\n  ").append(prefix).append(w.warning);
+        }
+        return sb.toString();
+    }
+
+    // ========== Difficulty assessment helpers ==========
+
+    private static DifficultyWarning assessMobDifficulty(String itemId, String mob, int count) {
+        return switch (mob) {
+            // Nether-only mobs
+            case "blaze" -> new DifficultyWarning(Difficulty.EXTREME, itemId,
+                    "Blaze only spawns in Nether Fortresses — I can't get there on my own. " +
+                    "Bring me blaze rods or take me to the Nether!");
+            case "ghast" -> new DifficultyWarning(Difficulty.EXTREME, itemId,
+                    "Ghasts only spawn in the Nether and are very dangerous (fireballs!). " +
+                    "I'd need you to take me there and help fight.");
+            case "magma_cube" -> new DifficultyWarning(Difficulty.EXTREME, itemId,
+                    "Magma Cubes mainly spawn in Nether Basalt Deltas. " +
+                    "Consider bringing magma cream from the Nether.");
+            case "wither_skeleton" -> new DifficultyWarning(Difficulty.EXTREME, itemId,
+                    "Wither Skeletons only spawn in Nether Fortresses. Very tough fight!");
+
+            // End-only mobs
+            case "shulker" -> new DifficultyWarning(Difficulty.EXTREME, itemId,
+                    "Shulkers only spawn in End Cities. I can't reach The End alone.");
+            case "enderman" -> new DifficultyWarning(Difficulty.HARD, itemId,
+                    "Endermen are dangerous — they teleport and hit hard. " +
+                    "They spawn at night. I'll try but it's risky (need " + count + ").");
+
+            // Underwater
+            case "guardian" -> new DifficultyWarning(Difficulty.EXTREME, itemId,
+                    "Guardians only spawn at Ocean Monuments (underwater). " +
+                    "I can't swim and fight effectively. Bring me prismarine shards!");
+
+            // Explosive/dangerous overworld
+            case "creeper" -> new DifficultyWarning(Difficulty.HARD, itemId,
+                    "Creepers explode! I'll try to fight them at range but it's risky. " +
+                    "Need " + count + " gunpowder — nighttime hunting required.");
+            case "phantom" -> new DifficultyWarning(Difficulty.HARD, itemId,
+                    "Phantoms are flying mobs that spawn when you haven't slept. " +
+                    "Hard to hit — I'll do my best but no guarantees.");
+
+            // Passive mobs (easy but may need searching)
+            default -> null;
+        };
+    }
+
+    private static DifficultyWarning assessMineDifficulty(String itemId, int count) {
+        return switch (itemId) {
+            case "ancient_debris" -> new DifficultyWarning(Difficulty.EXTREME, itemId,
+                    "Ancient Debris only spawns deep in the Nether (Y=8-22). " +
+                    "Extremely rare — needs diamond+ pickaxe. I can't reach the Nether alone.");
+            case "quartz" -> new DifficultyWarning(Difficulty.EXTREME, itemId,
+                    "Nether Quartz only spawns in the Nether. Take me there or bring quartz!");
+            case "glowstone_dust" -> new DifficultyWarning(Difficulty.EXTREME, itemId,
+                    "Glowstone spawns on Nether ceilings. I can't reach the Nether alone.");
+            case "amethyst_shard" -> new DifficultyWarning(Difficulty.MODERATE, itemId,
+                    "Amethyst shards come from geodes underground — they're uncommon. " +
+                    "Mining may take a while to find one.");
+            case "diamond" -> count >= 5
+                    ? new DifficultyWarning(Difficulty.HARD, itemId,
+                        "Need " + count + " diamonds — that's a lot of deep mining (Y=-64 to 16)!")
+                    : null;
+            case "emerald" -> new DifficultyWarning(Difficulty.MODERATE, itemId,
+                    "Emerald ore only spawns in Mountain biomes. May need to travel.");
+            default -> null;
+        };
+    }
+
+    private static DifficultyWarning assessGatherDifficulty(String itemId, int count) {
+        return switch (itemId) {
+            case "netherrack", "soul_sand", "soul_soil", "basalt", "blackstone" ->
+                    new DifficultyWarning(Difficulty.EXTREME, itemId,
+                            itemId + " is a Nether block. I can't reach the Nether alone.");
+            case "end_stone" -> new DifficultyWarning(Difficulty.EXTREME, itemId,
+                    "End Stone only exists in The End dimension.");
+            case "obsidian" -> new DifficultyWarning(Difficulty.HARD, itemId,
+                    "Obsidian needs a diamond pickaxe and 10 seconds per block. " +
+                    "Found near lava pools.");
+            default -> null;
+        };
+    }
+
+    private static DifficultyWarning assessFarmDifficulty(String itemId) {
+        return switch (itemId) {
+            case "nether_wart" -> new DifficultyWarning(Difficulty.EXTREME, itemId,
+                    "Nether Wart only grows in the Nether (on soul sand).");
+            case "chorus_fruit" -> new DifficultyWarning(Difficulty.EXTREME, itemId,
+                    "Chorus Fruit only grows in The End.");
+            case "cocoa_beans" -> new DifficultyWarning(Difficulty.MODERATE, itemId,
+                    "Cocoa beans grow on jungle logs — need a Jungle biome nearby.");
+            case "glow_berries" -> new DifficultyWarning(Difficulty.MODERATE, itemId,
+                    "Glow Berries grow on cave vines underground — can be tricky to find.");
+            default -> null;
+        };
+    }
+
+    /**
+     * Give actionable advice for UNKNOWN items that can't be auto-resolved.
+     * These are typically interaction-based items with no crafting recipe.
+     */
+    private static String getUnknownItemAdvice(String itemId) {
+        return switch (itemId) {
+            case "carved_pumpkin" -> "Use shears on a pumpkin to get a Carved Pumpkin. " +
+                    "Give me shears and a pumpkin and I might be able to help!";
+            case "honeycomb" -> "Use shears on a Bee Nest or Beehive to get honeycomb. " +
+                    "Watch out for angry bees! Place a campfire underneath first.";
+            case "honey_bottle" -> "Use a glass bottle on a full Bee Nest/Beehive.";
+            case "milk_bucket" -> "Right-click a cow with an empty bucket.";
+            case "suspicious_stew" -> "Craft with a mushroom stew + any flower, or find in shipwrecks.";
+            case "player_head", "zombie_head", "skeleton_skull", "creeper_head" ->
+                    "Mob heads are rare drops from charged creeper explosions.";
+            case "sponge" -> "Sponges are found in Ocean Monuments (Elder Guardian rooms).";
+            case "heart_of_the_sea" -> "Found in Buried Treasure chests (use treasure maps).";
+            case "totem_of_undying" -> "Dropped by Evokers in Woodland Mansions or raids.";
+            case "elytra" -> "Found in End City ships — very late-game item.";
+            case "dragon_egg" -> "Dropped once when the Ender Dragon is first defeated.";
+            case "nether_star" -> "Dropped by the Wither boss.";
+            case "trident" -> "Rare drop from Drowned mobs (underwater zombies).";
+            case "enchanted_golden_apple" -> "Cannot be crafted — only found in dungeon/temple chests.";
+            case "name_tag" -> "Found in dungeon chests, fishing, or villager trading.";
+            case "saddle" -> "Found in dungeon chests, fishing, or villager trading.";
+            default -> "This item may need special world interaction or dungeon loot. " +
+                    "Try providing it manually.";
+        };
+    }
+
     /**
      * Prepend prerequisite steps to the front of the plan.
      * Used for tool prerequisites (e.g., craft stone_pickaxe before mining iron).

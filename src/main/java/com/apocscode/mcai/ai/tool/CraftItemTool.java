@@ -850,10 +850,31 @@ public class CraftItemTool implements AiTool {
                 targetName, firstStep, continuationNext);
 
         // === Build player-friendly summary ===
+        // Analyze plan for difficulty warnings (dangerous mobs, Nether access, etc.)
+        List<CraftingPlan.DifficultyWarning> warnings = plan.analyzeDifficulty();
+        CraftingPlan.Difficulty maxDifficulty = CraftingPlan.getMaxDifficulty(warnings);
+
         StringBuilder summary = new StringBuilder();
-        summary.append("[ASYNC_TASK] Started crafting ").append(targetName).append("! Plan: ");
-        summary.append(plan.summarize());
-        summary.append(". I'll handle each step automatically!");
+
+        // If plan has IMPOSSIBLE steps, warn but still attempt what we can
+        if (maxDifficulty == CraftingPlan.Difficulty.IMPOSSIBLE) {
+            summary.append("[ASYNC_TASK] I'll try to craft ").append(targetName)
+                   .append(", but some ingredients can't be auto-gathered!");
+        } else if (maxDifficulty == CraftingPlan.Difficulty.EXTREME) {
+            summary.append("[ASYNC_TASK] Crafting ").append(targetName)
+                   .append(" — heads up, this has some dangerous/hard-to-reach requirements!");
+        } else {
+            summary.append("[ASYNC_TASK] Started crafting ").append(targetName).append("!");
+        }
+
+        summary.append(" Plan: ").append(plan.summarize());
+
+        // Append difficulty warnings
+        if (!warnings.isEmpty()) {
+            summary.append(CraftingPlan.formatWarnings(warnings));
+        }
+
+        summary.append("\nI'll handle each step I can automatically!");
 
         return summary.toString();
     }
