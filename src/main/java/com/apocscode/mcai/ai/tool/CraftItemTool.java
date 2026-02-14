@@ -736,10 +736,15 @@ public class CraftItemTool implements AiTool {
             long secsAgo = (now - lastAttempt) / 1000;
             MCAi.LOGGER.warn("autoCraftPlan: BLOCKED recursive attempt for '{}' (last attempt {}s ago). " +
                     "A crafting plan for this item was already started recently.", targetId, secsAgo);
-            return craftLog.toString() + "I already tried to craft " + targetName +
-                    " " + secsAgo + " seconds ago but a step in the plan failed. " +
-                    "I need help — please check if I have enough materials, a furnace, and fuel. " +
-                    "You can tell me to try again in a couple of minutes.";
+            // Return the full missing report so the AI knows WHAT is missing,
+            // plus a strong stop directive so it doesn't retry craft_item
+            String missingReport = buildMissingReport(context, recipeManager, registryAccess,
+                    targetItem, ingredients, craftsNeeded, craftLog);
+            return "[CANNOT_CRAFT] " + missingReport +
+                    "\nIMPORTANT: Do NOT call craft_item for " + targetName + " again. " +
+                    "The materials listed above are not available. " +
+                    "Either use the gathering tools suggested above (mine_ores, chop_trees, etc.) " +
+                    "or tell the player what materials they need to collect.";
         }
         recentCraftAttempts.put(cooldownKey, now);
         // Clean up old entries
@@ -1805,6 +1810,10 @@ public class CraftItemTool implements AiTool {
                 actions.append("  ").append(actionNum).append(". IF chest empty: mine_ores({\"count\":").append(shortage)
                        .append(", \"plan\":\"smelt_items to get ").append(ingId)
                        .append(", then craft ").append(targetName).append("\"})\n");
+            } else if (isMinedGemOrMineral(ingId)) {
+                // Diamonds, emeralds, lapis, coal, redstone, quartz etc. — mine, don't gather
+                actions.append("  ").append(actionNum).append(". IF chest empty: mine_ores({\"count\":").append(shortage)
+                       .append(", \"plan\":\"craft ").append(targetName).append("\"})\n");
             } else {
                 actions.append("  ").append(actionNum).append(". IF chest empty: gather_blocks({\"block\":\"")
                        .append(ingId).append("\", \"maxBlocks\":").append(shortage)
@@ -1834,6 +1843,19 @@ public class CraftItemTool implements AiTool {
                 || itemId.contains("sponge") || itemId.contains("smooth_")
                 || itemId.contains("terracotta") || itemId.contains("_dye")
                 || itemId.equals("stone") || itemId.equals("cracked_stone_bricks");
+    }
+
+    /**
+     * Determine if an item is a gem or mineral obtained directly from mining ores
+     * (not through smelting). These items should suggest mine_ores, not gather_blocks.
+     */
+    private boolean isMinedGemOrMineral(String itemId) {
+        return itemId.equals("diamond") || itemId.equals("emerald")
+                || itemId.equals("lapis_lazuli") || itemId.equals("coal")
+                || itemId.equals("redstone") || itemId.contains("quartz")
+                || itemId.equals("amethyst_shard") || itemId.equals("prismarine_crystals")
+                || itemId.equals("raw_iron") || itemId.equals("raw_gold")
+                || itemId.equals("raw_copper");
     }
 
     // ========== Recipe lookup ==========

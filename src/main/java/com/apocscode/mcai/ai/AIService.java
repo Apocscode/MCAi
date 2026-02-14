@@ -19,7 +19,9 @@ import java.net.HttpURLConnection;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -140,6 +142,8 @@ public class AIService {
 
         // Agent loop — keep going until AI gives a text response or limit reached
         int maxIterations = AiConfig.MAX_TOOL_ITERATIONS.get();
+        // Track repeated identical tool calls to break infinite retry loops
+        Map<String, Integer> repeatedToolCalls = new HashMap<>();
         for (int iteration = 0; iteration < maxIterations; iteration++) {
             JsonObject response;
             try {
@@ -257,9 +261,18 @@ public class AIService {
                         String result = executeTool(toolName, toolArgs, toolCtx);
                         long toolElapsed = System.currentTimeMillis() - toolStartMs;
 
+                        // Track repeated identical tool calls
+                        String callSignature = toolName + "|" + toolArgs.toString();
+                        repeatedToolCalls.merge(callSignature, 1, Integer::sum);
+
                         // Detect async task marker
                         if (result.contains("[ASYNC_TASK]")) {
                             asyncTaskQueued = true;
+                        }
+
+                        // If tool result contains [CANNOT_CRAFT], inject a stop directive
+                        if (result.contains("[CANNOT_CRAFT]")) {
+                            MCAi.LOGGER.info("Tool '{}' returned CANNOT_CRAFT — will inject stop directive", toolName);
                         }
 
                         // Add tool result — Cloud requires tool_call_id, Ollama just uses "tool" role
@@ -272,6 +285,52 @@ public class AIService {
 
                         MCAi.LOGGER.info("Tool '{}' executed in {}ms, result length: {} chars",
                                 toolName, toolElapsed, result.length());
+                    }
+
+                    // === Repeated tool call breaker ===
+                    // If the AI called the same tool with identical args 3+ times, it's stuck in a loop.
+                    // Inject a stop directive so it reports to the player instead of retrying.
+                    boolean loopDetected = false;
+                    for (Map.Entry<String, Integer> entry : repeatedToolCalls.entrySet()) {
+                        if (entry.getValue() >= 3) {
+                            String stuckTool = entry.getKey().split("\\|", 2)[0];
+                            MCAi.LOGGER.warn("Agent loop breaker: '{}' called {} times with same args — forcing stop",
+                                    stuckTool, entry.getValue());
+                            AiLogger.log(AiLogger.Category.AI_RESPONSE, "WARN",
+                                    "Loop breaker: " + stuckTool + " called " + entry.getValue() + "x — stopping");
+                            JsonObject loopStop = new JsonObject();
+                            loopStop.addProperty("role", "system");
+                            loopStop.addProperty("content",
+                                    "STOP: You have called " + stuckTool + " " + entry.getValue() +
+                                    " times with the same arguments and it keeps failing. " +
+                                    "Do NOT call it again. Tell the player what went wrong and suggest " +
+                                    "what materials they need to gather or what they can do to help.");
+                            messages.add(loopStop);
+                            loopDetected = true;
+                            break;
+                        }
+                    }
+
+                    // If loop detected, do one final LLM call for a response then stop
+                    if (loopDetected) {
+                        try {
+                            JsonObject finalResp = useCloud ? callCloudAI(messages, userMessage) : callOllama(messages, userMessage);
+                            JsonObject finalMsg;
+                            if (finalResp.has("choices")) {
+                                finalMsg = finalResp.getAsJsonArray("choices")
+                                        .get(0).getAsJsonObject()
+                                        .getAsJsonObject("message");
+                            } else {
+                                finalMsg = finalResp.getAsJsonObject("message");
+                            }
+                            if (finalMsg.has("content") && !finalMsg.get("content").isJsonNull()) {
+                                String text = finalMsg.get("content").getAsString().trim();
+                                if (!text.isEmpty()) return text;
+                            }
+                        } catch (IOException e) {
+                            MCAi.LOGGER.warn("Failed to get loop-breaker response: {}", e.getMessage());
+                        }
+                        return "I tried several times but couldn't complete that craft — I'm missing some materials. Can you check what we have?";
                     }
 
                     // If an async task was queued, inject a stop instruction and do ONE final
