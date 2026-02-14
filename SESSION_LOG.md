@@ -377,5 +377,42 @@ git commit -m "description"
 
 ---
 
-*Last updated: 2026-02-14 — Session 8*
+## Session 9 — 2026-02-14 (Night) — Door Handling
+
+### Focus: Jim can't navigate through doors in/out of buildings
+
+### Commits
+- `8399625` — **Door handling: wooden + iron doors**
+
+### What Was Done
+
+Previously Jim had no door awareness — pathfinder treated all doors as solid walls.
+
+#### Wooden doors (vanilla + all modded)
+- Overrode `createNavigation()` → `GroundPathNavigation` with `setCanOpenDoors(true)`, `setCanFloat(true)`
+- Set `PathType.DOOR_OPEN = 0.0F`, `DOOR_WOOD_CLOSED = 0.0F` — pathfinder routes through doors
+- Added `OpenDoorGoal(this, true)` — opens doors by right-click, closes after passing
+- Works for ALL `DoorBlock` subclasses where `BlockSetType.canOpenByHand() = true`
+
+#### Iron doors (vanilla + modded non-hand-openable)
+- Set `PathType.DOOR_IRON_CLOSED = 0.0F` — pathfinder includes iron doors in routes
+- New `CompanionOpenIronDoorGoal` — when near a closed iron-type door:
+  1. Scans 2-block radius for `ButtonBlock` or `LeverBlock`
+  2. Walks to the activator and presses it (simulates right-click as owner)
+  3. 40-tick cooldown prevents button spam, 60-tick timeout prevents getting stuck
+- Detection: uses `DoorBlock.type().canOpenByHand()` — catches all modded iron-style doors
+- Pressure plates work automatically (companion walks over them)
+
+### Files Created
+- `src/.../entity/goal/CompanionOpenIronDoorGoal.java` (~230 lines)
+
+### Files Modified
+- `src/.../entity/CompanionEntity.java` — createNavigation(), pathfinding malus, registerGoals()
+
+### JAR Deployed
+- Built & deployed to ATM10 mods folder
+
+---
+
+*Last updated: 2026-02-14 — Session 9*
 *Rule: Update this log with every JAR deployment.*
