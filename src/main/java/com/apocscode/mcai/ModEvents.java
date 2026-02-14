@@ -6,6 +6,7 @@ import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.EntityRenderersEvent;
 import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent;
+import net.neoforged.neoforge.common.world.chunk.RegisterTicketControllersEvent;
 import net.neoforged.neoforge.event.entity.EntityAttributeCreationEvent;
 import com.apocscode.mcai.client.CompanionRenderer;
 
@@ -25,5 +26,11 @@ public class ModEvents {
     @SubscribeEvent
     public static void registerMenuScreens(RegisterMenuScreensEvent event) {
         event.register(ModRegistry.COMPANION_MENU.get(), CompanionInventoryScreen::new);
+    }
+
+    @SubscribeEvent
+    public static void registerTicketControllers(RegisterTicketControllersEvent event) {
+        event.register(CompanionChunkLoader.TICKET_CONTROLLER);
+        MCAi.LOGGER.info("Registered companion chunk loading ticket controller");
     }
 }

@@ -1,6 +1,7 @@
 package com.apocscode.mcai.task;
 
 import com.apocscode.mcai.MCAi;
+import com.apocscode.mcai.CompanionChunkLoader;
 import com.apocscode.mcai.ai.AIService;
 import com.apocscode.mcai.entity.CompanionChat;
 import com.apocscode.mcai.entity.CompanionEntity;
@@ -31,6 +32,10 @@ public class TaskManager {
     private String pendingRetryCompanionName;
     private int pendingRetryAttempt;
     private int pendingRetryTicksRemaining;
+
+    // Chunk loader — keeps companion's chunk active during tasks
+    private final CompanionChunkLoader chunkLoader = new CompanionChunkLoader();
+    private int chunkIdleTimer = 0;
 
     public TaskManager(CompanionEntity companion) {
         this.companion = companion;
@@ -109,6 +114,12 @@ public class TaskManager {
             }
 
             activeTask = null;
+
+            // Stop chunk loading if no more tasks queued AND no continuation pending.
+            // If a continuation was fired, keep chunks loaded — the AI will queue a new task.
+            if (taskQueue.isEmpty() && continuation == null && chunkLoader.isLoading()) {
+                chunkLoader.stopLoading();
+            }
         }
 
         // Start next task if idle
@@ -120,11 +131,21 @@ public class TaskManager {
                     activeTask.getDescription(), taskQueue.size());
             companion.getChat().say(CompanionChat.Category.TASK,
                     "Starting: " + activeTask.getDescription());
+
+            // Start chunk loading so companion stays active if player walks away
+            if (!chunkLoader.isLoading()) {
+                chunkLoader.startLoading(companion);
+            }
         }
 
         // Tick active task
         if (activeTask != null) {
             activeTask.doTick();
+
+            // Update chunk loading position if companion moved to a new chunk
+            if (chunkLoader.isLoading()) {
+                chunkLoader.updatePosition(companion);
+            }
 
             // Periodic progress announcements (every 10 seconds)
             progressAnnounceTicks++;
@@ -160,6 +181,20 @@ public class TaskManager {
                     MCAi.LOGGER.warn("Cannot fire pending retry — owner not online");
                 }
             }
+        }
+
+        // Safety: release chunk loading if idle with no tasks or continuations pending
+        // This catches cases where a continuation fires but the AI fails to queue a new task.
+        if (chunkLoader.isLoading() && activeTask == null && taskQueue.isEmpty()
+                && pendingRetryContinuation == null) {
+            chunkIdleTimer++;
+            if (chunkIdleTimer >= 1200) { // 60 seconds idle safety timeout
+                MCAi.LOGGER.warn("Chunk loading safety timeout — idle for 60s with no tasks, releasing");
+                chunkLoader.stopLoading();
+                chunkIdleTimer = 0;
+            }
+        } else {
+            chunkIdleTimer = 0;
         }
     }
 
@@ -208,6 +243,9 @@ public class TaskManager {
         }
         taskQueue.clear();
         companion.getNavigation().stop();
+        if (chunkLoader.isLoading()) {
+            chunkLoader.stopLoading();
+        }
     }
 
     /**
@@ -217,6 +255,10 @@ public class TaskManager {
         if (activeTask != null) {
             activeTask.cleanup();
             activeTask = null;
+        }
+        // Stop chunk loading if nothing else is queued
+        if (taskQueue.isEmpty() && chunkLoader.isLoading()) {
+            chunkLoader.stopLoading();
         }
     }
 

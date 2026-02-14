@@ -15,8 +15,9 @@ import java.util.List;
  */
 public class GatherBlocksTask extends CompanionTask {
 
+    private static final int[] EXPAND_RADII = {32, 48}; // fallback search radii
     private final Block targetBlock;
-    private final int radius;
+    private int radius;
     private final int maxBlocks;
     private final Deque<BlockPos> targets = new ArrayDeque<>();
     private BlockPos currentTarget;
@@ -45,6 +46,18 @@ public class GatherBlocksTask extends CompanionTask {
     protected void start() {
         List<BlockPos> found = BlockHelper.scanForBlocks(companion, targetBlock, radius, maxBlocks);
         targets.addAll(found);
+        if (targets.isEmpty()) {
+            // Expand search radius progressively before giving up
+            for (int expandRadius : EXPAND_RADII) {
+                if (expandRadius <= radius) continue;
+                MCAi.LOGGER.info("GatherBlocksTask: no {} at r={}, expanding to r={}",
+                        targetBlock.getName().getString(), radius, expandRadius);
+                radius = expandRadius;
+                found = BlockHelper.scanForBlocks(companion, targetBlock, radius, maxBlocks);
+                targets.addAll(found);
+                if (!targets.isEmpty()) break;
+            }
+        }
         if (targets.isEmpty()) {
             MCAi.LOGGER.warn("GatherBlocksTask: no {} blocks found within r={}",
                     targetBlock.getName().getString(), radius);

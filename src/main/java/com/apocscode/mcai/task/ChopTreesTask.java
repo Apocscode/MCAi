@@ -36,7 +36,8 @@ import java.util.*;
  */
 public class ChopTreesTask extends CompanionTask {
 
-    private final int radius;
+    private static final int[] EXPAND_RADII = {32, 48}; // fallback search radii
+    private int radius;
     private final int maxLogs;
     private final Deque<BlockPos> treeBaseTargets = new ArrayDeque<>();
     private final Deque<BlockPos> leafTargets = new ArrayDeque<>();
@@ -84,6 +85,16 @@ public class ChopTreesTask extends CompanionTask {
     @Override
     protected void start() {
         scanForTreeBases();
+        if (treeBaseTargets.isEmpty()) {
+            // Expand search radius progressively before giving up
+            for (int expandRadius : EXPAND_RADII) {
+                if (expandRadius <= radius) continue;
+                MCAi.LOGGER.info("ChopTreesTask: no trees at r={}, expanding to r={}", radius, expandRadius);
+                radius = expandRadius;
+                scanForTreeBases();
+                if (!treeBaseTargets.isEmpty()) break;
+            }
+        }
         if (treeBaseTargets.isEmpty()) {
             say("No trees found within " + radius + " blocks.");
             fail("No trees found within radius " + radius);
