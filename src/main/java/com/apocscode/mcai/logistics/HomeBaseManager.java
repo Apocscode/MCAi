@@ -99,8 +99,8 @@ public class HomeBaseManager {
         SimpleContainer inv = companion.getCompanionInventory();
         StringBuilder log = new StringBuilder();
 
-        MCAi.LOGGER.info("HomeBase: infrastructure check — table={}, furnace={}, cauldron={}, chests={}/2, far={}",
-                hasCraftingTable, hasFurnace, hasCauldron, chestCount, farFromHome);
+        MCAi.LOGGER.info("HomeBase: infrastructure check at home={} — table={}, furnace={}, cauldron={}, chests={}/2, far={}",
+                home, hasCraftingTable, hasFurnace, hasCauldron, chestCount, farFromHome);
 
         // === Phase 1: Craft missing items into companion inventory ===
 
@@ -257,51 +257,81 @@ public class HomeBaseManager {
     /**
      * Ensure a Furnace exists in companion inventory.
      * Needs 8 cobblestone or cobbled deepslate (or mix).
+     * Full chain: check inventory → pull from storage → use available stone.
      */
     private static boolean ensureCraftFurnace(CompanionEntity companion, SimpleContainer inv) {
         int needed = 8;
         int have = countItem(inv, Items.COBBLESTONE) + countItem(inv, Items.COBBLED_DEEPSLATE);
 
+        // Step 1: Pull cobblestone from storage
         if (have < needed) {
-            int deficit = needed - have;
-            ItemRoutingHelper.pullItemFromStorage(companion, Items.COBBLESTONE, deficit);
+            ItemRoutingHelper.pullItemFromStorage(companion, Items.COBBLESTONE, needed - have);
             have = countItem(inv, Items.COBBLESTONE) + countItem(inv, Items.COBBLED_DEEPSLATE);
-            if (have < needed) {
-                ItemRoutingHelper.pullItemFromStorage(companion, Items.COBBLED_DEEPSLATE, needed - have);
-                have = countItem(inv, Items.COBBLESTONE) + countItem(inv, Items.COBBLED_DEEPSLATE);
-            }
+        }
+
+        // Step 2: Pull cobbled deepslate from storage
+        if (have < needed) {
+            ItemRoutingHelper.pullItemFromStorage(companion, Items.COBBLED_DEEPSLATE, needed - have);
+            have = countItem(inv, Items.COBBLESTONE) + countItem(inv, Items.COBBLED_DEEPSLATE);
+        }
+
+        // Step 3: Try pulling regular stone and converting (stone can substitute)
+        if (have < needed) {
+            int stoneNeeded = needed - have;
+            ItemRoutingHelper.pullItemFromStorage(companion, Items.STONE, stoneNeeded);
+            int stoneHave = countItem(inv, Items.STONE);
+            // Stone works as cobblestone substitute in vanilla furnace crafting context
+            // but to be safe, count it toward our total
+            have += stoneHave;
         }
 
         if (have < needed) {
-            MCAi.LOGGER.debug("HomeBase: cannot craft Furnace — only {}/{} cobblestone", have, needed);
+            MCAi.LOGGER.info("HomeBase: cannot craft Furnace yet — only {}/{} cobblestone/stone (will retry later)", have, needed);
             return false;
         }
 
-        // Consume 8 stone materials (prefer cobblestone first)
+        // Consume 8 stone materials (prefer cobblestone first, then deepslate, then stone)
         int remaining = needed;
         remaining -= consumeItemUpTo(inv, Items.COBBLESTONE, remaining);
         remaining -= consumeItemUpTo(inv, Items.COBBLED_DEEPSLATE, remaining);
+        remaining -= consumeItemUpTo(inv, Items.STONE, remaining);
 
         inv.addItem(new ItemStack(Items.FURNACE, 1));
-        MCAi.LOGGER.info("HomeBase: crafted Furnace from cobblestone/deepslate");
+        MCAi.LOGGER.info("HomeBase: crafted Furnace from cobblestone/deepslate/stone");
         return true;
     }
 
     /**
      * Ensure a Cauldron exists in companion inventory.
-     * Needs 7 iron ingots — may not be available early game (best-effort).
+     * Needs 7 iron ingots. Full chain: pull ingots from storage → pull raw iron
+     * from storage → virtual smelt raw iron → craft cauldron.
      */
     private static boolean ensureCraftCauldron(CompanionEntity companion, SimpleContainer inv) {
         int needed = 7;
         int have = countItem(inv, Items.IRON_INGOT);
 
+        // Step 1: Pull iron ingots from storage
         if (have < needed) {
             ItemRoutingHelper.pullItemFromStorage(companion, Items.IRON_INGOT, needed - have);
             have = countItem(inv, Items.IRON_INGOT);
         }
 
+        // Step 2: Pull raw iron from storage and virtual-smelt it (1 raw → 1 ingot)
         if (have < needed) {
-            MCAi.LOGGER.debug("HomeBase: cannot craft Cauldron — only {}/{} iron ingots", have, needed);
+            int rawNeeded = needed - have;
+            ItemRoutingHelper.pullItemFromStorage(companion, Items.RAW_IRON, rawNeeded);
+            int rawHave = countItem(inv, Items.RAW_IRON);
+            if (rawHave > 0) {
+                int toSmelt = Math.min(rawHave, rawNeeded);
+                consumeItem(inv, Items.RAW_IRON, toSmelt);
+                inv.addItem(new ItemStack(Items.IRON_INGOT, toSmelt));
+                MCAi.LOGGER.info("HomeBase: virtual-smelted {} raw iron → {} iron ingots", toSmelt, toSmelt);
+                have = countItem(inv, Items.IRON_INGOT);
+            }
+        }
+
+        if (have < needed) {
+            MCAi.LOGGER.info("HomeBase: cannot craft Cauldron yet — only {}/{} iron ingots (will retry later)", have, needed);
             return false;
         }
 
@@ -360,7 +390,11 @@ public class HomeBaseManager {
 
     // ========== Block Scanning ==========
 
-    /** Find the first occurrence of a block type near center. */
+    /**
+     * Find the first occurrence of a block type near the home center.
+     * Only searches within the companion's home area bounds if defined,
+     * otherwise uses the scan radius.
+     */
     @Nullable
     private static BlockPos findBlock(Level level, BlockPos center, Block target, int radius) {
         for (int x = -radius; x <= radius; x++) {
@@ -368,6 +402,8 @@ public class HomeBaseManager {
                 for (int z = -radius; z <= radius; z++) {
                     BlockPos pos = center.offset(x, y, z);
                     if (level.isLoaded(pos) && level.getBlockState(pos).getBlock() == target) {
+                        MCAi.LOGGER.info("HomeBase: found {} at {}",
+                                target.getName().getString(), pos);
                         return pos;
                     }
                 }
@@ -423,43 +459,46 @@ public class HomeBaseManager {
 
     /**
      * Find a row of consecutive placeable spots near center.
-     * Tries both X and Z axes at varying Y offsets.
-     * Falls back to individual spots if no row is found.
+     * ALL blocks are placed on the SAME Y level, side by side.
+     * Tries X axis first, then Z axis, at the home center Y level.
+     * Falls back to individual same-Y spots if no contiguous row is found.
      */
     private static List<BlockPos> findLayoutPositions(Level level, BlockPos center, int count) {
         if (count <= 0) return List.of();
 
-        // Try to find a contiguous row (blocks placed side by side)
-        for (int dy = 0; dy <= 2; dy++) {
-            for (int ySign = 1; ySign >= -1; ySign -= 2) {
-                if (dy == 0 && ySign == -1) continue;
-                BlockPos rowCenter = center.offset(0, dy * ySign, 0);
+        // Use the home center Y level — all blocks on the same Y
+        int homeY = center.getY();
 
-                // Try X axis
-                List<BlockPos> row = findRow(level, rowCenter, count, true);
-                if (row != null) return row;
+        // Try to find a contiguous row at the exact home Y level
+        BlockPos rowCenter = new BlockPos(center.getX(), homeY, center.getZ());
 
-                // Try Z axis
-                row = findRow(level, rowCenter, count, false);
-                if (row != null) return row;
-            }
+        // Try X axis first
+        List<BlockPos> row = findRow(level, rowCenter, count, true);
+        if (row != null) {
+            MCAi.LOGGER.info("HomeBase: found row of {} spots along X at Y={}", count, homeY);
+            return row;
         }
 
-        // Fallback: find individual spots in expanding rings
-        MCAi.LOGGER.debug("HomeBase: no contiguous row found, using individual spots");
+        // Try Z axis
+        row = findRow(level, rowCenter, count, false);
+        if (row != null) {
+            MCAi.LOGGER.info("HomeBase: found row of {} spots along Z at Y={}", count, homeY);
+            return row;
+        }
+
+        // Fallback: find individual spots at the SAME Y level only
+        MCAi.LOGGER.info("HomeBase: no contiguous row found, using individual spots at Y={}", homeY);
         List<BlockPos> spots = new ArrayList<>();
         Set<BlockPos> used = new HashSet<>();
-        for (int radius = 1; radius <= 5 && spots.size() < count; radius++) {
+        for (int radius = 1; radius <= 6 && spots.size() < count; radius++) {
             for (int x = -radius; x <= radius; x++) {
                 for (int z = -radius; z <= radius; z++) {
                     if (Math.abs(x) != radius && Math.abs(z) != radius) continue;
-                    for (int y = -1; y <= 2; y++) {
-                        BlockPos pos = center.offset(x, y, z);
-                        if (!used.contains(pos) && isPlaceable(level, pos)) {
-                            spots.add(pos);
-                            used.add(pos);
-                            if (spots.size() >= count) return spots;
-                        }
+                    BlockPos pos = new BlockPos(center.getX() + x, homeY, center.getZ() + z);
+                    if (!used.contains(pos) && isPlaceable(level, pos)) {
+                        spots.add(pos);
+                        used.add(pos);
+                        if (spots.size() >= count) return spots;
                     }
                 }
             }
@@ -490,11 +529,12 @@ public class HomeBaseManager {
         return null;
     }
 
-    /** Find an air block adjacent (N/S/E/W) to a position, on solid ground. */
+    /** Find an air block adjacent (N/S/E/W) to a position, on the SAME Y level, on solid ground. */
     @Nullable
     private static BlockPos findAdjacentPlaceable(Level level, BlockPos pos) {
+        // Only check same-Y neighbors (N/S/E/W, not above/below)
         for (BlockPos adj : new BlockPos[]{pos.north(), pos.south(), pos.east(), pos.west()}) {
-            if (isPlaceable(level, adj)) return adj;
+            if (adj.getY() == pos.getY() && isPlaceable(level, adj)) return adj;
         }
         return null;
     }

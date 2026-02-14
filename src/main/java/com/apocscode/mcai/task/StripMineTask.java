@@ -4,9 +4,13 @@ import com.apocscode.mcai.MCAi;
 import com.apocscode.mcai.entity.CompanionEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.world.SimpleContainer;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.state.BlockState;
 
 import net.minecraft.tags.FluidTags;
+import net.minecraft.tags.ItemTags;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 
@@ -45,6 +49,7 @@ public class StripMineTask extends CompanionTask {
 
     private static final int STUCK_TIMEOUT = 60; // 3 seconds
     private static final int ORE_SCAN_RADIUS = 2; // Check 2 blocks around tunnel for ores
+    private static final int TORCH_INTERVAL = 8;  // Place a torch every N blocks
 
     private enum Phase {
         DIG_DOWN,       // Dig down to target Y-level if needed
@@ -285,6 +290,11 @@ public class StripMineTask extends CompanionTask {
 
         tunnelProgress++;
 
+        // Place torches periodically for lighting
+        if (tunnelProgress % TORCH_INTERVAL == 0) {
+            tryPlaceTorch(nextFeet);
+        }
+
         // Move forward into the newly dug space
         navigateTo(nextFeet);
     }
@@ -387,6 +397,135 @@ public class StripMineTask extends CompanionTask {
                         oreQueue.add(checkPos);
                     }
                 }
+            }
+        }
+    }
+
+    // ================================================================
+    // Torch Crafting & Placement
+    // ================================================================
+
+    /**
+     * Try to place a torch at the given tunnel position.
+     * If no torches in inventory, try to craft some from coal + sticks.
+     * Falls back to crafting sticks from planks, planks from logs if needed.
+     */
+    private void tryPlaceTorch(BlockPos tunnelPos) {
+        SimpleContainer inv = companion.getCompanionInventory();
+
+        // Check if we have torches already
+        if (countItem(inv, Items.TORCH) == 0) {
+            // Try to craft torches: 1 coal/charcoal + 1 stick = 4 torches
+            craftTorches(inv);
+        }
+
+        if (countItem(inv, Items.TORCH) > 0) {
+            // Place torch at feet level — the tunnel floor should be solid below
+            boolean placed = BlockHelper.placeBlock(companion, tunnelPos, Blocks.TORCH);
+            if (placed) {
+                MCAi.LOGGER.debug("Strip-mine: placed torch at {}", tunnelPos);
+            }
+        }
+    }
+
+    /**
+     * Craft torches from available materials.
+     * Chain: logs → planks → sticks → torches (with coal/charcoal).
+     */
+    private void craftTorches(SimpleContainer inv) {
+        // Need coal or charcoal
+        boolean hasCoal = countItem(inv, Items.COAL) > 0;
+        boolean hasCharcoal = countItem(inv, Items.CHARCOAL) > 0;
+        if (!hasCoal && !hasCharcoal) return; // Can't craft torches without fuel
+
+        // Ensure we have sticks (2 planks → 4 sticks)
+        if (countItem(inv, Items.STICK) == 0) {
+            craftSticks(inv);
+        }
+        if (countItem(inv, Items.STICK) == 0) return; // No sticks available
+
+        // Craft: 1 coal/charcoal + 1 stick = 4 torches
+        if (hasCoal) {
+            consumeItem(inv, Items.COAL, 1);
+        } else {
+            consumeItem(inv, Items.CHARCOAL, 1);
+        }
+        consumeItem(inv, Items.STICK, 1);
+        inv.addItem(new ItemStack(Items.TORCH, 4));
+        MCAi.LOGGER.info("Strip-mine: crafted 4 torches");
+    }
+
+    /**
+     * Craft sticks from planks. If no planks, convert logs to planks first.
+     * 2 planks → 4 sticks.
+     */
+    private void craftSticks(SimpleContainer inv) {
+        // Try to get planks from logs first if needed
+        if (countAnyPlank(inv) < 2) {
+            convertLogsToPlanks(inv);
+        }
+
+        // Find any plank type and craft sticks
+        for (int i = 0; i < inv.getContainerSize(); i++) {
+            ItemStack stack = inv.getItem(i);
+            if (!stack.isEmpty() && stack.is(ItemTags.PLANKS) && stack.getCount() >= 2) {
+                stack.shrink(2);
+                if (stack.isEmpty()) inv.setItem(i, ItemStack.EMPTY);
+                inv.addItem(new ItemStack(Items.STICK, 4));
+                MCAi.LOGGER.debug("Strip-mine: crafted 4 sticks from planks");
+                return;
+            }
+        }
+    }
+
+    /**
+     * Convert any logs in inventory to planks (1 log → 4 planks).
+     */
+    private void convertLogsToPlanks(SimpleContainer inv) {
+        for (int i = 0; i < inv.getContainerSize(); i++) {
+            ItemStack stack = inv.getItem(i);
+            if (!stack.isEmpty() && stack.is(ItemTags.LOGS)) {
+                // Determine plank type (oak by default for simplicity)
+                stack.shrink(1);
+                if (stack.isEmpty()) inv.setItem(i, ItemStack.EMPTY);
+                inv.addItem(new ItemStack(Items.OAK_PLANKS, 4));
+                MCAi.LOGGER.debug("Strip-mine: converted 1 log → 4 oak planks");
+                return;
+            }
+        }
+    }
+
+    // ================================================================
+    // Inventory Helpers
+    // ================================================================
+
+    private static int countItem(SimpleContainer inv, net.minecraft.world.item.Item item) {
+        int count = 0;
+        for (int i = 0; i < inv.getContainerSize(); i++) {
+            ItemStack stack = inv.getItem(i);
+            if (!stack.isEmpty() && stack.getItem() == item) count += stack.getCount();
+        }
+        return count;
+    }
+
+    private static int countAnyPlank(SimpleContainer inv) {
+        int count = 0;
+        for (int i = 0; i < inv.getContainerSize(); i++) {
+            ItemStack stack = inv.getItem(i);
+            if (!stack.isEmpty() && stack.is(ItemTags.PLANKS)) count += stack.getCount();
+        }
+        return count;
+    }
+
+    private static void consumeItem(SimpleContainer inv, net.minecraft.world.item.Item item, int amount) {
+        int remaining = amount;
+        for (int i = 0; i < inv.getContainerSize() && remaining > 0; i++) {
+            ItemStack stack = inv.getItem(i);
+            if (!stack.isEmpty() && stack.getItem() == item) {
+                int take = Math.min(remaining, stack.getCount());
+                stack.shrink(take);
+                if (stack.isEmpty()) inv.setItem(i, ItemStack.EMPTY);
+                remaining -= take;
             }
         }
     }
