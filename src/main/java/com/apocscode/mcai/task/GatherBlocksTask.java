@@ -72,6 +72,12 @@ public class GatherBlocksTask extends CompanionTask {
         if (targets.isEmpty()) {
             // For stone-type blocks, try digging down from current position
             if (isStoneType()) {
+                // Don't dig down inside the home area
+                if (companion.isInHomeArea(companion.blockPosition())) {
+                    MCAi.LOGGER.info("GatherBlocksTask: inside home area, won't dig down");
+                    fail("No " + targetBlocks[0].getName().getString() + " found outside home area");
+                    return;
+                }
                 MCAi.LOGGER.info("GatherBlocksTask: no surface {}, will try digging down",
                         targetBlocks[0].getName().getString());
                 diggingDown = true;

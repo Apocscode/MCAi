@@ -1,5 +1,6 @@
 package com.apocscode.mcai.task;
 
+import com.apocscode.mcai.MCAi;
 import com.apocscode.mcai.entity.CompanionEntity;
 import com.apocscode.mcai.logistics.TaggedBlock;
 import net.minecraft.core.BlockPos;
@@ -14,6 +15,7 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.FarmBlock;
 import net.minecraft.world.level.block.WallTorchBlock;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.ArrayList;
@@ -40,6 +42,29 @@ public class BlockHelper {
         BlockState state = level.getBlockState(pos);
         if (state.isAir() || state.getBlock() == Blocks.BEDROCK) return false;
 
+        // === Block Protection System ===
+        // 1. Never break tagged blocks (STORAGE/INPUT/OUTPUT — player-marked containers)
+        if (companion.getTaggedBlockAt(pos) != null) {
+            MCAi.LOGGER.warn("BlockHelper: REFUSED to break TAGGED block {} at {}",
+                    state.getBlock().getName().getString(), pos);
+            return false;
+        }
+
+        // 2. Inside home area: protect containers and functional blocks
+        if (companion.isInHomeArea(pos)) {
+            BlockEntity be = level.getBlockEntity(pos);
+            if (be instanceof Container) {
+                MCAi.LOGGER.warn("BlockHelper: REFUSED to break CONTAINER {} at {} (inside home area)",
+                        state.getBlock().getName().getString(), pos);
+                return false;
+            }
+            if (isProtectedFunctionalBlock(state.getBlock())) {
+                MCAi.LOGGER.warn("BlockHelper: REFUSED to break FUNCTIONAL block {} at {} (inside home area)",
+                        state.getBlock().getName().getString(), pos);
+                return false;
+            }
+        }
+
         // Collect drops directly into companion inventory (avoids ground-drop race condition)
         if (level instanceof ServerLevel serverLevel) {
             List<ItemStack> drops = Block.getDrops(state, serverLevel, pos,
@@ -61,6 +86,41 @@ public class BlockHelper {
             level.destroyBlock(pos, true, companion);
         }
         return true;
+    }
+
+    /**
+     * Blocks that should never be broken inside the home area.
+     * These are player-placed functional blocks (workstations, utilities).
+     * Containers are already protected by the Container check above.
+     */
+    private static boolean isProtectedFunctionalBlock(Block block) {
+        return block == Blocks.CRAFTING_TABLE
+                || block == Blocks.FURNACE
+                || block == Blocks.BLAST_FURNACE
+                || block == Blocks.SMOKER
+                || block == Blocks.ANVIL
+                || block == Blocks.CHIPPED_ANVIL
+                || block == Blocks.DAMAGED_ANVIL
+                || block == Blocks.ENCHANTING_TABLE
+                || block == Blocks.BREWING_STAND
+                || block == Blocks.SMITHING_TABLE
+                || block == Blocks.CARTOGRAPHY_TABLE
+                || block == Blocks.FLETCHING_TABLE
+                || block == Blocks.GRINDSTONE
+                || block == Blocks.LOOM
+                || block == Blocks.STONECUTTER
+                || block == Blocks.COMPOSTER
+                || block == Blocks.LECTERN
+                || block == Blocks.CAULDRON
+                || block == Blocks.WATER_CAULDRON
+                || block == Blocks.LAVA_CAULDRON
+                || block == Blocks.BELL
+                || block == Blocks.BEACON
+                || block == Blocks.CONDUIT
+                || block == Blocks.RESPAWN_ANCHOR
+                || block == Blocks.LODESTONE
+                || block == Blocks.BEE_NEST
+                || block == Blocks.BEEHIVE;
     }
 
     /**
@@ -300,6 +360,8 @@ public class BlockHelper {
             for (int y = minY; y <= maxY; y++) {
                 for (int z = -radius; z <= radius; z++) {
                     BlockPos pos = center.offset(x, y, z);
+                    // Skip blocks inside the home area (player structures)
+                    if (companion.isInHomeArea(pos)) continue;
                     Block block = level.getBlockState(pos).getBlock();
                     for (Block target : targetBlocks) {
                         if (block == target) {
@@ -374,6 +436,8 @@ public class BlockHelper {
             for (int y = minY; y <= maxY; y++) {
                 for (int z = -radius; z <= radius; z++) {
                     BlockPos pos = center.offset(x, y, z);
+                    // Skip blocks inside the home area
+                    if (companion.isInHomeArea(pos)) continue;
                     BlockState state = companion.level().getBlockState(pos);
                     // Check ore tags
                     if (state.is(net.minecraft.tags.BlockTags.IRON_ORES)
