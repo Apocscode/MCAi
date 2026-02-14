@@ -284,6 +284,22 @@ public class CraftingPlan {
                     "This requires finding a Bee Nest/Beehive. " +
                     "Place a campfire underneath to prevent angry bees!");
 
+            // Frog-related (froglights need frog + magma cube interaction)
+            case "temperate_frog", "warm_frog", "cold_frog" ->
+                    new DifficultyWarning(Difficulty.EXTREME, itemId,
+                            "Froglights require a Frog to eat a Magma Cube in the Nether. " +
+                            "Different frog types produce different froglight colors.");
+            case "frog" -> new DifficultyWarning(Difficulty.MODERATE, itemId,
+                    "Frogs spawn in swamp biomes. Breed with slimeballs.");
+            case "turtle" -> new DifficultyWarning(Difficulty.MODERATE, itemId,
+                    "Turtles spawn on beaches. Breed with seagrass — babies drop scute when growing up.");
+            case "sniffer" -> new DifficultyWarning(Difficulty.HARD, itemId,
+                    "Sniffer Eggs are found by brushing suspicious sand in ocean ruins.");
+
+            // Mob capture buckets — generally easy
+            case "axolotl" -> new DifficultyWarning(Difficulty.MODERATE, itemId,
+                    "Axolotls spawn in Lush Caves — they can be tricky to find.");
+
             // Passive/easy mobs (no warning)
             default -> null;
         };
@@ -301,6 +317,9 @@ public class CraftingPlan {
             case "amethyst_shard" -> new DifficultyWarning(Difficulty.MODERATE, itemId,
                     "Amethyst shards come from geodes underground — they're uncommon. " +
                     "Mining may take a while to find one.");
+            case "amethyst_cluster", "small_amethyst_bud", "medium_amethyst_bud",
+                 "large_amethyst_bud" -> new DifficultyWarning(Difficulty.HARD, itemId,
+                    itemId + " must be mined from Amethyst Geodes with Silk Touch.");
             case "diamond" -> count >= 5
                     ? new DifficultyWarning(Difficulty.HARD, itemId,
                         "Need " + count + " diamonds — that's a lot of deep mining (Y=-64 to 16)!")
@@ -337,10 +356,35 @@ public class CraftingPlan {
                     "Mycelium only appears in Mushroom Island biomes — very rare.");
             case "suspicious_sand", "suspicious_gravel" -> new DifficultyWarning(Difficulty.HARD, itemId,
                     "Suspicious blocks are found in ruins — requires a brush to excavate.");
+            // Oxidized copper variants (time-based, no recipe)
+            case "exposed_copper", "weathered_copper", "oxidized_copper",
+                 "exposed_copper_door", "weathered_copper_door", "oxidized_copper_door",
+                 "exposed_copper_trapdoor", "weathered_copper_trapdoor", "oxidized_copper_trapdoor" ->
+                    new DifficultyWarning(Difficulty.MODERATE, itemId,
+                            itemId + " forms when copper oxidizes over time. Place copper and wait, " +
+                            "or use an Axe to scrape wax off waxed variants.");
+            // Buckets
+            case "water_bucket" -> null;  // Easy — just fill from any water source
+            case "lava_bucket" -> new DifficultyWarning(Difficulty.MODERATE, itemId,
+                    "Lava can be scooped from lava pools (careful, it's dangerous!).");
+            case "powder_snow_bucket" -> new DifficultyWarning(Difficulty.HARD, itemId,
+                    "Place a cauldron in a snowy biome and wait for it to fill with powder snow.");
+            // Misc
+            case "bee_nest" -> new DifficultyWarning(Difficulty.MODERATE, itemId,
+                    "Bee Nests spawn naturally on trees in flower biomes. Silk Touch required.");
+            case "dirt_path" -> null;  // Easy — shovel on grass
+            case "glow_lichen" -> new DifficultyWarning(Difficulty.MODERATE, itemId,
+                    "Glow Lichen is found on cave walls — mine with shears.");
+            case "shroomlight" -> new DifficultyWarning(Difficulty.EXTREME, itemId,
+                    "Shroomlight is found in Nether huge fungus trees (crimson/warped forests).");
             default -> {
                 if (itemId.contains("coral")) {
                     yield new DifficultyWarning(Difficulty.HARD, itemId,
                             "Coral blocks/items must be gathered from warm ocean biomes with Silk Touch.");
+                }
+                if (itemId.endsWith("_concrete")) {
+                    yield new DifficultyWarning(Difficulty.MODERATE, itemId,
+                            "Craft concrete powder (sand + gravel + dye) and drop it in water to make concrete.");
                 }
                 yield null;
             }
@@ -351,10 +395,17 @@ public class CraftingPlan {
         return switch (itemId) {
             case "nether_wart" -> new DifficultyWarning(Difficulty.EXTREME, itemId,
                     "Nether Wart only grows in the Nether (on soul sand).");
-            case "chorus_fruit" -> new DifficultyWarning(Difficulty.EXTREME, itemId,
-                    "Chorus Fruit only grows in The End.");
+            case "chorus_fruit", "chorus_plant" -> new DifficultyWarning(Difficulty.EXTREME, itemId,
+                    "Chorus Plants only grow in The End outer islands.");
             case "wither_rose" -> new DifficultyWarning(Difficulty.EXTREME, itemId,
                     "Wither Rose only drops when the Wither boss kills a mob. Very dangerous!");
+            // Nether plants
+            case "crimson_fungus", "crimson_nylium", "crimson_roots",
+                 "warped_fungus", "warped_nylium", "warped_roots",
+                 "warped_wart_block", "nether_sprouts",
+                 "twisting_vines", "weeping_vines" ->
+                    new DifficultyWarning(Difficulty.EXTREME, itemId,
+                            itemId + " is a Nether plant — only found in Nether forests.");
             case "cocoa_beans" -> new DifficultyWarning(Difficulty.MODERATE, itemId,
                     "Cocoa beans grow on jungle logs — need a Jungle biome nearby.");
             case "glow_berries" -> new DifficultyWarning(Difficulty.MODERATE, itemId,
@@ -395,6 +446,21 @@ public class CraftingPlan {
             case "echo_shard" -> "Echo Shards are found in Ancient City chests in the Deep Dark.";
             // Disc fragments
             case "disc_fragment_5" -> "Disc Fragment 5 is found in Ancient City chests.";
+            // Smithing templates
+            case "netherite_upgrade_smithing_template" ->
+                    "Found in Bastion Remnants (Nether). Can be duplicated: 1 template + 7 diamonds + 1 netherrack → 2.";
+            // Structure / loot-only items
+            case "bell" -> "Bells are found in villages or can be bought from armorer villagers.";
+            case "budding_amethyst" -> "Budding Amethyst is unobtainable — it breaks even with Silk Touch.";
+            case "dragon_head" -> "Dragon Heads are found on End Ships in End Cities.";
+            case "diamond_horse_armor" -> "Diamond Horse Armor is found in dungeon/temple/fortress chests.";
+            case "golden_horse_armor" -> "Golden Horse Armor is found in dungeon/temple/fortress chests.";
+            case "iron_horse_armor" -> "Iron Horse Armor is found in dungeon/temple/fortress chests.";
+            case "enchanted_book" -> "Enchanted Books come from enchanting, fishing, villager trades, or loot chests.";
+            case "experience_bottle" -> "Bottles o' Enchanting come from villager trades (cleric) or loot.";
+            case "chipped_anvil" -> "Chipped Anvils result from using an anvil — craft a fresh one instead.";
+            case "damaged_anvil" -> "Damaged Anvils result from using an anvil — craft a fresh one instead.";
+            case "poisonous_potato" -> "Poisonous Potatoes are a random drop from harvesting potato crops (~2% chance).";
             default -> "This item may need special world interaction or dungeon loot. " +
                     "Try providing it manually.";
         };
@@ -561,8 +627,8 @@ public class CraftingPlan {
             case "magma_cream" -> "magma_cube";
             case "porkchop" -> "pig";
             case "mutton" -> "sheep";
-            // 1.21+ mob drops
-            case "scute" -> "turtle";
+            // 1.21+ mob drops (scute renamed to turtle_scute in 1.21)
+            case "turtle_scute", "scute" -> "turtle";
             case "armadillo_scute" -> "armadillo";
             case "breeze_rod" -> "breeze";
             case "honeycomb", "honey_bottle" -> "bee";
@@ -579,6 +645,20 @@ public class CraftingPlan {
             case "piglin_head" -> "piglin";
             // Trial chamber
             case "trial_key", "ominous_trial_key", "ominous_bottle", "heavy_core" -> "trial_chamber";
+            // Frog-related drops
+            case "frogspawn" -> "frog";
+            case "turtle_egg" -> "turtle";
+            case "sniffer_egg" -> "sniffer";
+            case "ochre_froglight" -> "temperate_frog";
+            case "pearlescent_froglight" -> "warm_frog";
+            case "verdant_froglight" -> "cold_frog";
+            // Mob capture buckets
+            case "cod_bucket" -> "cod";
+            case "salmon_bucket" -> "salmon";
+            case "pufferfish_bucket" -> "pufferfish";
+            case "tropical_fish_bucket" -> "tropical_fish";
+            case "axolotl_bucket" -> "axolotl";
+            case "tadpole_bucket" -> "tadpole";
             default -> {
                 if (itemId.contains("wool")) yield "sheep";
                 if (itemId.contains("meat")) yield "cow";

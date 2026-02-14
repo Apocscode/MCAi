@@ -46,6 +46,8 @@ public class StripMineTask extends CompanionTask {
     private int stuckTimer = 0;
     private BlockPos currentMiningTarget;
     private final Deque<BlockPos> oreQueue = new ArrayDeque<>();
+    private BlockPos tunnelFacePos = null; // Where the companion should be standing to mine next
+    private BlockPos descendTargetPos = null; // Where the companion should walk to during stair descent
 
     private static final int STUCK_TIMEOUT = 60; // 3 seconds
     private static final int ORE_SCAN_RADIUS = 2; // Check 2 blocks around tunnel for ores
@@ -113,6 +115,7 @@ public class StripMineTask extends CompanionTask {
         } else {
             descendTarget = 0;
             phase = Phase.TUNNEL;
+            tunnelFacePos = companion.blockPosition(); // Start mining from current position
             String oreLabel = targetOre != null ? " for " + targetOre.name + " ore" : "";
             say("Starting tunnel " + direction.getName() + oreLabel + " at Y=" + currentY + "...");
         }
@@ -135,11 +138,26 @@ public class StripMineTask extends CompanionTask {
     private void tickDigDown() {
         if (descendProgress >= descendTarget) {
             phase = Phase.TUNNEL;
+            tunnelFacePos = companion.blockPosition(); // Start tunnel from where we landed
             String oreLabel = targetOre != null ? " for " + targetOre.name + " ore" : "";
             say("Reached Y=" + companion.blockPosition().getY() + ". Tunneling " +
                     direction.getName() + oreLabel + "...");
             return;
         }
+
+        // === Wait for companion to arrive at the last stair step before digging next ===
+        if (descendTargetPos != null && !isInReach(descendTargetPos, 2.5)) {
+            navigateTo(descendTargetPos);
+            stuckTimer++;
+            if (stuckTimer > STUCK_TIMEOUT) {
+                // Can't reach stair step — start tunneling here instead
+                phase = Phase.TUNNEL;
+                tunnelFacePos = companion.blockPosition();
+                say("Stuck on stairs at Y=" + companion.blockPosition().getY() + ". Tunneling here.");
+            }
+            return;
+        }
+        stuckTimer = 0;
 
         BlockPos pos = companion.blockPosition();
         Level level = companion.level();
@@ -147,6 +165,7 @@ public class StripMineTask extends CompanionTask {
         // Safety: world bottom
         if (pos.getY() <= level.getMinBuildHeight() + 2) {
             phase = Phase.TUNNEL;
+            tunnelFacePos = companion.blockPosition();
             say("Near world bottom at Y=" + pos.getY() + ". Starting tunnel here.");
             return;
         }
@@ -163,6 +182,7 @@ public class StripMineTask extends CompanionTask {
             // Seal with cobblestone and tunnel here instead
             BlockHelper.placeBlock(companion, aheadBelow, Blocks.COBBLESTONE);
             phase = Phase.TUNNEL;
+            tunnelFacePos = companion.blockPosition();
             say("Lava detected below stairs! Sealed and tunneling at Y=" + pos.getY() + " instead.");
             return;
         }
@@ -170,6 +190,7 @@ public class StripMineTask extends CompanionTask {
         // Don't dig stairs into the home area
         if (companion.isInHomeArea(aheadBelow) || companion.isInHomeArea(ahead)) {
             phase = Phase.TUNNEL;
+            tunnelFacePos = companion.blockPosition();
             say("Stairs reached home area boundary! Tunneling at Y=" + pos.getY() + " instead.");
             return;
         }
@@ -205,6 +226,7 @@ public class StripMineTask extends CompanionTask {
         }
 
         // Navigate to the new lower position
+        descendTargetPos = aheadBelow;
         navigateTo(aheadBelow);
         descendProgress++;
     }
@@ -236,24 +258,29 @@ public class StripMineTask extends CompanionTask {
             return;
         }
 
-        // Calculate next tunnel position
-        BlockPos pos = companion.blockPosition();
-        BlockPos nextFeet = pos.relative(direction);
-        BlockPos nextHead = nextFeet.above();
+        // Initialize tunnel face on first tick
+        if (tunnelFacePos == null) {
+            tunnelFacePos = companion.blockPosition();
+        }
 
-        // Check if we need to navigate to the tunnel face
-        double distSq = companion.distanceToSqr(nextFeet.getX() + 0.5, nextFeet.getY() + 0.5, nextFeet.getZ() + 0.5);
-        if (distSq > 4.0) {
-            // Too far from tunnel face — pathfind forward
-            navigateTo(pos);
+        // === KEY FIX: Wait for companion to ARRIVE at tunnel face before mining ===
+        // The companion must physically walk to each position before we dig the next block.
+        // Without this, tunnelProgress increments every tick while the companion stands still.
+        if (!isInReach(tunnelFacePos, 2.5)) {
+            navigateTo(tunnelFacePos);
             stuckTimer++;
             if (stuckTimer > STUCK_TIMEOUT) {
-                say("Can't progress tunnel — stuck. Mined " + oresMined + " ores in " + tunnelProgress + " blocks.");
+                say("Can't reach tunnel face — stuck at " + companion.blockPosition() +
+                        ". Mined " + oresMined + " ores in " + tunnelProgress + " blocks.");
                 phase = Phase.DONE;
             }
             return;
         }
         stuckTimer = 0;
+
+        // Calculate next tunnel position (one block ahead of where we stand)
+        BlockPos nextFeet = tunnelFacePos.relative(direction);
+        BlockPos nextHead = nextFeet.above();
 
         // Safety: check for lava/void ahead
         if (!BlockHelper.isSafeToMine(companion.level(), nextFeet) ||
@@ -285,17 +312,29 @@ public class StripMineTask extends CompanionTask {
             BlockHelper.breakBlock(companion, nextHead);
         }
 
+        // Ensure solid floor under feet (prevent falling into caves/voids)
+        BlockPos floorPos = nextFeet.below();
+        BlockState floorState = companion.level().getBlockState(floorPos);
+        if (floorState.isAir() || floorState.getFluidState().is(FluidTags.LAVA)) {
+            BlockHelper.placeBlock(companion, floorPos, Blocks.COBBLESTONE);
+        }
+
         // Scan walls, ceiling, floor for ores
         scanTunnelWalls(nextFeet);
 
         tunnelProgress++;
 
-        // Place torches periodically for lighting
+        // Log progress periodically
+        if (tunnelProgress % 8 == 0) {
+            MCAi.LOGGER.info("Strip-mine progress: {}/{} blocks, {} ores mined, companion at {}",
+                    tunnelProgress, tunnelLength, oresMined, companion.blockPosition());
+        }        // Place torches periodically for lighting
         if (tunnelProgress % TORCH_INTERVAL == 0) {
             tryPlaceTorch(nextFeet);
         }
 
-        // Move forward into the newly dug space
+        // Advance tunnel face and navigate to it
+        tunnelFacePos = nextFeet;
         navigateTo(nextFeet);
     }
 

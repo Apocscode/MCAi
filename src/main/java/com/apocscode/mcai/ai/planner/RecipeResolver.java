@@ -405,6 +405,16 @@ public class RecipeResolver {
 
         visited.add(item);
 
+        // === Manual recipes for items not in recipe index ===
+        // Handles SmithingTransformRecipe (netherite), TransmuteRecipe (colored shulker boxes),
+        // and items with circular modded recipes (white_carpet)
+        DependencyNode manualNode = tryManualRecipe(item, remaining, available, visited, depth);
+        if (manualNode != null) {
+            MCAi.LOGGER.info("{}  -> manual recipe resolved for '{}'", indent, itemId);
+            visited.remove(item);
+            return manualNode;
+        }
+
         boolean hasHeatRecipe = heatByOutput.containsKey(item);
         MCAi.LOGGER.info("{}  -> not raw, hasHeatRecipe={}, trying recipe phases...", indent, hasHeatRecipe);
 
@@ -656,17 +666,18 @@ public class RecipeResolver {
         String id = BuiltInRegistries.ITEM.getKey(item).getPath();
 
         // Ores and raw metals → MINE
-        // Use endsWith for "deepslate" to avoid matching craftable items like
-        // "deepslate_bricks", "deepslate_tiles", "chiseled_deepslate"
         if (id.startsWith("raw_") || id.endsWith("_ore") || id.equals("diamond")
                 || id.equals("emerald") || id.equals("coal") || id.equals("lapis_lazuli")
                 || id.equals("redstone") || id.equals("quartz") || id.equals("amethyst_shard")
                 || id.equals("ancient_debris") || id.equals("glowstone_dust")
                 || id.equals("deepslate")
-                // Sculk blocks — found deep underground, mined with silk touch
+                // Sculk blocks — deep dark, silk touch
                 || id.equals("sculk") || id.equals("sculk_vein")
                 || id.equals("sculk_catalyst") || id.equals("sculk_sensor")
-                || id.equals("sculk_shrieker")) {
+                || id.equals("sculk_shrieker")
+                // Amethyst buds/clusters — geode, silk touch
+                || id.equals("amethyst_cluster") || id.equals("small_amethyst_bud")
+                || id.equals("medium_amethyst_bud") || id.equals("large_amethyst_bud")) {
             return new DependencyNode(item, count, StepType.MINE, null);
         }
 
@@ -704,7 +715,22 @@ public class RecipeResolver {
                 // Ocean monument
                 || id.equals("sponge") || id.equals("wet_sponge")
                 // Archaeology blocks
-                || id.equals("suspicious_sand") || id.equals("suspicious_gravel")) {
+                || id.equals("suspicious_sand") || id.equals("suspicious_gravel")
+                // Oxidized copper variants (time-based oxidation, no recipe)
+                || id.equals("exposed_copper") || id.equals("weathered_copper")
+                || id.equals("oxidized_copper")
+                || id.equals("exposed_copper_door") || id.equals("weathered_copper_door")
+                || id.equals("oxidized_copper_door")
+                || id.equals("exposed_copper_trapdoor") || id.equals("weathered_copper_trapdoor")
+                || id.equals("oxidized_copper_trapdoor")
+                // Concrete (water interaction — concrete_powder + water)
+                || id.endsWith("_concrete")
+                // Misc gatherable blocks
+                || id.equals("dirt_path") || id.equals("bee_nest")
+                || id.equals("glow_lichen") || id.equals("shroomlight")
+                // Buckets (filled from world sources)
+                || id.equals("water_bucket") || id.equals("lava_bucket")
+                || id.equals("powder_snow_bucket")) {
             return new DependencyNode(item, count, StepType.GATHER, null);
         }
 
@@ -726,8 +752,9 @@ public class RecipeResolver {
                 || id.contains("_meat") || id.equals("porkchop")
                 || id.equals("beef") || id.equals("chicken") || id.equals("mutton")
                 || id.equals("rabbit") || id.equals("egg")
-                // 1.21+ mob drops
-                || id.equals("scute") || id.equals("armadillo_scute")
+                // 1.21+ mob drops (scute renamed to turtle_scute in 1.21)
+                || id.equals("turtle_scute") || id.equals("scute")
+                || id.equals("armadillo_scute")
                 || id.equals("breeze_rod")
                 // Bee products (shears/bottle interaction)
                 || id.equals("honeycomb") || id.equals("honey_bottle")
@@ -741,7 +768,17 @@ public class RecipeResolver {
                 || id.equals("creeper_head") || id.equals("piglin_head")
                 // Trial chamber drops
                 || id.equals("trial_key") || id.equals("ominous_trial_key")
-                || id.equals("ominous_bottle") || id.equals("heavy_core")) {
+                || id.equals("ominous_bottle") || id.equals("heavy_core")
+                // Frog-related drops
+                || id.equals("frogspawn") || id.equals("turtle_egg")
+                || id.equals("sniffer_egg")
+                // Froglights (frog eats magma cube)
+                || id.equals("ochre_froglight") || id.equals("pearlescent_froglight")
+                || id.equals("verdant_froglight")
+                // Mob capture buckets
+                || id.equals("cod_bucket") || id.equals("salmon_bucket")
+                || id.equals("pufferfish_bucket") || id.equals("tropical_fish_bucket")
+                || id.equals("axolotl_bucket") || id.equals("tadpole_bucket")) {
             return new DependencyNode(item, count, StepType.KILL_MOB, null);
         }
 
@@ -752,10 +789,28 @@ public class RecipeResolver {
         }
 
         // Dungeon/treasure loot — classify as UNKNOWN with advice
-        // (name_tag, saddle, heart_of_the_sea, enchanted_golden_apple have no recipe)
         if (id.equals("name_tag") || id.equals("saddle")
                 || id.equals("heart_of_the_sea")
-                || id.equals("enchanted_golden_apple") || id.equals("elytra")) {
+                || id.equals("enchanted_golden_apple") || id.equals("elytra")
+                // Unobtainable / structure-only items
+                || id.equals("bell") || id.equals("budding_amethyst")
+                || id.equals("dragon_head") || id.equals("enchanted_book")
+                || id.equals("experience_bottle")
+                // Horse armor (dungeon loot only)
+                || id.equals("diamond_horse_armor") || id.equals("golden_horse_armor")
+                || id.equals("iron_horse_armor")
+                // Damaged anvils (only from use, not craftable)
+                || id.equals("chipped_anvil") || id.equals("damaged_anvil")
+                // Ancient city / deep dark loot
+                || id.equals("echo_shard") || id.equals("disc_fragment_5")
+                // Smithing template (Bastion Remnant loot, duplication recipe creates cycle)
+                || id.equals("netherite_upgrade_smithing_template")
+                // Carved pumpkin (shears interaction)
+                || id.equals("carved_pumpkin")
+                // Suspicious stew (interaction recipe)
+                || id.equals("suspicious_stew")
+                // Poisonous potato (random crop drop)
+                || id.equals("poisonous_potato")) {
             return new DependencyNode(item, count, StepType.UNKNOWN, null);
         }
 
@@ -766,11 +821,13 @@ public class RecipeResolver {
                 || id.equals("bamboo") || id.equals("cactus")
                 || id.equals("kelp") || id.equals("cocoa_beans") || id.equals("sweet_berries")
                 || id.equals("glow_berries") || id.equals("nether_wart")
-                || id.equals("chorus_fruit") || id.equals("apple")
+                || id.equals("chorus_fruit") || id.equals("chorus_plant")
+                || id.equals("apple")
                 || id.contains("mushroom") || id.contains("flower") || id.contains("tulip")
                 || id.equals("dandelion") || id.equals("poppy") || id.equals("blue_orchid")
                 || id.equals("allium") || id.equals("azure_bluet") || id.equals("cornflower")
                 || id.equals("lily_of_the_valley") || id.equals("lily_pad")
+                || id.equals("oxeye_daisy") || id.equals("pink_petals")
                 || id.equals("vine") || id.equals("tall_grass") || id.equals("fern")
                 || id.equals("seagrass")
                 // Saplings & propagules (tree drops)
@@ -790,7 +847,14 @@ public class RecipeResolver {
                 // Other plants
                 || id.equals("dead_bush") || id.equals("short_grass")
                 || id.equals("large_fern") || id.equals("sea_pickle")
-                || id.equals("wither_rose")) {
+                || id.equals("wither_rose")
+                // Nether plants (no recipe, found in Nether biomes)
+                || id.equals("crimson_fungus") || id.equals("crimson_nylium")
+                || id.equals("crimson_roots")
+                || id.equals("warped_fungus") || id.equals("warped_nylium")
+                || id.equals("warped_roots") || id.equals("warped_wart_block")
+                || id.equals("nether_sprouts")
+                || id.equals("twisting_vines") || id.equals("weeping_vines")) {
             return new DependencyNode(item, count, StepType.FARM, null);
         }
 
@@ -833,14 +897,15 @@ public class RecipeResolver {
 
     /**
      * Pick the best variant from an ingredient's options.
-     * Priority: 1) items already in available inventory, 2) vanilla items, 3) first valid.
-     * This prevents generating CHOP steps when the companion already has birch_log
-     * but the recipe says "any #logs" and we'd otherwise pick oak_log.
+     * Priority: 1) items already in available inventory, 2) vanilla items (shortest name), 3) first valid.
+     * Preferring shortest-named vanilla item ensures base variants are chosen over colored
+     * derivatives (e.g., "shulker_box" over "blue_shulker_box" from #shulker_boxes tag).
      */
     private Item pickBestVariant(ItemStack[] variants, Map<Item, Integer> available) {
         if (variants == null || variants.length == 0) return null;
         Item availableMatch = null;
         Item vanillaMatch = null;
+        int vanillaNameLen = Integer.MAX_VALUE;
         Item firstValid = null;
         for (ItemStack v : variants) {
             if (v == null || v.isEmpty()) continue;
@@ -851,8 +916,13 @@ public class RecipeResolver {
                 availableMatch = item;
             }
             ResourceLocation id = BuiltInRegistries.ITEM.getKey(item);
-            if (vanillaMatch == null && id != null && id.getNamespace().equals("minecraft")) {
-                vanillaMatch = item;
+            if (id != null && id.getNamespace().equals("minecraft")) {
+                // Among vanilla items, prefer the shortest name (base variant)
+                // e.g., "shulker_box" (11) over "blue_shulker_box" (16)
+                if (id.getPath().length() < vanillaNameLen) {
+                    vanillaMatch = item;
+                    vanillaNameLen = id.getPath().length();
+                }
             }
         }
         if (availableMatch != null) return availableMatch;
@@ -864,6 +934,105 @@ public class RecipeResolver {
      */
     private Item pickBestVariant(ItemStack[] variants) {
         return pickBestVariant(variants, null);
+    }
+
+    // ========== Manual recipe handling ==========
+
+    /**
+     * Handle items whose recipes are not in the standard recipe index.
+     * Covers:
+     *  - Netherite tools/armor (SmithingTransformRecipe — not indexed)
+     *  - Colored shulker boxes (TransmuteRecipe — not indexed in 1.21+)
+     *  - White carpet (modded dye recipes create cycles)
+     */
+    private DependencyNode tryManualRecipe(Item item, int count, Map<Item, Integer> available,
+                                            Set<Item> visited, int depth) {
+        String itemId = BuiltInRegistries.ITEM.getKey(item).getPath();
+
+        // === Netherite tools/armor: diamond_variant + netherite_ingot + smithing_template ===
+        Item diamondBase = getNetheriteDiamondBase(itemId);
+        if (diamondBase != null) {
+            DependencyNode node = new DependencyNode(item, count, StepType.CRAFT, null);
+            node.children.add(resolveRecursive(diamondBase, count, available,
+                    new HashSet<>(visited), depth + 1));
+            node.children.add(resolveRecursive(Items.NETHERITE_INGOT, count, available,
+                    new HashSet<>(visited), depth + 1));
+            Item template = BuiltInRegistries.ITEM.get(
+                    ResourceLocation.withDefaultNamespace("netherite_upgrade_smithing_template"));
+            if (template != null && template != Items.AIR) {
+                node.children.add(resolveRecursive(template, count, available,
+                        new HashSet<>(visited), depth + 1));
+            }
+            MCAi.LOGGER.info("tryManualRecipe: {} → smithing(diamond + netherite)", itemId);
+            return node;
+        }
+
+        // === Colored shulker boxes: shulker_box + dye ===
+        if (itemId.endsWith("_shulker_box") && !itemId.equals("shulker_box")) {
+            String colorName = itemId.replace("_shulker_box", "");
+            Item dye = getDyeForColor(colorName);
+            if (dye != null) {
+                DependencyNode node = new DependencyNode(item, count, StepType.CRAFT, null);
+                node.children.add(resolveRecursive(Items.SHULKER_BOX, count, available,
+                        new HashSet<>(visited), depth + 1));
+                node.children.add(resolveRecursive(dye, count, available,
+                        new HashSet<>(visited), depth + 1));
+                MCAi.LOGGER.info("tryManualRecipe: {} → shulker_box + {}", itemId,
+                        BuiltInRegistries.ITEM.getKey(dye).getPath());
+                return node;
+            }
+        }
+
+        // === White carpet: 2 white_wool → 3 white_carpet (bypass modded recipe cycles) ===
+        if (itemId.equals("white_carpet")) {
+            int woolNeeded = (int) Math.ceil(count * 2.0 / 3.0);
+            DependencyNode node = new DependencyNode(item, count, StepType.CRAFT, null);
+            node.children.add(resolveRecursive(Items.WHITE_WOOL, woolNeeded, available,
+                    new HashSet<>(visited), depth + 1));
+            MCAi.LOGGER.info("tryManualRecipe: white_carpet x{} → {} white_wool", count, woolNeeded);
+            return node;
+        }
+
+        return null;
+    }
+
+    /** Map netherite item IDs to their diamond base equivalent. */
+    private static Item getNetheriteDiamondBase(String netheriteItemId) {
+        return switch (netheriteItemId) {
+            case "netherite_sword" -> Items.DIAMOND_SWORD;
+            case "netherite_pickaxe" -> Items.DIAMOND_PICKAXE;
+            case "netherite_axe" -> Items.DIAMOND_AXE;
+            case "netherite_shovel" -> Items.DIAMOND_SHOVEL;
+            case "netherite_hoe" -> Items.DIAMOND_HOE;
+            case "netherite_helmet" -> Items.DIAMOND_HELMET;
+            case "netherite_chestplate" -> Items.DIAMOND_CHESTPLATE;
+            case "netherite_leggings" -> Items.DIAMOND_LEGGINGS;
+            case "netherite_boots" -> Items.DIAMOND_BOOTS;
+            default -> null;
+        };
+    }
+
+    /** Map color names to their dye items. */
+    private static Item getDyeForColor(String colorName) {
+        return switch (colorName) {
+            case "white" -> Items.WHITE_DYE;
+            case "orange" -> Items.ORANGE_DYE;
+            case "magenta" -> Items.MAGENTA_DYE;
+            case "light_blue" -> Items.LIGHT_BLUE_DYE;
+            case "yellow" -> Items.YELLOW_DYE;
+            case "lime" -> Items.LIME_DYE;
+            case "pink" -> Items.PINK_DYE;
+            case "gray" -> Items.GRAY_DYE;
+            case "light_gray" -> Items.LIGHT_GRAY_DYE;
+            case "cyan" -> Items.CYAN_DYE;
+            case "purple" -> Items.PURPLE_DYE;
+            case "blue" -> Items.BLUE_DYE;
+            case "brown" -> Items.BROWN_DYE;
+            case "green" -> Items.GREEN_DYE;
+            case "red" -> Items.RED_DYE;
+            case "black" -> Items.BLACK_DYE;
+            default -> null;
+        };
     }
 
     // ========== Debug / logging ==========

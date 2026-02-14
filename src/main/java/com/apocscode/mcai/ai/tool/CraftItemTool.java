@@ -1318,8 +1318,8 @@ public class CraftItemTool implements AiTool {
             case "magma_cream" -> "magma_cube";
             case "porkchop" -> "pig";
             case "mutton" -> "sheep";
-            // 1.21+ mob drops
-            case "scute" -> "turtle";
+            // 1.21+ mob drops (scute renamed to turtle_scute in 1.21)
+            case "turtle_scute", "scute" -> "turtle";
             case "armadillo_scute" -> "armadillo";
             case "breeze_rod" -> "breeze";
             case "honeycomb", "honey_bottle" -> "bee";
@@ -1333,6 +1333,20 @@ public class CraftItemTool implements AiTool {
             case "creeper_head" -> "creeper";
             case "piglin_head" -> "piglin";
             case "trial_key", "ominous_trial_key", "ominous_bottle", "heavy_core" -> "trial_chamber";
+            // Frog-related drops
+            case "frogspawn" -> "frog";
+            case "turtle_egg" -> "turtle";
+            case "sniffer_egg" -> "sniffer";
+            case "ochre_froglight" -> "frog";
+            case "pearlescent_froglight" -> "frog";
+            case "verdant_froglight" -> "frog";
+            // Mob capture buckets
+            case "cod_bucket" -> "cod";
+            case "salmon_bucket" -> "salmon";
+            case "pufferfish_bucket" -> "pufferfish";
+            case "tropical_fish_bucket" -> "tropical_fish";
+            case "axolotl_bucket" -> "axolotl";
+            case "tadpole_bucket" -> "tadpole";
             default -> {
                 // Try to infer from item name
                 if (itemId.contains("wool")) yield "sheep";
@@ -1393,6 +1407,21 @@ public class CraftItemTool implements AiTool {
             case "wet_sponge" -> new Block[]{Blocks.WET_SPONGE};
             case "suspicious_sand" -> new Block[]{Blocks.SUSPICIOUS_SAND};
             case "suspicious_gravel" -> new Block[]{Blocks.SUSPICIOUS_GRAVEL};
+            // Oxidized copper variants
+            case "exposed_copper" -> new Block[]{Blocks.EXPOSED_COPPER};
+            case "weathered_copper" -> new Block[]{Blocks.WEATHERED_COPPER};
+            case "oxidized_copper" -> new Block[]{Blocks.OXIDIZED_COPPER};
+            case "exposed_copper_door" -> new Block[]{Blocks.EXPOSED_COPPER_DOOR};
+            case "weathered_copper_door" -> new Block[]{Blocks.WEATHERED_COPPER_DOOR};
+            case "oxidized_copper_door" -> new Block[]{Blocks.OXIDIZED_COPPER_DOOR};
+            case "exposed_copper_trapdoor" -> new Block[]{Blocks.EXPOSED_COPPER_TRAPDOOR};
+            case "weathered_copper_trapdoor" -> new Block[]{Blocks.WEATHERED_COPPER_TRAPDOOR};
+            case "oxidized_copper_trapdoor" -> new Block[]{Blocks.OXIDIZED_COPPER_TRAPDOOR};
+            // Misc gatherable blocks
+            case "dirt_path" -> new Block[]{Blocks.DIRT_PATH};
+            case "bee_nest" -> new Block[]{Blocks.BEE_NEST};
+            case "glow_lichen" -> new Block[]{Blocks.GLOW_LICHEN};
+            case "shroomlight" -> new Block[]{Blocks.SHROOMLIGHT};
             default -> {
                 // Try to find block by registry name
                 for (var entry : BuiltInRegistries.BLOCK.entrySet()) {
@@ -1435,6 +1464,7 @@ public class CraftItemTool implements AiTool {
             case "kelp" -> Blocks.KELP;
             case "nether_wart" -> Blocks.NETHER_WART;
             case "chorus_fruit" -> Blocks.CHORUS_PLANT;
+            case "chorus_plant" -> Blocks.CHORUS_PLANT;
             // Flowers
             case "dandelion" -> Blocks.DANDELION;
             case "poppy" -> Blocks.POPPY;
@@ -1444,6 +1474,8 @@ public class CraftItemTool implements AiTool {
             case "cornflower" -> Blocks.CORNFLOWER;
             case "lily_of_the_valley" -> Blocks.LILY_OF_THE_VALLEY;
             case "lily_pad" -> Blocks.LILY_PAD;
+            case "oxeye_daisy" -> Blocks.OXEYE_DAISY;
+            case "pink_petals" -> Blocks.PINK_PETALS;
             case "wither_rose" -> Blocks.WITHER_ROSE;
             // Tall flowers
             case "sunflower" -> Blocks.SUNFLOWER;
@@ -1478,6 +1510,19 @@ public class CraftItemTool implements AiTool {
             case "torchflower_seeds" -> Blocks.TORCHFLOWER_CROP;
             case "pitcher_plant" -> Blocks.PITCHER_PLANT;
             case "pitcher_pod" -> Blocks.PITCHER_CROP;
+            // Nether plants
+            case "crimson_fungus" -> Blocks.CRIMSON_FUNGUS;
+            case "crimson_nylium" -> Blocks.CRIMSON_NYLIUM;
+            case "crimson_roots" -> Blocks.CRIMSON_ROOTS;
+            case "warped_fungus" -> Blocks.WARPED_FUNGUS;
+            case "warped_nylium" -> Blocks.WARPED_NYLIUM;
+            case "warped_roots" -> Blocks.WARPED_ROOTS;
+            case "warped_wart_block" -> Blocks.WARPED_WART_BLOCK;
+            case "nether_sprouts" -> Blocks.NETHER_SPROUTS;
+            case "twisting_vines" -> Blocks.TWISTING_VINES;
+            case "weeping_vines" -> Blocks.WEEPING_VINES;
+            // Poisonous potato (random drop from potato crops)
+            case "poisonous_potato" -> Blocks.POTATOES;
             default -> {
                 // Try saplings and leaves by suffix
                 if (itemId.endsWith("_sapling") || itemId.equals("mangrove_propagule") 
