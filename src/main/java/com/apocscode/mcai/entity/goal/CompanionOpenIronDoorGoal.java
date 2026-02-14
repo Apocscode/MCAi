@@ -214,6 +214,11 @@ public class CompanionOpenIronDoorGoal extends Goal {
                 MCAi.LOGGER.warn("Companion has no owner — can't press button at {}", activatorPos);
                 return;
             }
+            // Safety: owner must be nearby (same dimension checked by getOwner(), but also distance)
+            if (owner.distanceToSqr(companion) > 256) { // 16 blocks max
+                MCAi.LOGGER.debug("Owner too far to proxy button press at {}", activatorPos);
+                return;
+            }
 
             // Simulate a right-click interaction on the block
             BlockHitResult hit = new BlockHitResult(

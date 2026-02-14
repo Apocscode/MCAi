@@ -4,6 +4,7 @@ import com.apocscode.mcai.entity.CompanionEntity;
 import com.apocscode.mcai.inventory.CompanionInventoryMenu;
 import com.apocscode.mcai.network.SetBehaviorModePacket;
 import com.apocscode.mcai.network.StopInteractingPacket;
+import net.minecraft.Util;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
@@ -63,6 +64,13 @@ public class CompanionInventoryScreen extends AbstractContainerScreen<CompanionI
                     }
                 })
                 .bounds(this.leftPos + this.imageWidth - 52, this.topPos + 6, 44, 14)
+                .build());
+
+        // "Bug?" button — opens GitHub Issues page for bug reports / feature requests
+        this.addRenderableWidget(Button.builder(
+                Component.literal("\u26A0 Bug?"),
+                btn -> Util.getPlatform().openUri("https://github.com/Apocscode/MCAi/issues"))
+                .bounds(this.leftPos + 8, this.topPos + 6, 40, 14)
                 .build());
 
         // Behavior mode buttons — placed to the right of equipment label row

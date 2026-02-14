@@ -42,7 +42,9 @@ public class CompanionOpenFenceGateGoal extends Goal {
     public CompanionOpenFenceGateGoal(CompanionEntity companion, boolean closeAfterPassing) {
         this.companion = companion;
         this.closeAfterPassing = closeAfterPassing;
-        this.setFlags(EnumSet.of(Goal.Flag.MOVE));
+        // No Flag.MOVE — this goal only toggles adjacent blocks, doesn't navigate.
+        // Using MOVE would conflict with combat and follow goals at the same priority.
+        this.setFlags(EnumSet.noneOf(Goal.Flag.class));
     }
 
     @Override
@@ -52,12 +54,17 @@ public class CompanionOpenFenceGateGoal extends Goal {
             return false;
         }
 
+        // Only activate when the companion has an active path (prevents opening
+        // random gates in animal pens while wandering by)
+        if (!companion.getNavigation().isInProgress()) return false;
+
         Level level = companion.level();
         BlockPos pos = companion.blockPosition();
 
-        // Check for closed fence gates adjacent to the companion (2-block radius)
-        for (int dx = -2; dx <= 2; dx++) {
-            for (int dz = -2; dz <= 2; dz++) {
+        // Check for closed fence gates adjacent to the companion (1-block radius only)
+        // Tight radius prevents opening gates Jim isn't walking toward
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
                 for (int dy = -1; dy <= 1; dy++) {
                     BlockPos checkPos = pos.offset(dx, dy, dz);
                     BlockState state = level.getBlockState(checkPos);
@@ -98,11 +105,11 @@ public class CompanionOpenFenceGateGoal extends Goal {
         BlockState state = level.getBlockState(gatePos);
 
         if (!hasOpened) {
-            // Walk toward the gate and open it when close enough
+            // Open the gate if we're close enough (already adjacent due to 1-block scan)
             double distSq = companion.distanceToSqr(
                     gatePos.getX() + 0.5, gatePos.getY() + 0.5, gatePos.getZ() + 0.5);
 
-            if (distSq <= 2.25) { // Within 1.5 blocks
+            if (distSq <= 4.0) { // Within 2 blocks
                 if (state.getBlock() instanceof FenceGateBlock
                         && !state.getValue(FenceGateBlock.OPEN)) {
                     toggleFenceGate(level, gatePos, true);
@@ -113,10 +120,9 @@ public class CompanionOpenFenceGateGoal extends Goal {
                     stop();
                 }
             } else {
-                // Move toward the gate
-                companion.getNavigation().moveTo(
-                        gatePos.getX() + 0.5, gatePos.getY(), gatePos.getZ() + 0.5, 1.0);
+                // Too far — give up (we don't own MOVE flag, can't navigate)
                 ticksSinceOpened++;
+                if (ticksSinceOpened > 20) stop();
             }
         } else if (closeAfterPassing) {
             ticksSinceOpened++;
@@ -151,6 +157,7 @@ public class CompanionOpenFenceGateGoal extends Goal {
      * Uses setBlock to directly change the OPEN property.
      */
     private void toggleFenceGate(Level level, BlockPos pos, boolean open) {
+        if (level.isClientSide) return; // Server-side only
         BlockState state = level.getBlockState(pos);
         if (state.getBlock() instanceof FenceGateBlock) {
             level.setBlock(pos, state.setValue(FenceGateBlock.OPEN, open), 10);

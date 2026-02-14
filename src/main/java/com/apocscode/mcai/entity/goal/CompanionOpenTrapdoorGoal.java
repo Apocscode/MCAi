@@ -39,7 +39,9 @@ public class CompanionOpenTrapdoorGoal extends Goal {
 
     public CompanionOpenTrapdoorGoal(CompanionEntity companion) {
         this.companion = companion;
-        this.setFlags(EnumSet.of(Goal.Flag.MOVE));
+        // No Flag.MOVE — this goal only toggles adjacent blocks, doesn't navigate.
+        // Using MOVE would conflict with combat and follow goals at the same priority.
+        this.setFlags(EnumSet.noneOf(Goal.Flag.class));
     }
 
     @Override
@@ -139,14 +141,24 @@ public class CompanionOpenTrapdoorGoal extends Goal {
      */
     private boolean isOpenableTrapdoor(BlockState state) {
         if (!(state.getBlock() instanceof TrapDoorBlock)) return false;
-        // Iron trapdoors require redstone — can't open by hand
-        return state.getBlock() != net.minecraft.world.level.block.Blocks.IRON_TRAPDOOR;
+        // Iron trapdoors and copper trapdoors require redstone — can't open by hand
+        // TrapDoorBlock.getType() is protected so we can't access canOpenByHand() externally.
+        // Use known block checks + metallic material heuristic instead.
+        net.minecraft.world.level.block.Block block = state.getBlock();
+        if (block == net.minecraft.world.level.block.Blocks.IRON_TRAPDOOR) return false;
+        // Copper trapdoor variants (oxidized, waxed, etc.)
+        String blockId = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(block).getPath();
+        if (blockId.contains("copper_trapdoor")) return false;
+        // Any modded trapdoor made of metal (heuristic: "iron" or "steel" in name)
+        if (blockId.contains("iron_trapdoor") || blockId.contains("steel_trapdoor")) return false;
+        return true;
     }
 
     /**
      * Toggle a trapdoor open or closed.
      */
     private void toggleTrapdoor(Level level, BlockPos pos, boolean open) {
+        if (level.isClientSide) return; // Server-side only
         BlockState state = level.getBlockState(pos);
         if (state.getBlock() instanceof TrapDoorBlock) {
             level.setBlock(pos, state.setValue(TrapDoorBlock.OPEN, open), 10);

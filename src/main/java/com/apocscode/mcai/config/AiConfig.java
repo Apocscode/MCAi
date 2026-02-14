@@ -59,6 +59,7 @@ public class AiConfig {
     public static final ModConfigSpec.DoubleValue FOLLOW_TELEPORT_DISTANCE;
     public static final ModConfigSpec.IntValue AUTO_EQUIP_INTERVAL;
     public static final ModConfigSpec.DoubleValue LEASH_DISTANCE;
+    public static final ModConfigSpec.BooleanValue ENABLE_PROACTIVE_CHAT;
 
     // ---- Logistics ----
     public static final ModConfigSpec.IntValue MAX_TAGGED_BLOCKS;
@@ -256,6 +257,12 @@ public class AiConfig {
         LEASH_DISTANCE = builder
                 .comment("Distance (blocks) for emergency leash teleport (when companion is very far)")
                 .defineInRange("leashDistance", 48.0, 16.0, 256.0);
+
+        ENABLE_PROACTIVE_CHAT = builder
+                .comment("Allow the companion to proactively chat (status updates, idle check-ins, etc.)",
+                        "When false, the companion only speaks when responding to player commands.",
+                        "Players can also say 'stop talking' / 'talk again' in-game to toggle.")
+                .define("enableProactiveChat", true);
 
         builder.pop(); // companion_behavior
 

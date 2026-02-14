@@ -65,7 +65,8 @@ public class CraftItemTool implements AiTool {
 
     /**
      * Tracks recent autoCraftPlan calls to prevent infinite recursion.
-     * Maps item registry path → System.currentTimeMillis() of last attempt.
+     * Maps "{ownerUUID}:{itemPath}" → System.currentTimeMillis() of last attempt.
+     * Per-player scoping prevents one player's craft blocking others on multiplayer.
      * If craft_item is called for the same item within CRAFT_COOLDOWN_MS,
      * it refuses to restart the plan and returns an error.
      */
@@ -581,7 +582,7 @@ public class CraftItemTool implements AiTool {
                 int deficit = totalNeeded - have;
                 MCAi.LOGGER.info("  autoResolve pass {}: {} — have {}/{}, deficit={}, trying auto-craft",
                         pass + 1, neededItem.getDescription().getString(), have, totalNeeded, deficit);
-                if (tryAutoCraftItem(context, recipeManager, registryAccess, matchingIng, deficit, log, 0)) {
+                if (tryAutoCraftItem(context, recipeManager, registryAccess, matchingIng, deficit, log, 0, new java.util.HashSet<>())) {
                     madeProgress = true;
                     MCAi.LOGGER.info("  autoResolve pass {}: {} — auto-craft SUCCESS",
                             pass + 1, neededItem.getDescription().getString());
@@ -599,15 +600,24 @@ public class CraftItemTool implements AiTool {
      * Attempts to auto-craft enough of a missing ingredient using crafting-table recipes.
      * Recursively resolves sub-ingredients (e.g., logs → planks → sticks) up to 3 levels deep.
      * Tries each item variant the ingredient accepts (e.g., any plank type).
+     * Uses a visited set to prevent infinite cycles (e.g., diamond ↔ diamond_block).
      */
     private boolean tryAutoCraftItem(ToolContext context, RecipeManager recipeManager,
                                       RegistryAccess registryAccess, Ingredient ingredient,
-                                      int deficit, StringBuilder log, int depth) {
+                                      int deficit, StringBuilder log, int depth,
+                                      java.util.Set<String> visited) {
         if (depth > MAX_RESOLVE_PASSES) return false;
 
         for (ItemStack variant : ingredient.getItems()) {
             Item targetItem = variant.getItem();
             String targetName = BuiltInRegistries.ITEM.getKey(targetItem).getPath();
+
+            // Cycle detection: skip items already being crafted up the call chain
+            if (!visited.add(targetName)) {
+                MCAi.LOGGER.debug("    tryAutoCraft(depth={}): CYCLE detected for {} — skipping", depth, targetName);
+                continue;
+            }
+
             RecipeHolder<?> subRecipe = findCraftingTableRecipe(recipeManager, registryAccess, targetItem, context);
             if (subRecipe == null) {
                 MCAi.LOGGER.debug("    tryAutoCraft(depth={}): no crafting recipe for {}", depth, targetName);
@@ -639,7 +649,7 @@ public class CraftItemTool implements AiTool {
                 int subHave = countInInventory(context, subIng);
                 if (subHave < subCraftsNeeded) {
                     tryAutoCraftItem(context, recipeManager, registryAccess, subIng,
-                            subCraftsNeeded - subHave, log, depth + 1);
+                            subCraftsNeeded - subHave, log, depth + 1, visited);
                 }
             }
 
@@ -718,9 +728,9 @@ public class CraftItemTool implements AiTool {
         String targetId = BuiltInRegistries.ITEM.getKey(targetItem).getPath();
 
         // === Recursion guard: prevent infinite craft loops ===
-        // If we already attempted an autoCraftPlan for this item recently, refuse to restart.
-        // This catches the pattern: craft_item → plan → step fails → AI calls craft_item again.
-        Long lastAttempt = recentCraftAttempts.get(targetId);
+        // Per-player scoped key prevents multiplayer blocking
+        String cooldownKey = context.player().getStringUUID() + ":" + targetId;
+        Long lastAttempt = recentCraftAttempts.get(cooldownKey);
         long now = System.currentTimeMillis();
         if (lastAttempt != null && (now - lastAttempt) < CRAFT_COOLDOWN_MS) {
             long secsAgo = (now - lastAttempt) / 1000;
@@ -731,7 +741,7 @@ public class CraftItemTool implements AiTool {
                     "I need help — please check if I have enough materials, a furnace, and fuel. " +
                     "You can tell me to try again in a couple of minutes.";
         }
-        recentCraftAttempts.put(targetId, now);
+        recentCraftAttempts.put(cooldownKey, now);
         // Clean up old entries
         recentCraftAttempts.entrySet().removeIf(e -> (now - e.getValue()) > CRAFT_COOLDOWN_MS);
 

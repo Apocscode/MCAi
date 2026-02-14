@@ -1,5 +1,6 @@
 package com.apocscode.mcai.entity;
 
+import com.apocscode.mcai.config.AiConfig;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
@@ -36,6 +37,7 @@ public class CompanionChat {
         NO_FOOD(600),            // 30 sec
         NO_FUEL(600),            // 30 sec
         TASK(100),               // 5 sec for task status updates
+        IDLE_CHECK(12000),       // 10 min — occasional "need help?" prompt
         GENERAL(200);            // 10 sec for misc
 
         public final int cooldownTicks;
@@ -46,9 +48,26 @@ public class CompanionChat {
 
     private final CompanionEntity companion;
     private final Map<Category, Integer> cooldowns = new HashMap<>();
+    private boolean muted = false;
 
     public CompanionChat(CompanionEntity companion) {
         this.companion = companion;
+        // Initialize mute state from config
+        try {
+            this.muted = !AiConfig.ENABLE_PROACTIVE_CHAT.get();
+        } catch (Exception e) {
+            this.muted = false; // Config not loaded yet — default to unmuted
+        }
+    }
+
+    /** Set whether proactive chat is muted (player said "stop talking"). */
+    public void setMuted(boolean muted) {
+        this.muted = muted;
+    }
+
+    /** Returns true if proactive chat is currently muted. */
+    public boolean isMuted() {
+        return muted;
     }
 
     /**
@@ -60,6 +79,7 @@ public class CompanionChat {
      */
     public boolean say(Category category, String message) {
         if (companion.level().isClientSide) return false;
+        if (muted) return false; // Proactive chat muted by player
 
         Player owner = companion.getOwner();
         if (owner == null || !(owner instanceof ServerPlayer)) return false;
@@ -84,6 +104,7 @@ public class CompanionChat {
      */
     public boolean warn(Category category, String message) {
         if (companion.level().isClientSide) return false;
+        if (muted) return false; // Proactive chat muted by player
 
         Player owner = companion.getOwner();
         if (owner == null || !(owner instanceof ServerPlayer)) return false;

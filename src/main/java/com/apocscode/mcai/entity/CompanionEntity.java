@@ -104,6 +104,7 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
 
     private final SimpleContainer inventory = new SimpleContainer(INVENTORY_SIZE);
     private int eatCooldown = 0;
+    private int waterStuckTicks = 0; // Tracks time in water for rescue teleport
     private boolean registeredLiving = false; // Tracks if we've registered in LIVING_COMPANIONS
 
     // Home position — set by shift+clicking Soul Crystal
@@ -145,6 +146,17 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
     private double lastX, lastY, lastZ;
     private int stuckTicks = 0;
     private static final int STUCK_THRESHOLD = 100; // 5 seconds not moving while navigating
+
+    // Proactive idle conversation — occasional "need help?" prompts
+    private static final String[] IDLE_MESSAGES = {
+        "Need help with anything?",
+        "I'm just hanging out. Let me know if you need something!",
+        "Anything you need me to do?",
+        "Say the word and I'll get to work!",
+        "I'm ready if you need me — just say the word.",
+        "Want me to gather anything or go mining?",
+    };
+    private int idleTicks = 0;
 
     // ================================================================
     // Living companion tracker — prevents duplicate summons
@@ -202,7 +214,9 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
         this.setCanPickUpLoot(true); // Enable item pickup from ground
         try {
             this.companionName = AiConfig.DEFAULT_COMPANION_NAME.get();
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            this.companionName = "Jim"; // Fallback if config fails
+        }
         // Sync custom name so the nametag above the entity matches
         this.setCustomName(Component.literal(this.companionName));
 
@@ -213,18 +227,21 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
         this.setPathfindingMalus(net.minecraft.world.level.pathfinder.PathType.DAMAGE_OTHER, -1.0F);
         this.setPathfindingMalus(net.minecraft.world.level.pathfinder.PathType.DANGER_FIRE, 8.0F);
         this.setPathfindingMalus(net.minecraft.world.level.pathfinder.PathType.DANGER_OTHER, 8.0F);
-        this.setPathfindingMalus(net.minecraft.world.level.pathfinder.PathType.WATER, 0.0F);  // Allow water traversal
-        this.setPathfindingMalus(net.minecraft.world.level.pathfinder.PathType.WATER_BORDER, 0.0F);
+        this.setPathfindingMalus(net.minecraft.world.level.pathfinder.PathType.WATER, 4.0F);  // Allow water crossings but discourage ocean paths
+        this.setPathfindingMalus(net.minecraft.world.level.pathfinder.PathType.WATER_BORDER, 2.0F);
 
         // === Door navigation — walk through doors like villagers ===
         this.setPathfindingMalus(net.minecraft.world.level.pathfinder.PathType.DOOR_OPEN, 0.0F);
         this.setPathfindingMalus(net.minecraft.world.level.pathfinder.PathType.DOOR_WOOD_CLOSED, 0.0F);
         this.setPathfindingMalus(net.minecraft.world.level.pathfinder.PathType.DOOR_IRON_CLOSED, 0.0F);
 
-        // === Fence gates — goal opens them proactively, no PathType override needed ===
-        // Note: FENCE PathType covers fences, walls, AND closed fence gates — we can't
-        // set it to 0 or Jim would try to walk through solid fences/walls.
-        // The CompanionOpenFenceGateGoal detects stuck-near-gate and opens it.
+        // === Fence gates — allow pathfinding through them with penalty ===
+        // FENCE PathType covers fences, walls, AND closed fence gates.
+        // Setting to a positive value (not -1 impassable) lets the pathfinder route
+        // through fence gates. Solid fences/walls have 1.5-block collision boxes,
+        // so the companion physically can't walk through them — only gates work.
+        // The CompanionOpenFenceGateGoal opens gates when Jim arrives at them.
+        this.setPathfindingMalus(net.minecraft.world.level.pathfinder.PathType.FENCE, 4.0F);
 
         // === Trapdoors — treat as passable (companion has a goal to open them) ===
         this.setPathfindingMalus(net.minecraft.world.level.pathfinder.PathType.TRAPDOOR, 0.0F);
@@ -348,27 +365,28 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
         this.goalSelector.addGoal(1, new CompanionOpenFenceGateGoal(this, true));  // true = close after passing
         // Trapdoor handling — open/close wooden trapdoors when pathfinding through them
         this.goalSelector.addGoal(1, new CompanionOpenTrapdoorGoal(this));
-        this.goalSelector.addGoal(1, new CompanionCombatGoal(this, 1.2D, true));
-        this.goalSelector.addGoal(2, new CompanionEatFoodGoal(this));
-        this.goalSelector.addGoal(2, new CompanionFetchFoodGoal(this));   // Fetch food from chests when hungry
-        this.goalSelector.addGoal(3, new CompanionCookFoodGoal(this));   // Cook raw food at furnace/campfire
-        this.goalSelector.addGoal(4, new CompanionFarmGoal(this));       // Harvest mature crops
-        this.goalSelector.addGoal(5, new CompanionPickupItemGoal(this));   // Actively seek dropped items
-        this.goalSelector.addGoal(6, new CompanionFollowGoal(this, 1.2D, 4.0F));
-        this.goalSelector.addGoal(7, new CompanionLookAtPlayerGoal(this, 8.0F));
-        this.goalSelector.addGoal(8, new RandomLookAroundGoal(this));
+        // Combat — separate priority from doors so barriers don't block fighting
+        this.goalSelector.addGoal(2, new CompanionCombatGoal(this, 1.2D, true));
+        this.goalSelector.addGoal(3, new CompanionEatFoodGoal(this));
+        this.goalSelector.addGoal(3, new CompanionFetchFoodGoal(this));   // Fetch food from chests when hungry
+        this.goalSelector.addGoal(4, new CompanionCookFoodGoal(this));   // Cook raw food at furnace/campfire
+        this.goalSelector.addGoal(5, new CompanionFarmGoal(this));       // Harvest mature crops
+        this.goalSelector.addGoal(6, new CompanionPickupItemGoal(this));   // Actively seek dropped items
+        this.goalSelector.addGoal(7, new CompanionFollowGoal(this, 1.2D, 4.0F));
+        this.goalSelector.addGoal(8, new CompanionLookAtPlayerGoal(this, 8.0F));
+        this.goalSelector.addGoal(9, new RandomLookAroundGoal(this));
         // Wander only in AUTO mode, not while owner is interacting
-        this.goalSelector.addGoal(9, new WaterAvoidingRandomStrollGoal(this, 0.6D) {
+        this.goalSelector.addGoal(10, new WaterAvoidingRandomStrollGoal(this, 0.6D) {
             @Override
             public boolean canUse() {
                 return !isOwnerInteracting() && getBehaviorMode() == BehaviorMode.AUTO && super.canUse();
             }
         });
         // Guard mode — patrol and defend area
-        this.goalSelector.addGoal(3, new CompanionGuardGoal(this));
+        this.goalSelector.addGoal(4, new CompanionGuardGoal(this));
         // Task queue — AI-requested tasks get high priority (player explicitly asked)
         this.goalSelector.addGoal(2, new com.apocscode.mcai.entity.goal.CompanionTaskGoal(this));
-        this.goalSelector.addGoal(4, new com.apocscode.mcai.entity.goal.CompanionLogisticsGoal(this));
+        this.goalSelector.addGoal(5, new com.apocscode.mcai.entity.goal.CompanionLogisticsGoal(this));
 
         // Targeting
         this.targetSelector.addGoal(1, new HurtByTargetGoal(this));
@@ -414,6 +432,16 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
 
     @Override
     public Component getDisplayName() {
+        return Component.literal(companionName);
+    }
+
+    /**
+     * Override getName() so health bar mods (Jade, Neat, WTHIT, etc.) show the
+     * companion's actual name instead of the entity type description ("Companion").
+     * This is the method most mods call to get the entity's display name.
+     */
+    @Override
+    public Component getName() {
         return Component.literal(companionName);
     }
 
@@ -766,6 +794,44 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
             // === HAZARD MONITOR — detect and respond to environmental dangers ===
             if (this.tickCount % 10 == 0) { // Every 0.5 seconds
                 hazardCheck();
+            }
+
+            // === WATER STUCK DETECTOR — teleport to owner if swimming too long ===
+            if (this.isInWater() && this.tickCount % 20 == 0) {
+                waterStuckTicks += 20;
+                if (waterStuckTicks > 200) { // 10 seconds in water
+                    Player owner = getOwner();
+                    if (owner != null && !owner.isInWater()) {
+                        BlockPos safePos = findSafeTeleportPos(owner.blockPosition(), 3);
+                        if (safePos != null) {
+                            this.moveTo(safePos.getX() + 0.5, safePos.getY(),
+                                    safePos.getZ() + 0.5, this.getYRot(), this.getXRot());
+                        } else {
+                            this.moveTo(owner.getX(), owner.getY(), owner.getZ(),
+                                    this.getYRot(), this.getXRot());
+                        }
+                        this.getNavigation().stop();
+                        waterStuckTicks = 0;
+                        MCAi.LOGGER.info("Companion water rescue — teleported to owner after swimming too long");
+                    }
+                }
+            } else {
+                waterStuckTicks = 0;
+            }
+
+            // === Proactive idle conversation — occasionally ask if player needs help ===
+            if (taskManager.isIdle() && getBehaviorMode() != BehaviorMode.STAY
+                    && !isOwnerInteracting() && getOwner() != null
+                    && this.distanceTo(getOwner()) < 16) {
+                idleTicks++;
+                // After ~5 minutes idle near owner, say something (with 10-min category cooldown)
+                if (idleTicks >= 6000) {
+                    String msg = IDLE_MESSAGES[this.random.nextInt(IDLE_MESSAGES.length)];
+                    chat.say(CompanionChat.Category.IDLE_CHECK, msg);
+                    idleTicks = 0;
+                }
+            } else {
+                idleTicks = 0;
             }
         }
     }

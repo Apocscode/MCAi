@@ -101,8 +101,10 @@ public class StripMineTask extends CompanionTask {
 
         // Walk out of home area before mining
         if (companion.isInHomeArea(companion.blockPosition())) {
-            // Walk 25 blocks in the mining direction to clear the home area
-            walkOutTarget = companion.blockPosition().relative(direction, 25);
+            // Walk incrementally in the mining direction to exit the home area
+            // Use 8-block steps instead of blind 25-block offset to avoid
+            // targeting impassable terrain (cliffs, oceans, mountains)
+            walkOutTarget = companion.blockPosition().relative(direction, 8);
             phase = Phase.WALK_OUT;
             navigateTo(walkOutTarget);
             say("I'm inside the home area — walking out " + direction.getName() + " before I start mining.");
@@ -167,6 +169,11 @@ public class StripMineTask extends CompanionTask {
         }
 
         // Still inside — keep walking
+        // Re-target every 3 seconds (60 ticks) if still in home area — incremental approach
+        if (stuckTimer > 0 && stuckTimer % 60 == 0) {
+            walkOutTarget = companion.blockPosition().relative(direction, 8);
+            MCAi.LOGGER.debug("WALK_OUT: re-targeting to {} (still in home area)", walkOutTarget);
+        }
         navigateTo(walkOutTarget);
         stuckTimer++;
         if (stuckTimer > STUCK_TIMEOUT * 3) { // 9 seconds to walk out — generous timeout

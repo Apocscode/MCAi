@@ -580,6 +580,20 @@ public class CommandParser {
             "stop(?:\\s+(?:all\\s+)?(?:task|tasks|that|it|everything|what you.re doing|doing that|working|mining|crafting|building|chopping))?\\s*$",
             Pattern.CASE_INSENSITIVE);
 
+    // --- MUTE / UNMUTE CONVERSATION ---
+    // "stop talking", "shut up", "be quiet", "hush", "silence", "mute"
+    // "start talking", "talk again", "unmute", "you can talk"
+    private static final Pattern MUTE_PATTERN = Pattern.compile(
+            "(?:stop|quit|cease)\\s+(?:talking|chatting|speaking|blabbering)|" +
+            "shut\\s*up|be\\s+quiet|hush|(?:please\\s+)?(?:be\\s+)?silen(?:t|ce)|" +
+            "(?:please\\s+)?(?:be\\s+)?mute(?:d)?|zip\\s+it|shh+|quiet",
+            Pattern.CASE_INSENSITIVE);
+    private static final Pattern UNMUTE_PATTERN = Pattern.compile(
+            "(?:start|resume|begin)\\s+(?:talking|chatting|speaking)|" +
+            "(?:you can|(?:please\\s+)?)(?:talk|speak|chat)(?:\\s+again)?|" +
+            "unmute|un-mute|I(?:'m| am) listening|go ahead|speak freely",
+            Pattern.CASE_INSENSITIVE);
+
     // --- FISHING ---
     // "go fishing", "fish", "catch some fish", "let's fish", "do some fishing"
     private static final Pattern FISH_PATTERN = Pattern.compile(
@@ -923,6 +937,27 @@ public class CommandParser {
                         "Holding position. I'll be here.",
                         "Staying put! Call me when you need me.",
                         "Rooted to the spot!",
+                });
+                return true;
+            }
+            // --- Mute / unmute proactive chat (check BEFORE cancel so "stop talking" doesn't cancel tasks) ---
+            if (MUTE_PATTERN.matcher(msg).matches()) {
+                companion.getChat().setMuted(true);
+                respondRandom(player, new String[]{
+                        "Okay, I'll be quiet.",
+                        "Zipping it! Say 'talk again' when you want me back.",
+                        "Muted. I'll only speak if it's urgent.",
+                        "Going silent. Just tell me to 'talk again' when you're ready.",
+                });
+                return true;
+            }
+            if (UNMUTE_PATTERN.matcher(msg).matches()) {
+                companion.getChat().setMuted(false);
+                respondRandom(player, new String[]{
+                        "I'm back! What'd I miss?",
+                        "Unmuted! Ready to chat again.",
+                        "You got it — I'll keep you posted!",
+                        "Talking again! Let me know what you need.",
                 });
                 return true;
             }
