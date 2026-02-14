@@ -97,8 +97,26 @@ public class CompanionChatScreen extends Screen {
                 .build();
         this.addRenderableWidget(sendButton);
 
-        // Auto-focus the input box so typing works immediately (like pressing T)
+        // Auto-focus: use both setInitialFocus AND setFocused on the screen itself.
+        // setInitialFocus alone doesn't work reliably in NeoForge 1.21.1 because
+        // the screen lifecycle may reset focus after init() completes.
         this.setInitialFocus(inputBox);
+        this.setFocused(inputBox);
+    }
+
+    /**
+     * Called every client tick while this screen is open.
+     * Ensures the input box stays focused — NeoForge's Screen lifecycle
+     * can steal focus when widgets are added or the screen resizes.
+     */
+    @Override
+    public void tick() {
+        super.tick();
+        // Keep input box focused unless voice recording is active
+        if (!isRecordingVoice && inputBox != null && !inputBox.isFocused()) {
+            inputBox.setFocused(true);
+            this.setFocused(inputBox);
+        }
     }
 
     private void toggleVoiceRecording() {

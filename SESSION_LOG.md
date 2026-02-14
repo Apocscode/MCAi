@@ -136,4 +136,39 @@ git commit -m "description"
 
 ---
 
+## Session 4 — 2026-02-14 (Evening) — Iron Pickaxe Fix
+
+### Issue: Jim couldn't craft an iron pickaxe
+Full failure chain from logs:
+1. `mine_ores` iron (r=16) failed — Jim at Y=94, iron is best at Y=16
+2. Fallback `strip_mine` iron (32 blocks south) → only found 1 raw iron
+3. `smelt_items` 2x raw_iron → failed (only had 1x)
+4. Second `strip_mine` + `smelt_items` → failed: "No fuel available"
+5. Rate limited → local Ollama → text-only response (chain died)
+
+### Root Causes Found
+1. **StripMineTask `scanTunnelWalls` only mined target ore** — when mining for iron, coal ore in walls was ignored. Jim tunneled past free fuel.
+2. **SmeltItemsTask `tryGatherFuel` only searched for logs (trees)** — underground at Y=16, zero trees. Didn't mine nearby coal ore or pull from storage.
+3. **StripMineTask `tickMineOre` counted all ores toward completion** — would cause premature tunnel stop if mining all ore types.
+
+### Fixes Applied (commit `a67d07b`)
+
+**StripMineTask.java:**
+- `scanTunnelWalls()` now uses `OreGuide.isOre(state)` to mine ALL ore types in walls (coal, copper, gold, etc.), not just target
+- `tickMineOre()` only increments `oresMined` for the target ore type (or all if no target), preventing premature completion
+- Jim now picks up coal as free bonus fuel while strip mining for iron
+
+**SmeltItemsTask.java:**
+- `tryGatherFuel()` rewritten with 3 strategies in priority order:
+  1. Mine nearby coal ore (r=16) — best underground fuel source, each coal = 8 smelts
+  2. Break nearby logs (r=16) — existing logic, works on surface
+  3. Pull fuel from tagged STORAGE + home area containers
+- Added `tryPullFuelFromStorage()` and `extractFuelFromContainer()` helper methods
+
+### Files Modified
+- `src/.../task/StripMineTask.java` — scanTunnelWalls, tickMineOre
+- `src/.../task/SmeltItemsTask.java` — tryGatherFuel, tryPullFuelFromStorage, extractFuelFromContainer
+
+---
+
 *Last updated: 2026-02-14*
