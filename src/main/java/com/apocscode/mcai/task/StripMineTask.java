@@ -49,11 +49,14 @@ public class StripMineTask extends CompanionTask {
     private BlockPos tunnelFacePos = null; // Where the companion should be standing to mine next
     private BlockPos descendTargetPos = null; // Where the companion should walk to during stair descent
 
+    private BlockPos walkOutTarget = null; // Where to walk to exit home area
+
     private static final int STUCK_TIMEOUT = 60; // 3 seconds
     private static final int ORE_SCAN_RADIUS = 2; // Check 2 blocks around tunnel for ores
     private static final int TORCH_INTERVAL = 8;  // Place a torch every N blocks
 
     private enum Phase {
+        WALK_OUT,       // Walk outside the home area before mining
         DIG_DOWN,       // Dig down to target Y-level if needed
         TUNNEL,         // Dig the main tunnel
         MINE_ORE,       // Side-trip to mine a spotted ore
@@ -96,13 +99,13 @@ public class StripMineTask extends CompanionTask {
     protected void start() {
         int currentY = companion.blockPosition().getY();
 
-        // Refuse to mine inside the home area
+        // Walk out of home area before mining
         if (companion.isInHomeArea(companion.blockPosition())) {
-            say("I can't mine here — this is inside the home area! I'll walk away first.");
-            // Move the companion out of the home area before starting
-            BlockPos awayPos = companion.blockPosition().relative(direction, 20);
-            navigateTo(awayPos);
-            fail("Cannot strip-mine inside the home area. Move me outside first.");
+            // Walk 25 blocks in the mining direction to clear the home area
+            walkOutTarget = companion.blockPosition().relative(direction, 25);
+            phase = Phase.WALK_OUT;
+            navigateTo(walkOutTarget);
+            say("I'm inside the home area — walking out " + direction.getName() + " before I start mining.");
             return;
         }
 
@@ -124,10 +127,51 @@ public class StripMineTask extends CompanionTask {
     @Override
     protected void tick() {
         switch (phase) {
+            case WALK_OUT -> tickWalkOut();
             case DIG_DOWN -> tickDigDown();
             case TUNNEL -> tickTunnel();
             case MINE_ORE -> tickMineOre();
             case DONE -> complete();
+        }
+    }
+
+    // ================================================================
+    // Phase: Walk outside the home area before mining
+    // ================================================================
+
+    private void tickWalkOut() {
+        if (walkOutTarget == null) {
+            // Shouldn't happen, but recover
+            phase = Phase.TUNNEL;
+            tunnelFacePos = companion.blockPosition();
+            return;
+        }
+
+        // Check if we've left the home area
+        if (!companion.isInHomeArea(companion.blockPosition())) {
+            say("Outside the home area now. Starting the mine!");
+            stuckTimer = 0;
+            // Re-run start logic from current position (outside home area)
+            int currentY = companion.blockPosition().getY();
+            if (targetY >= 0 && currentY > targetY) {
+                descendTarget = currentY - targetY;
+                phase = Phase.DIG_DOWN;
+                say("Digging stairs down " + descendTarget + " blocks to Y=" + targetY + "...");
+            } else {
+                phase = Phase.TUNNEL;
+                tunnelFacePos = companion.blockPosition();
+                String oreLabel = targetOre != null ? " for " + targetOre.name + " ore" : "";
+                say("Starting tunnel " + direction.getName() + oreLabel + " at Y=" + currentY + "...");
+            }
+            return;
+        }
+
+        // Still inside — keep walking
+        navigateTo(walkOutTarget);
+        stuckTimer++;
+        if (stuckTimer > STUCK_TIMEOUT * 3) { // 9 seconds to walk out — generous timeout
+            say("Can't get out of the home area! Try moving me outside manually.");
+            fail("Stuck trying to leave home area after " + stuckTimer + " ticks");
         }
     }
 
