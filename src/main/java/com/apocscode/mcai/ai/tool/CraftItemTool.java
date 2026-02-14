@@ -156,6 +156,15 @@ public class CraftItemTool implements AiTool {
                 if (!homeStatus.isEmpty()) {
                     craftLog.append(homeStatus);
                 }
+                // If infrastructure gathering tasks were queued (e.g., mining iron for cauldron),
+                // defer the main craft — the continuation chain will bring us back.
+                if (homeStatus.contains("[INFRA_TASK_QUEUED]")) {
+                    MCAi.LOGGER.info("CraftItemTool: deferring craft of {} — infrastructure task queued",
+                            finalQuery);
+                    return craftLog.append("I need to gather materials for my home base first. ")
+                            .append("I'll craft ").append(finalQuery)
+                            .append(" after setting up infrastructure.").toString();
+                }
             }
 
             // === PHASE 1: Check nearby chests for the finished item ===

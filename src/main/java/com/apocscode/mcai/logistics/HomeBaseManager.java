@@ -2,7 +2,9 @@ package com.apocscode.mcai.logistics;
 
 import com.apocscode.mcai.MCAi;
 import com.apocscode.mcai.entity.CompanionEntity;
+import com.apocscode.mcai.task.*;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -118,10 +120,15 @@ public class HomeBaseManager {
             }
         }
 
-        // 3. Cauldron (7 iron ingots — may not be available early game)
+        // 3. Cauldron (7 iron ingots — full chain: mine → smelt → craft)
+        boolean infraTaskQueued = false;
         if (!hasCauldron && !hasItem(inv, Items.CAULDRON)) {
-            if (ensureCraftCauldron(companion, inv)) {
+            int cauldronResult = ensureCraftCauldron(companion, inv);
+            if (cauldronResult == 1) {
                 log.append("Crafted Cauldron. ");
+            } else if (cauldronResult == CAULDRON_TASK_QUEUED) {
+                log.append("[INFRA_TASK_QUEUED] No iron available — queued mining task for Cauldron materials. ");
+                infraTaskQueued = true;
             }
         }
 
@@ -301,12 +308,21 @@ public class HomeBaseManager {
         return true;
     }
 
+    /** Sentinel: returned by ensureCraftCauldron when a mining task was queued. */
+    private static final int CAULDRON_TASK_QUEUED = -1;
+
     /**
      * Ensure a Cauldron exists in companion inventory.
-     * Needs 7 iron ingots. Full chain: pull ingots from storage → pull raw iron
-     * from storage → virtual smelt raw iron → craft cauldron.
+     * Needs 7 iron ingots. Full chain:
+     *   1. Check inventory for iron ingots
+     *   2. Pull iron ingots from storage
+     *   3. Pull raw iron from storage → virtual smelt to ingots
+     *   4. Check inventory for raw iron → virtual smelt
+     *   5. If nothing available: queue a strip mine task for iron ore
+     *
+     * @return  1 = crafted, 0 = can't craft (no iron), -1 = mining task queued
      */
-    private static boolean ensureCraftCauldron(CompanionEntity companion, SimpleContainer inv) {
+    private static int ensureCraftCauldron(CompanionEntity companion, SimpleContainer inv) {
         int needed = 7;
         int have = countItem(inv, Items.IRON_INGOT);
 
@@ -330,15 +346,54 @@ public class HomeBaseManager {
             }
         }
 
+        // Step 3: Check if companion already has raw iron on them (from recent mining)
         if (have < needed) {
-            MCAi.LOGGER.info("HomeBase: cannot craft Cauldron yet — only {}/{} iron ingots (will retry later)", have, needed);
-            return false;
+            int rawInInv = countItem(inv, Items.RAW_IRON);
+            if (rawInInv > 0) {
+                int toSmelt = Math.min(rawInInv, needed - have);
+                consumeItem(inv, Items.RAW_IRON, toSmelt);
+                inv.addItem(new ItemStack(Items.IRON_INGOT, toSmelt));
+                MCAi.LOGGER.info("HomeBase: virtual-smelted {} raw iron from inventory → {} iron ingots", toSmelt, toSmelt);
+                have = countItem(inv, Items.IRON_INGOT);
+            }
         }
 
-        consumeItem(inv, Items.IRON_INGOT, needed);
-        inv.addItem(new ItemStack(Items.CAULDRON, 1));
-        MCAi.LOGGER.info("HomeBase: crafted Cauldron from {} iron ingots", needed);
-        return true;
+        if (have >= needed) {
+            consumeItem(inv, Items.IRON_INGOT, needed);
+            inv.addItem(new ItemStack(Items.CAULDRON, 1));
+            MCAi.LOGGER.info("HomeBase: crafted Cauldron from {} iron ingots", needed);
+            return 1; // success
+        }
+
+        // Step 4: No iron available anywhere — queue a mining task
+        // Only queue if the companion isn't already busy with a task
+        TaskManager tm = companion.getTaskManager();
+        if (tm != null && tm.isIdle()) {
+            int ironNeeded = needed - have;
+            MCAi.LOGGER.info("HomeBase: no iron available for Cauldron ({}/{} ingots). " +
+                    "Queuing strip mine for {} iron ore.", have, needed, ironNeeded);
+
+            OreGuide.Ore ironOre = OreGuide.Ore.IRON;
+            Direction dir = companion.getDirection().getAxis() == Direction.Axis.Y
+                    ? Direction.NORTH : companion.getDirection();
+            StripMineTask mineTask = new StripMineTask(
+                    companion, dir, 64, ironOre.bestY, ironOre, ironNeeded);
+
+            // Continuation: after mining, smelt the raw iron, then retry infrastructure
+            mineTask.setContinuation(new TaskContinuation(
+                    companion.getOwnerUUID(),
+                    "Gather iron for home base Cauldron",
+                    "smelt_items({\"item\":\"raw_iron\",\"count\":" + ironNeeded + "}), " +
+                    "then craft_item({\"item\":\"cauldron\",\"count\":1})"
+            ));
+
+            tm.queueTask(mineTask);
+            return CAULDRON_TASK_QUEUED;
+        }
+
+        MCAi.LOGGER.info("HomeBase: cannot craft Cauldron yet — only {}/{} iron ingots " +
+                "(companion busy, will retry later)", have, needed);
+        return 0; // can't craft, companion is busy
     }
 
     /**
