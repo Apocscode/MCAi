@@ -148,6 +148,16 @@ public class CraftItemTool implements AiTool {
                 return "You already have " + alreadyHave + "x " + targetName + " in your inventory!";
             }
 
+            // === HOME BASE: Ensure crafting infrastructure at home ===
+            CompanionEntity homeCompanion = CompanionEntity.getLivingCompanion(context.player().getUUID());
+            if (homeCompanion != null) {
+                String homeStatus = com.apocscode.mcai.logistics.HomeBaseManager
+                        .ensureHomeInfrastructure(homeCompanion);
+                if (!homeStatus.isEmpty()) {
+                    craftLog.append(homeStatus);
+                }
+            }
+
             // === PHASE 1: Check nearby chests for the finished item ===
             int fetched = fetchFromNearbyContainers(context, targetItem, finalCount - alreadyHave);
             if (fetched > 0) {
