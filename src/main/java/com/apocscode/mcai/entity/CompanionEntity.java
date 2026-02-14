@@ -35,6 +35,12 @@ import net.minecraft.core.component.DataComponents;
 import net.minecraft.world.food.FoodProperties;
 import net.minecraft.world.item.*;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.DoorBlock;
+import net.minecraft.world.level.block.ButtonBlock;
+import net.minecraft.world.level.block.LeverBlock;
+import net.minecraft.world.level.block.state.properties.BlockSetType;
+import net.minecraft.world.entity.ai.navigation.GroundPathNavigation;
+import net.minecraft.world.entity.ai.navigation.PathNavigation;
 import net.neoforged.neoforge.network.PacketDistributor;
 
 import javax.annotation.Nullable;
@@ -208,6 +214,19 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
         this.setPathfindingMalus(net.minecraft.world.level.pathfinder.PathType.DANGER_FIRE, 8.0F);
         this.setPathfindingMalus(net.minecraft.world.level.pathfinder.PathType.DANGER_OTHER, 8.0F);
         this.setPathfindingMalus(net.minecraft.world.level.pathfinder.PathType.WATER, 4.0F);
+
+        // === Door navigation — walk through doors like villagers ===
+        this.setPathfindingMalus(net.minecraft.world.level.pathfinder.PathType.DOOR_OPEN, 0.0F);
+        this.setPathfindingMalus(net.minecraft.world.level.pathfinder.PathType.DOOR_WOOD_CLOSED, 0.0F);
+        this.setPathfindingMalus(net.minecraft.world.level.pathfinder.PathType.DOOR_IRON_CLOSED, 0.0F);
+    }
+
+    @Override
+    protected PathNavigation createNavigation(Level level) {
+        GroundPathNavigation nav = new GroundPathNavigation(this, level);
+        nav.setCanOpenDoors(true);
+        nav.setCanFloat(true);
+        return nav;
     }
 
     @Override
@@ -311,6 +330,10 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
     protected void registerGoals() {
         // Passive / movement
         this.goalSelector.addGoal(0, new FloatGoal(this));
+        // Door handling — open wooden doors (and modded doors) when pathfinding through them
+        this.goalSelector.addGoal(1, new OpenDoorGoal(this, true));  // true = close door after passing
+        // Iron door handling — press buttons/levers to open iron doors (and modded non-hand-openable doors)
+        this.goalSelector.addGoal(1, new CompanionOpenIronDoorGoal(this));
         this.goalSelector.addGoal(1, new CompanionCombatGoal(this, 1.2D, true));
         this.goalSelector.addGoal(2, new CompanionEatFoodGoal(this));
         this.goalSelector.addGoal(2, new CompanionFetchFoodGoal(this));   // Fetch food from chests when hungry
