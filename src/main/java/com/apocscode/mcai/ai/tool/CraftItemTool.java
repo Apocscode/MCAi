@@ -844,9 +844,12 @@ public class CraftItemTool implements AiTool {
             RecipeResolver resolver = new RecipeResolver(recipeManager, registryAccess);
             List<CraftingPlan.Step> prereqSteps = new ArrayList<>();
 
-            if (companionTier < 1 && requiredTier >= 1) {
-                // Need at least stone pickaxe — requires wooden pickaxe first to mine cobblestone
+            if (companionTier < 0 && requiredTier >= 0) {
+                // Need at least a wooden pickaxe (companion has no pick at all)
                 addToolChainSteps(prereqSteps, Items.WOODEN_PICKAXE, available, resolver);
+            }
+            if (companionTier < 1 && requiredTier >= 1) {
+                // Need at least stone pickaxe
                 addToolChainSteps(prereqSteps, Items.STONE_PICKAXE, available, resolver);
             }
             if (companionTier < 2 && requiredTier >= 2) {
