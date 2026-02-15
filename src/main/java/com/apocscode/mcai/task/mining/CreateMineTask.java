@@ -2,11 +2,19 @@ package com.apocscode.mcai.task.mining;
 
 import com.apocscode.mcai.MCAi;
 import com.apocscode.mcai.entity.CompanionEntity;
+import com.apocscode.mcai.logistics.TaggedBlock;
 import com.apocscode.mcai.task.BlockHelper;
 import com.apocscode.mcai.task.CompanionTask;
 import com.apocscode.mcai.task.OreGuide;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.world.Container;
+import net.minecraft.world.SimpleContainer;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.entity.BlockEntity;
 
 import javax.annotation.Nullable;
 
@@ -123,7 +131,6 @@ public class CreateMineTask extends CompanionTask {
         int worldMin = companion.level().getMinBuildHeight();
         if (targetY <= worldMin + 1) {
             say("Target Y=" + targetY + " is too close to bedrock. Adjusting to Y=" + (worldMin + 5) + ".");
-            // Can't modify targetY on mineState since it's set in constructor — this is a warning
         }
 
         // Check for basic mining tools
@@ -136,27 +143,235 @@ public class CreateMineTask extends CompanionTask {
                 break;
             }
         }
-        // Also check main hand
         if (!hasPickaxe && companion.getMainHandItem().getItem() instanceof net.minecraft.world.item.PickaxeItem) {
             hasPickaxe = true;
         }
-
         if (!hasPickaxe) {
             say("Warning: No pickaxe found! Mining will be slow. Consider crafting one first.");
         }
 
-        // Check torch supply
-        int torches = BlockHelper.countItem(companion, net.minecraft.world.item.Items.TORCH);
-        int estimatedTorchesNeeded = ((currentY - targetY) / 8) + 8; // Rough estimate
+        // === Torch supply: pull from storage, then craft if needed ===
+        int torches = BlockHelper.countItem(companion, Items.TORCH);
+        int estimatedTorchesNeeded = ((currentY - targetY) / 8) + 8;
+
+        // Step 1: Pull existing torches from tagged STORAGE and home area chests
+        if (torches < estimatedTorchesNeeded) {
+            int pulled = pullFromStorage(Items.TORCH, estimatedTorchesNeeded - torches);
+            if (pulled > 0) {
+                torches += pulled;
+                MCAi.LOGGER.info("CreateMine: pulled {} torches from storage, now have {}", pulled, torches);
+            }
+        }
+
+        // Step 2: If still low, pull coal/charcoal + sticks/planks and craft torches
+        if (torches < estimatedTorchesNeeded) {
+            torches = tryAutoCraftTorches(torches, estimatedTorchesNeeded);
+        }
+
         if (torches < estimatedTorchesNeeded) {
             say("Have " + torches + " torches, might need ~" + estimatedTorchesNeeded +
-                    ". Will mine without torches if we run out.");
+                    ". I'll craft more from coal I find while mining.");
         }
 
         MCAi.LOGGER.info("CreateMine: validated. currentY={}, targetY={}, hasPickaxe={}, torches={}",
                 currentY, targetY, hasPickaxe, torches);
 
         phase = Phase.QUEUE_SHAFT;
+    }
+
+    /**
+     * Pull items from tagged STORAGE containers and home area chests into companion inventory.
+     */
+    private int pullFromStorage(Item item, int needed) {
+        int pulled = 0;
+        SimpleContainer inv = companion.getCompanionInventory();
+        Level level = companion.level();
+        java.util.Set<BlockPos> scanned = new java.util.HashSet<>();
+
+        // Tagged STORAGE containers
+        for (TaggedBlock tb : companion.getTaggedBlocks(TaggedBlock.Role.STORAGE)) {
+            if (pulled >= needed) break;
+            scanned.add(tb.pos());
+            pulled += extractFromContainer(level, tb.pos(), inv, item, needed - pulled);
+        }
+
+        // Home area containers
+        if (pulled < needed && companion.hasHomeArea()) {
+            BlockPos c1 = companion.getHomeCorner1();
+            BlockPos c2 = companion.getHomeCorner2();
+            if (c1 != null && c2 != null) {
+                int minX = Math.min(c1.getX(), c2.getX());
+                int minY = Math.min(c1.getY(), c2.getY());
+                int minZ = Math.min(c1.getZ(), c2.getZ());
+                int maxX = Math.max(c1.getX(), c2.getX());
+                int maxY = Math.max(c1.getY(), c2.getY());
+                int maxZ = Math.max(c1.getZ(), c2.getZ());
+                for (int x = minX; x <= maxX && pulled < needed; x++) {
+                    for (int y = minY; y <= maxY && pulled < needed; y++) {
+                        for (int z = minZ; z <= maxZ && pulled < needed; z++) {
+                            BlockPos pos = new BlockPos(x, y, z);
+                            if (scanned.contains(pos)) continue;
+                            scanned.add(pos);
+                            pulled += extractFromContainer(level, pos, inv, item, needed - pulled);
+                        }
+                    }
+                }
+            }
+        }
+        return pulled;
+    }
+
+    /**
+     * Extract items from a container block entity into companion inventory.
+     */
+    private int extractFromContainer(Level level, BlockPos pos, SimpleContainer inv, Item item, int maxExtract) {
+        BlockEntity be = level.getBlockEntity(pos);
+        if (!(be instanceof Container container)) return 0;
+
+        int extracted = 0;
+        for (int i = 0; i < container.getContainerSize() && extracted < maxExtract; i++) {
+            ItemStack stack = container.getItem(i);
+            if (!stack.isEmpty() && stack.getItem() == item) {
+                int take = Math.min(maxExtract - extracted, stack.getCount());
+                ItemStack toInsert = stack.copy();
+                toInsert.setCount(take);
+                ItemStack remainder = inv.addItem(toInsert);
+                int inserted = take - remainder.getCount();
+                if (inserted > 0) {
+                    stack.shrink(inserted);
+                    if (stack.isEmpty()) container.setItem(i, ItemStack.EMPTY);
+                    extracted += inserted;
+                }
+                if (!remainder.isEmpty()) break;
+            }
+        }
+        if (extracted > 0) container.setChanged();
+        return extracted;
+    }
+
+    /**
+     * Try to craft torches by pulling coal/charcoal + sticks/planks from storage.
+     * Returns the new total torch count.
+     */
+    private int tryAutoCraftTorches(int currentTorches, int target) {
+        int needed = target - currentTorches;
+        int batchesNeeded = (needed + 3) / 4; // 1 coal + 1 stick = 4 torches
+
+        // Pull coal/charcoal from storage
+        int coal = BlockHelper.countItem(companion, Items.COAL)
+                 + BlockHelper.countItem(companion, Items.CHARCOAL);
+        if (coal < batchesNeeded) {
+            int pulledCoal = pullFromStorage(Items.COAL, batchesNeeded - coal);
+            coal += pulledCoal;
+            if (coal < batchesNeeded) {
+                int pulledCharcoal = pullFromStorage(Items.CHARCOAL, batchesNeeded - coal);
+                coal += pulledCharcoal;
+            }
+        }
+
+        // Pull sticks from storage
+        int sticks = BlockHelper.countItem(companion, Items.STICK);
+        if (sticks < batchesNeeded) {
+            int pulledSticks = pullFromStorage(Items.STICK, batchesNeeded - sticks);
+            sticks += pulledSticks;
+        }
+
+        // If still no sticks, pull planks and craft sticks
+        if (sticks < batchesNeeded) {
+            // Try pulling planks — look for any plank type
+            Item[] plankTypes = {
+                Items.OAK_PLANKS, Items.SPRUCE_PLANKS, Items.BIRCH_PLANKS,
+                Items.JUNGLE_PLANKS, Items.ACACIA_PLANKS, Items.DARK_OAK_PLANKS,
+                Items.CHERRY_PLANKS, Items.MANGROVE_PLANKS, Items.BAMBOO_PLANKS,
+                Items.CRIMSON_PLANKS, Items.WARPED_PLANKS
+            };
+            int planksNeeded = (batchesNeeded - sticks) * 2; // 2 planks -> 4 sticks
+            for (Item plank : plankTypes) {
+                int have = BlockHelper.countItem(companion, plank);
+                if (have < planksNeeded) {
+                    int pulled = pullFromStorage(plank, planksNeeded - have);
+                    have += pulled;
+                }
+                if (have >= 2) {
+                    int planksToUse = Math.min(have, planksNeeded) & ~1; // Round down to even
+                    if (planksToUse > 0) {
+                        BlockHelper.removeItem(companion, plank, planksToUse);
+                        int sticksProduced = (planksToUse / 2) * 4;
+                        companion.getCompanionInventory().addItem(new ItemStack(Items.STICK, sticksProduced));
+                        sticks += sticksProduced;
+                        MCAi.LOGGER.info("CreateMine: crafted {} sticks from {} planks", sticksProduced, planksToUse);
+                        planksNeeded -= planksToUse;
+                        if (sticks >= batchesNeeded) break;
+                    }
+                }
+            }
+        }
+
+        // If still no sticks or coal, pull logs and craft planks → sticks
+        if (sticks < batchesNeeded || coal < 1) {
+            // Try pulling logs
+            Item[] logTypes = {
+                Items.OAK_LOG, Items.SPRUCE_LOG, Items.BIRCH_LOG,
+                Items.JUNGLE_LOG, Items.ACACIA_LOG, Items.DARK_OAK_LOG,
+                Items.CHERRY_LOG, Items.MANGROVE_LOG
+            };
+            Item[] plankResults = {
+                Items.OAK_PLANKS, Items.SPRUCE_PLANKS, Items.BIRCH_PLANKS,
+                Items.JUNGLE_PLANKS, Items.ACACIA_PLANKS, Items.DARK_OAK_PLANKS,
+                Items.CHERRY_PLANKS, Items.MANGROVE_PLANKS
+            };
+            for (int li = 0; li < logTypes.length; li++) {
+                int have = BlockHelper.countItem(companion, logTypes[li]);
+                if (have == 0) {
+                    int pulled = pullFromStorage(logTypes[li], 8);
+                    have += pulled;
+                }
+                if (have > 0) {
+                    // Craft logs → planks: 1 log → 4 planks
+                    int logsToUse = Math.min(have, 4);
+                    BlockHelper.removeItem(companion, logTypes[li], logsToUse);
+                    int planksProduced = logsToUse * 4;
+                    companion.getCompanionInventory().addItem(new ItemStack(plankResults[li], planksProduced));
+                    MCAi.LOGGER.info("CreateMine: crafted {} planks from {} logs", planksProduced, logsToUse);
+
+                    // Craft planks → sticks if needed
+                    if (sticks < batchesNeeded) {
+                        int plankCount = BlockHelper.countItem(companion, plankResults[li]);
+                        int planksToUse = Math.min(plankCount, (batchesNeeded - sticks) * 2) & ~1;
+                        if (planksToUse >= 2) {
+                            BlockHelper.removeItem(companion, plankResults[li], planksToUse);
+                            int sticksProduced = (planksToUse / 2) * 4;
+                            companion.getCompanionInventory().addItem(new ItemStack(Items.STICK, sticksProduced));
+                            sticks += sticksProduced;
+                            MCAi.LOGGER.info("CreateMine: crafted {} sticks from planks", sticksProduced);
+                        }
+                    }
+                    if (sticks >= batchesNeeded) break;
+                }
+            }
+        }
+
+        // Now craft torches
+        if (coal > 0 && sticks > 0) {
+            int batches = Math.min(Math.min(coal, sticks), batchesNeeded);
+
+            // Consume coal (prefer coal over charcoal)
+            int coalCount = BlockHelper.countItem(companion, Items.COAL);
+            int fromCoal = Math.min(batches, coalCount);
+            if (fromCoal > 0) BlockHelper.removeItem(companion, Items.COAL, fromCoal);
+            int fromCharcoal = batches - fromCoal;
+            if (fromCharcoal > 0) BlockHelper.removeItem(companion, Items.CHARCOAL, fromCharcoal);
+            BlockHelper.removeItem(companion, Items.STICK, batches);
+
+            int torchesProduced = batches * 4;
+            companion.getCompanionInventory().addItem(new ItemStack(Items.TORCH, torchesProduced));
+            currentTorches += torchesProduced;
+
+            MCAi.LOGGER.info("CreateMine: auto-crafted {} torches from storage materials", torchesProduced);
+            say("Crafted " + torchesProduced + " torches for the mine.");
+        }
+
+        return currentTorches;
     }
 
     // ================================================================

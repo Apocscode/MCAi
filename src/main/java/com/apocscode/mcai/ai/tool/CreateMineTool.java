@@ -2,10 +2,12 @@ package com.apocscode.mcai.ai.tool;
 
 import com.apocscode.mcai.MCAi;
 import com.apocscode.mcai.entity.CompanionEntity;
+import com.apocscode.mcai.task.BlockHelper;
 import com.apocscode.mcai.task.OreGuide;
 import com.apocscode.mcai.task.mining.CreateMineTask;
 import com.google.gson.JsonObject;
 import net.minecraft.core.Direction;
+import net.minecraft.world.item.Items;
 
 /**
  * AI Tool: Create a permanent mine with shaft, hub room, and branch mining.
@@ -145,6 +147,36 @@ public class CreateMineTool implements AiTool {
                 }
             }
 
+            // Auto-craft torches if companion doesn't have enough
+            String torchWarning = "";
+            int torchCount = BlockHelper.countItem(companion, Items.TORCH);
+            int estimatedTorchesNeeded = ((currentY - targetY) / 8) + 8;
+            if (torchCount < estimatedTorchesNeeded) {
+                int needed = Math.max(32, estimatedTorchesNeeded) - torchCount;
+                MCAi.LOGGER.info("CreateMine: Low torches ({}/{}), trying to craft {}",
+                        torchCount, estimatedTorchesNeeded, needed);
+
+                AiTool craftTool = ToolRegistry.get("craft_item");
+                if (craftTool != null) {
+                    JsonObject craftArgs = new JsonObject();
+                    craftArgs.addProperty("item", "torch");
+                    craftArgs.addProperty("count", needed);
+                    String craftResult = craftTool.execute(craftArgs, context);
+
+                    if (craftResult.contains("[ASYNC_TASK]")) {
+                        // Need async crafting (gather materials) — defer the mine
+                        return craftResult + " After crafting torches, " +
+                                "I'll create the mine. Say 'create mine' again once torches are ready.";
+                    } else if (craftResult.contains("Crafted")) {
+                        int newCount = BlockHelper.countItem(companion, Items.TORCH);
+                        MCAi.LOGGER.info("CreateMine: Torches crafted, now have {}", newCount);
+                    } else {
+                        torchWarning = " Note: Could not craft torches — mine will be unlit.";
+                        MCAi.LOGGER.info("CreateMine: Could not craft torches: {}", craftResult);
+                    }
+                }
+            }
+
             // Create the orchestrator task
             CreateMineTask mineTask = new CreateMineTask(
                     companion, targetOre, targetY, direction, branchLength, branchesPerSide
@@ -168,6 +200,7 @@ public class CreateMineTool implements AiTool {
             resp.append("This is a big operation — it will take several minutes. ");
             resp.append("STOP calling tools and tell the player the mine is being set up.");
             resp.append(tierWarning);
+            resp.append(torchWarning);
 
             return resp.toString();
         });
