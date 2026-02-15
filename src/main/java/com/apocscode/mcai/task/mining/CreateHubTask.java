@@ -293,7 +293,10 @@ public class CreateHubTask extends CompanionTask {
     private void tickPlaceTorches() {
         // Ensure we have torches — craft from coal/sticks if needed
         if (BlockHelper.countItem(companion, Items.TORCH) < 4) {
-            tryMidMineTorchCraft();
+            int crafted = BlockHelper.tryAutoCraftTorches(companion, 4);
+            if (crafted > 0) {
+                say("Crafted " + crafted + " torches for the hub.");
+            }
         }
 
         Direction dir = mineState.getShaftDirection();
@@ -330,64 +333,4 @@ public class CreateHubTask extends CompanionTask {
     // Torch Crafting
     // ================================================================
 
-    /**
-     * Attempt to craft torches from coal/charcoal + sticks in inventory.
-     * If no sticks, tries to craft sticks from planks first.
-     */
-    private void tryMidMineTorchCraft() {
-        var inv = companion.getCompanionInventory();
-
-        // Count fuel: coal or charcoal
-        int coal = BlockHelper.countItem(companion, Items.COAL)
-                 + BlockHelper.countItem(companion, Items.CHARCOAL);
-        if (coal <= 0) return;
-
-        // Count sticks
-        int sticks = BlockHelper.countItem(companion, Items.STICK);
-
-        // If no sticks, try to craft from planks (any plank type)
-        if (sticks <= 0) {
-            int planks = 0;
-            net.minecraft.world.item.Item plankItem = null;
-            for (int i = 0; i < inv.getContainerSize(); i++) {
-                var stack = inv.getItem(i);
-                if (!stack.isEmpty()) {
-                    String id = net.minecraft.core.registries.BuiltInRegistries.ITEM
-                            .getKey(stack.getItem()).getPath();
-                    if (id.endsWith("_planks")) {
-                        planks += stack.getCount();
-                        if (plankItem == null) plankItem = stack.getItem();
-                    }
-                }
-            }
-            if (planks >= 2 && plankItem != null) {
-                BlockHelper.removeItem(companion, plankItem, 2);
-                inv.addItem(new net.minecraft.world.item.ItemStack(Items.STICK, 4));
-                sticks = 4;
-                MCAi.LOGGER.debug("CreateHub: crafted 4 sticks from planks");
-            }
-        }
-
-        if (sticks <= 0) return;
-
-        // Craft torches: 1 coal + 1 stick -> 4 torches
-        int batches = Math.min(coal, sticks);
-        batches = Math.min(batches, 4); // Only need ~16 torches for a hub
-
-        int coalCount = BlockHelper.countItem(companion, Items.COAL);
-        int fromCoal = Math.min(batches, coalCount);
-        if (fromCoal > 0) {
-            BlockHelper.removeItem(companion, Items.COAL, fromCoal);
-        }
-        int fromCharcoal = batches - fromCoal;
-        if (fromCharcoal > 0) {
-            BlockHelper.removeItem(companion, Items.CHARCOAL, fromCharcoal);
-        }
-        BlockHelper.removeItem(companion, Items.STICK, batches);
-
-        int torchesProduced = batches * 4;
-        inv.addItem(new net.minecraft.world.item.ItemStack(Items.TORCH, torchesProduced));
-
-        MCAi.LOGGER.info("CreateHub: crafted {} torches for hub lighting", torchesProduced);
-    }
 }

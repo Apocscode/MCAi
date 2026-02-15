@@ -4,15 +4,13 @@ import com.apocscode.mcai.MCAi;
 import com.apocscode.mcai.entity.CompanionEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.world.SimpleContainer;
-import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.state.BlockState;
 
 import net.minecraft.tags.FluidTags;
-import net.minecraft.tags.ItemTags;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.FallingBlock;
 
 import javax.annotation.Nullable;
 import java.util.ArrayDeque;
@@ -54,6 +52,13 @@ public class StripMineTask extends CompanionTask {
     private static final int STUCK_TIMEOUT = 60; // 3 seconds
     private static final int ORE_SCAN_RADIUS = 2; // Check 2 blocks around tunnel for ores
     private static final int TORCH_INTERVAL = 8;  // Place a torch every N blocks
+    private static final int TOOL_LOW_DURABILITY = 10; // Warn at 10 uses remaining
+    private static final double INVENTORY_FULL_THRESHOLD = 0.85; // 85% full = stop and warn
+    private boolean toolWarningGiven = false;
+    private boolean inventoryWarningGiven = false;
+    private boolean torchWarningGiven = false;
+    private boolean foodWarningGiven = false;
+    private int emergencyDigAttempts = 0;
 
     private enum Phase {
         WALK_OUT,       // Walk outside the home area before mining
@@ -201,6 +206,15 @@ public class StripMineTask extends CompanionTask {
             navigateTo(descendTargetPos);
             stuckTimer++;
             if (stuckTimer > STUCK_TIMEOUT) {
+                // Try emergency dig-out before giving up
+                if (emergencyDigAttempts < 3) {
+                    boolean dug = BlockHelper.emergencyDigOut(companion);
+                    if (dug) {
+                        emergencyDigAttempts++;
+                        stuckTimer = 0;
+                        return;
+                    }
+                }
                 // Can't reach stair step — start tunneling here instead
                 phase = Phase.TUNNEL;
                 tunnelFacePos = companion.blockPosition();
@@ -255,6 +269,9 @@ public class StripMineTask extends CompanionTask {
             BlockHelper.breakBlock(companion, aheadAbove);
         }
 
+        // Handle falling blocks above staircase opening
+        handleFallingBlocks(aheadAbove.above());
+
         BlockState headState = level.getBlockState(aheadHead);
         if (!headState.isAir()) {
             checkAndQueueOre(aheadHead, headState);
@@ -269,12 +286,9 @@ public class StripMineTask extends CompanionTask {
             BlockHelper.breakBlock(companion, aheadBelow);
         }
 
-        // Ensure solid floor under the new step (2 below current feet level)
+        // Ensure safe floor under the new step (seal hazards too)
         BlockPos floorCheck = aheadBelow.below();
-        BlockState floorState = level.getBlockState(floorCheck);
-        if (floorState.isAir() || floorState.getFluidState().is(FluidTags.LAVA)) {
-            BlockHelper.placeBlock(companion, floorCheck, Blocks.COBBLESTONE);
-        }
+        BlockHelper.sealHazardousFloor(companion, floorCheck);
 
         // Navigate to the new lower position
         descendTargetPos = aheadBelow;
@@ -320,25 +334,85 @@ public class StripMineTask extends CompanionTask {
         if (!isInReach(tunnelFacePos, 2.5)) {
             navigateTo(tunnelFacePos);
             stuckTimer++;
-            if (stuckTimer > STUCK_TIMEOUT) {
-                say("Can't reach tunnel face — stuck at " + companion.blockPosition() +
+            if (stuckTimer > STUCK_TIMEOUT) {                // Try emergency dig-out before giving up
+                if (emergencyDigAttempts < 3) {
+                    boolean dug = BlockHelper.emergencyDigOut(companion);
+                    if (dug) {
+                        emergencyDigAttempts++;
+                        MCAi.LOGGER.info("Strip-mine: emergency dig-out attempt {} at {}", emergencyDigAttempts, companion.blockPosition());
+                        stuckTimer = 0;
+                        return;
+                    }
+                }                say("Can't reach tunnel face — stuck at " + companion.blockPosition() +
                         ". Mined " + oresMined + " ores in " + tunnelProgress + " blocks.");
                 phase = Phase.DONE;
             }
             return;
         }
         stuckTimer = 0;
+        emergencyDigAttempts = 0; // Reset since we reached the face
+
+        // === Health check — eat food if HP < 50% ===
+        if (BlockHelper.tryEatIfLowHealth(companion, 0.5f)) {
+            say("Eating some food to heal up!");
+        } else if (!foodWarningGiven && companion.getHealth() / companion.getMaxHealth() < 0.3f) {
+            say("I'm getting low on health and don't have any food!");
+            foodWarningGiven = true;
+        }
+
+        // === Tool durability check ===
+        if (!toolWarningGiven && !BlockHelper.hasUsablePickaxe(companion, 0)) {
+            // Try auto-crafting a new pickaxe before giving up
+            if (BlockHelper.tryAutoCraftPickaxe(companion)) {
+                say("Crafted a new pickaxe! Continuing mining.");
+                companion.equipBestToolForBlock(companion.level().getBlockState(tunnelFacePos.relative(direction)));
+            } else {
+                say("I don't have a usable pickaxe and can't craft one! Need materials to continue.");
+                toolWarningGiven = true;
+                phase = Phase.DONE;
+                return;
+            }
+        }
+        if (BlockHelper.isToolLowDurability(companion, TOOL_LOW_DURABILITY)) {
+            // Try to swap to a better tool from inventory
+            companion.equipBestToolForBlock(companion.level().getBlockState(tunnelFacePos.relative(direction)));
+        }
+
+        // === Inventory full check ===
+        if (BlockHelper.isInventoryNearlyFull(companion, INVENTORY_FULL_THRESHOLD)) {
+            // Try routing items to tagged storage first
+            if (com.apocscode.mcai.logistics.ItemRoutingHelper.hasTaggedStorage(companion)) {
+                int routed = com.apocscode.mcai.logistics.ItemRoutingHelper.routeAllCompanionItems(companion);
+                if (routed > 0) {
+                    say("Deposited " + routed + " items to storage.");
+                }
+            }
+            // If still full after routing, stop
+            if (BlockHelper.isInventoryNearlyFull(companion, INVENTORY_FULL_THRESHOLD)) {
+                if (!inventoryWarningGiven) {
+                    say("Inventory is almost full! Stopping tunnel at " + tunnelProgress + " blocks. Mined " + oresMined + " ores.");
+                    inventoryWarningGiven = true;
+                }
+                phase = Phase.DONE;
+                return;
+            }
+        }
 
         // Calculate next tunnel position (one block ahead of where we stand)
         BlockPos nextFeet = tunnelFacePos.relative(direction);
         BlockPos nextHead = nextFeet.above();
 
-        // Safety: check for lava/void ahead
+        // Safety: check for lava/water/void ahead
         if (!BlockHelper.isSafeToMine(companion.level(), nextFeet) ||
                 !BlockHelper.isSafeToMine(companion.level(), nextHead)) {
-            say("Lava detected ahead! Stopping tunnel. Mined " + oresMined + " ores in " + tunnelProgress + " blocks.");
-            phase = Phase.DONE;
-            return;
+            // Attempt to seal water/lava with cobblestone and continue
+            boolean sealed = tryToSealFluid(nextFeet, nextHead);
+            if (!sealed) {
+                say("Fluid hazard ahead! Stopping tunnel. Mined " + oresMined + " ores in " + tunnelProgress + " blocks.");
+                phase = Phase.DONE;
+                return;
+            }
+            say("Sealed fluid ahead with cobblestone. Continuing...");
         }
 
         // Don't tunnel into the home area
@@ -363,12 +437,15 @@ public class StripMineTask extends CompanionTask {
             BlockHelper.breakBlock(companion, nextHead);
         }
 
-        // Ensure solid floor under feet (prevent falling into caves/voids)
+        // Handle falling blocks (gravel/sand) above the head after breaking
+        handleFallingBlocks(nextHead.above());
+
+        // Clear hazardous blocks in tunnel space (cobwebs, fire, berry bushes, wither roses)
+        BlockHelper.clearTunnelHazards(companion, nextFeet);
+
+        // Ensure safe floor under feet (prevent falling + seal magma/fire/hazards)
         BlockPos floorPos = nextFeet.below();
-        BlockState floorState = companion.level().getBlockState(floorPos);
-        if (floorState.isAir() || floorState.getFluidState().is(FluidTags.LAVA)) {
-            BlockHelper.placeBlock(companion, floorPos, Blocks.COBBLESTONE);
-        }
+        BlockHelper.sealHazardousFloor(companion, floorPos);
 
         // Scan walls, ceiling, floor for ores
         scanTunnelWalls(nextFeet);
@@ -491,6 +568,61 @@ public class StripMineTask extends CompanionTask {
         }
     }
 
+    /**
+     * Handle gravity-affected blocks (gravel, sand, concrete powder) above a mined position.
+     * After breaking a block at head level, falling blocks above can cascade down and fill
+     * the tunnel, trapping the companion. This mines them preemptively before they fall.
+     */
+    private void handleFallingBlocks(BlockPos abovePos) {
+        Level level = companion.level();
+        int maxFalling = 10; // Safety cap — don't mine an entire gravel column to the sky
+        BlockPos checkPos = abovePos;
+        for (int i = 0; i < maxFalling; i++) {
+            if (level.getBlockState(checkPos).getBlock() instanceof FallingBlock) {
+                companion.equipBestToolForBlock(level.getBlockState(checkPos));
+                BlockHelper.breakBlock(companion, checkPos);
+                checkPos = checkPos.above();
+            } else {
+                break;
+            }
+        }
+    }
+
+    /**
+     * Try to seal fluid (lava/water) adjacent to tunnel blocks with cobblestone.
+     * Places cobblestone on the exposed face to block the fluid from flowing in.
+     *
+     * @return true if fluid was sealed, false if we should stop mining
+     */
+    private boolean tryToSealFluid(BlockPos feetPos, BlockPos headPos) {
+        Level level = companion.level();
+        boolean sealed = false;
+
+        for (BlockPos pos : new BlockPos[]{feetPos, headPos}) {
+            for (net.minecraft.core.Direction dir : net.minecraft.core.Direction.values()) {
+                BlockPos adjacent = pos.relative(dir);
+                BlockState adjState = level.getBlockState(adjacent);
+
+                // Seal lava unconditionally
+                if (adjState.getFluidState().is(FluidTags.LAVA)) {
+                    // Place cobblestone at the tunnel position to block the lava
+                    if (level.getBlockState(pos).isAir() || level.getBlockState(pos).canBeReplaced()) {
+                        BlockHelper.placeBlock(companion, pos, Blocks.COBBLESTONE);
+                        sealed = true;
+                    }
+                }
+                // Seal water source blocks
+                if (adjState.getFluidState().is(FluidTags.WATER) && adjState.getFluidState().isSource()) {
+                    if (level.getBlockState(pos).isAir() || level.getBlockState(pos).canBeReplaced()) {
+                        BlockHelper.placeBlock(companion, pos, Blocks.COBBLESTONE);
+                        sealed = true;
+                    }
+                }
+            }
+        }
+        return sealed;
+    }
+
     // ================================================================
     // Torch Crafting & Placement
     // ================================================================
@@ -501,121 +633,22 @@ public class StripMineTask extends CompanionTask {
      * Falls back to crafting sticks from planks, planks from logs if needed.
      */
     private void tryPlaceTorch(BlockPos tunnelPos) {
-        SimpleContainer inv = companion.getCompanionInventory();
-
-        // Check if we have torches already
-        if (countItem(inv, Items.TORCH) == 0) {
-            // Try to craft torches: 1 coal/charcoal + 1 stick = 4 torches
-            craftTorches(inv);
+        // Check if we have torches — craft with shared method if not
+        if (BlockHelper.countItem(companion, Items.TORCH) == 0) {
+            int crafted = BlockHelper.tryAutoCraftTorches(companion, 8);
+            if (crafted > 0) {
+                say("Crafted " + crafted + " torches.");
+                torchWarningGiven = false; // Reset warning since we got more
+            } else if (!torchWarningGiven) {
+                say("I'm out of torches and don't have materials to craft more!");
+                torchWarningGiven = true;
+            }
         }
 
-        if (countItem(inv, Items.TORCH) > 0) {
-            // Place torch — uses floor torch with wall torch fallback
+        if (BlockHelper.countItem(companion, Items.TORCH) > 0) {
             boolean placed = BlockHelper.placeTorch(companion, tunnelPos);
             if (placed) {
                 MCAi.LOGGER.debug("Strip-mine: placed torch at {}", tunnelPos);
-            }
-        }
-    }
-
-    /**
-     * Craft torches from available materials.
-     * Chain: logs → planks → sticks → torches (with coal/charcoal).
-     */
-    private void craftTorches(SimpleContainer inv) {
-        // Need coal or charcoal
-        boolean hasCoal = countItem(inv, Items.COAL) > 0;
-        boolean hasCharcoal = countItem(inv, Items.CHARCOAL) > 0;
-        if (!hasCoal && !hasCharcoal) return; // Can't craft torches without fuel
-
-        // Ensure we have sticks (2 planks → 4 sticks)
-        if (countItem(inv, Items.STICK) == 0) {
-            craftSticks(inv);
-        }
-        if (countItem(inv, Items.STICK) == 0) return; // No sticks available
-
-        // Craft: 1 coal/charcoal + 1 stick = 4 torches
-        if (hasCoal) {
-            consumeItem(inv, Items.COAL, 1);
-        } else {
-            consumeItem(inv, Items.CHARCOAL, 1);
-        }
-        consumeItem(inv, Items.STICK, 1);
-        inv.addItem(new ItemStack(Items.TORCH, 4));
-        MCAi.LOGGER.info("Strip-mine: crafted 4 torches");
-    }
-
-    /**
-     * Craft sticks from planks. If no planks, convert logs to planks first.
-     * 2 planks → 4 sticks.
-     */
-    private void craftSticks(SimpleContainer inv) {
-        // Try to get planks from logs first if needed
-        if (countAnyPlank(inv) < 2) {
-            convertLogsToPlanks(inv);
-        }
-
-        // Find any plank type and craft sticks
-        for (int i = 0; i < inv.getContainerSize(); i++) {
-            ItemStack stack = inv.getItem(i);
-            if (!stack.isEmpty() && stack.is(ItemTags.PLANKS) && stack.getCount() >= 2) {
-                stack.shrink(2);
-                if (stack.isEmpty()) inv.setItem(i, ItemStack.EMPTY);
-                inv.addItem(new ItemStack(Items.STICK, 4));
-                MCAi.LOGGER.debug("Strip-mine: crafted 4 sticks from planks");
-                return;
-            }
-        }
-    }
-
-    /**
-     * Convert any logs in inventory to planks (1 log → 4 planks).
-     */
-    private void convertLogsToPlanks(SimpleContainer inv) {
-        for (int i = 0; i < inv.getContainerSize(); i++) {
-            ItemStack stack = inv.getItem(i);
-            if (!stack.isEmpty() && stack.is(ItemTags.LOGS)) {
-                // Determine plank type (oak by default for simplicity)
-                stack.shrink(1);
-                if (stack.isEmpty()) inv.setItem(i, ItemStack.EMPTY);
-                inv.addItem(new ItemStack(Items.OAK_PLANKS, 4));
-                MCAi.LOGGER.debug("Strip-mine: converted 1 log → 4 oak planks");
-                return;
-            }
-        }
-    }
-
-    // ================================================================
-    // Inventory Helpers
-    // ================================================================
-
-    private static int countItem(SimpleContainer inv, net.minecraft.world.item.Item item) {
-        int count = 0;
-        for (int i = 0; i < inv.getContainerSize(); i++) {
-            ItemStack stack = inv.getItem(i);
-            if (!stack.isEmpty() && stack.getItem() == item) count += stack.getCount();
-        }
-        return count;
-    }
-
-    private static int countAnyPlank(SimpleContainer inv) {
-        int count = 0;
-        for (int i = 0; i < inv.getContainerSize(); i++) {
-            ItemStack stack = inv.getItem(i);
-            if (!stack.isEmpty() && stack.is(ItemTags.PLANKS)) count += stack.getCount();
-        }
-        return count;
-    }
-
-    private static void consumeItem(SimpleContainer inv, net.minecraft.world.item.Item item, int amount) {
-        int remaining = amount;
-        for (int i = 0; i < inv.getContainerSize() && remaining > 0; i++) {
-            ItemStack stack = inv.getItem(i);
-            if (!stack.isEmpty() && stack.getItem() == item) {
-                int take = Math.min(remaining, stack.getCount());
-                stack.shrink(take);
-                if (stack.isEmpty()) inv.setItem(i, ItemStack.EMPTY);
-                remaining -= take;
             }
         }
     }

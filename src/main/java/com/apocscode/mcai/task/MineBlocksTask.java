@@ -1,7 +1,10 @@
 package com.apocscode.mcai.task;
 
+import com.apocscode.mcai.MCAi;
 import com.apocscode.mcai.entity.CompanionEntity;
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.FallingBlock;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
@@ -19,6 +22,9 @@ public class MineBlocksTask extends CompanionTask {
     private final String description;
     private int totalBlocks = 0;
     private int blocksMined = 0;
+    private boolean toolWarningGiven = false;
+    private boolean foodWarningGiven = false;
+    private static final int TOOL_LOW_DURABILITY = 10;
 
     /**
      * Mine a list of specific block positions.
@@ -90,6 +96,27 @@ public class MineBlocksTask extends CompanionTask {
             return;
         }
 
+        // Health check — eat food if HP < 50%
+        if (BlockHelper.tryEatIfLowHealth(companion, 0.5f)) {
+            say("Eating some food to heal up!");
+        } else if (!foodWarningGiven && companion.getHealth() / companion.getMaxHealth() < 0.3f) {
+            say("I'm getting low on health and don't have any food!");
+            foodWarningGiven = true;
+        }
+
+        // Tool durability check
+        if (!toolWarningGiven && !BlockHelper.hasUsablePickaxe(companion, 0)) {
+            // Try auto-crafting a new pickaxe before giving up
+            if (BlockHelper.tryAutoCraftPickaxe(companion)) {
+                say("Crafted a new pickaxe! Continuing.");
+            } else {
+                say("I don't have a usable pickaxe and can't craft one!");
+                toolWarningGiven = true;
+                complete();
+                return;
+            }
+        }
+
         if (currentTarget == null) {
             currentTarget = targets.peek();
             stuckTimer = 0;
@@ -112,6 +139,8 @@ public class MineBlocksTask extends CompanionTask {
             }
             companion.equipBestToolForBlock(companion.level().getBlockState(currentTarget));
             BlockHelper.breakBlock(companion, currentTarget);
+            // Handle falling blocks above
+            handleFallingBlocks(currentTarget.above());
             blocksMined++;
             targets.poll();
             currentTarget = null;
@@ -131,5 +160,23 @@ public class MineBlocksTask extends CompanionTask {
     @Override
     protected void cleanup() {
         targets.clear();
+    }
+
+    /**
+     * Handle gravity-affected blocks (gravel, sand, concrete powder) above a mined position.
+     */
+    private void handleFallingBlocks(BlockPos abovePos) {
+        Level level = companion.level();
+        int maxFalling = 10;
+        BlockPos checkPos = abovePos;
+        for (int i = 0; i < maxFalling; i++) {
+            if (level.getBlockState(checkPos).getBlock() instanceof FallingBlock) {
+                companion.equipBestToolForBlock(level.getBlockState(checkPos));
+                BlockHelper.breakBlock(companion, checkPos);
+                checkPos = checkPos.above();
+            } else {
+                break;
+            }
+        }
     }
 }

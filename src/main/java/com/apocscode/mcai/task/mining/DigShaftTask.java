@@ -67,6 +67,9 @@ public class DigShaftTask extends CompanionTask {
     /** Torches crafted during mining from found coal. */
     private int torchesCrafted = 0;
 
+    private boolean torchWarningGiven = false;
+    private boolean foodWarningGiven = false;
+
     private enum Phase {
         NAVIGATE_START,   // Move to shaft entrance
         DIG_FORWARD,      // Dig 2 blocks forward at current level
@@ -120,6 +123,29 @@ public class DigShaftTask extends CompanionTask {
 
     @Override
     protected void tick() {
+        // Health check — eat food if HP < 50%
+        if (BlockHelper.tryEatIfLowHealth(companion, 0.5f)) {
+            say("Eating some food to heal up!");
+        } else if (!foodWarningGiven && companion.getHealth() / companion.getMaxHealth() < 0.3f) {
+            say("I'm getting low on health and don't have any food!");
+            foodWarningGiven = true;
+        }
+
+        // Tool durability check
+        if (!BlockHelper.hasUsablePickaxe(companion, 0)) {
+            // Try auto-crafting a new pickaxe before giving up
+            if (BlockHelper.tryAutoCraftPickaxe(companion)) {
+                say("Crafted a new pickaxe! Continuing shaft dig.");
+            } else {
+                say("I don't have a usable pickaxe and can't craft one! Stopping shaft at Y=" + companion.blockPosition().getY() + ".");
+                mineState.setShaftBottom(companion.blockPosition());
+                mineState.addBlocksBroken(blocksBroken);
+                mineState.addOresMined(oresMined);
+                complete();
+                return;
+            }
+        }
+
         switch (phase) {
             case NAVIGATE_START -> tickNavigateStart();
             case DIG_FORWARD -> tickDigForward();
@@ -204,7 +230,14 @@ public class DigShaftTask extends CompanionTask {
         if (blocksSinceLastTorch >= TORCH_INTERVAL) {
             // Try crafting torches if we have none but have materials
             if (BlockHelper.countItem(companion, Items.TORCH) <= 0) {
-                tryMidMineTorchCraft();
+                int crafted = BlockHelper.tryAutoCraftTorches(companion, 8);
+                if (crafted > 0) {
+                    torchesCrafted += crafted;
+                    torchWarningGiven = false;
+                } else if (!torchWarningGiven) {
+                    say("I'm out of torches and don't have materials to craft more!");
+                    torchWarningGiven = true;
+                }
             }
             // Place torch on the wall behind us
             BlockPos torchPos = pos.above(); // Head height at previous position
@@ -259,11 +292,7 @@ public class DigShaftTask extends CompanionTask {
 
         // Ensure solid floor under where we'll walk
         BlockPos floorCheck = lowerFeet.below();
-        BlockState floorState = level.getBlockState(floorCheck);
-        if (floorState.isAir() || floorState.getFluidState().is(net.minecraft.tags.FluidTags.LAVA)) {
-            // Place cobblestone floor
-            BlockHelper.placeBlock(companion, floorCheck, Blocks.COBBLESTONE);
-        }
+        BlockHelper.sealHazardousFloor(companion, floorCheck);
 
         // Handle falling blocks above
         handleFallingBlocks(lowerHead.above());
@@ -367,74 +396,4 @@ public class DigShaftTask extends CompanionTask {
                 stepsDescended, oresMined, blocksBroken, torchesCrafted);
     }
 
-    /**
-     * Attempt to craft torches mid-mining from coal/charcoal + sticks found while digging.
-     * If the companion has coal but no sticks, tries to craft sticks from planks.
-     * If no planks either, skips silently.
-     */
-    private void tryMidMineTorchCraft() {
-        var inv = companion.getCompanionInventory();
-
-        // Count fuel: coal or charcoal
-        int coal = BlockHelper.countItem(companion, Items.COAL)
-                 + BlockHelper.countItem(companion, Items.CHARCOAL);
-        if (coal <= 0) return;
-
-        // Count sticks
-        int sticks = BlockHelper.countItem(companion, Items.STICK);
-
-        // If no sticks, try to craft from planks (any plank type)
-        if (sticks <= 0) {
-            int planks = 0;
-            net.minecraft.world.item.Item plankItem = null;
-            for (int i = 0; i < inv.getContainerSize(); i++) {
-                var stack = inv.getItem(i);
-                if (!stack.isEmpty()) {
-                    String id = net.minecraft.core.registries.BuiltInRegistries.ITEM
-                            .getKey(stack.getItem()).getPath();
-                    if (id.endsWith("_planks")) {
-                        planks += stack.getCount();
-                        if (plankItem == null) plankItem = stack.getItem();
-                    }
-                }
-            }
-            if (planks >= 2 && plankItem != null) {
-                // Craft sticks: 2 planks -> 4 sticks
-                BlockHelper.removeItem(companion, plankItem, 2);
-                companion.getCompanionInventory().addItem(new net.minecraft.world.item.ItemStack(Items.STICK, 4));
-                sticks = 4;
-                MCAi.LOGGER.debug("DigShaft: mid-mine crafted 4 sticks from planks");
-            }
-        }
-
-        if (sticks <= 0) return;
-
-        // Craft torches: 1 coal + 1 stick -> 4 torches
-        int batches = Math.min(coal, sticks); // Each batch: 1 coal + 1 stick = 4 torches
-        batches = Math.min(batches, 8); // Cap at 32 torches per craft
-
-        // Remove materials
-        int coalUsed = 0;
-        // Prefer coal over charcoal
-        int coalCount = BlockHelper.countItem(companion, Items.COAL);
-        int fromCoal = Math.min(batches, coalCount);
-        if (fromCoal > 0) {
-            BlockHelper.removeItem(companion, Items.COAL, fromCoal);
-            coalUsed += fromCoal;
-        }
-        int fromCharcoal = batches - fromCoal;
-        if (fromCharcoal > 0) {
-            BlockHelper.removeItem(companion, Items.CHARCOAL, fromCharcoal);
-            coalUsed += fromCharcoal;
-        }
-        BlockHelper.removeItem(companion, Items.STICK, batches);
-
-        // Add torches
-        int torchesProduced = batches * 4;
-        companion.getCompanionInventory().addItem(new net.minecraft.world.item.ItemStack(Items.TORCH, torchesProduced));
-        torchesCrafted += torchesProduced;
-
-        MCAi.LOGGER.info("DigShaft: mid-mine crafted {} torches ({} coal + {} sticks)",
-                torchesProduced, coalUsed, batches);
-    }
 }

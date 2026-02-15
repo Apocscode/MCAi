@@ -5,6 +5,7 @@ import com.apocscode.mcai.entity.CompanionEntity;
 import com.apocscode.mcai.logistics.TaggedBlock;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.Container;
@@ -128,18 +129,227 @@ public class BlockHelper {
     /**
      * Check if a block is safe to mine (no lava/water source directly behind it).
      * Returns true if safe, false if mining would expose a fluid hazard.
-     * Checks all 6 adjacent faces for lava/water source blocks.
+     * Checks all 6 adjacent faces for lava AND water source blocks.
      */
     public static boolean isSafeToMine(Level level, BlockPos pos) {
-        net.minecraft.core.Direction[] dirs = net.minecraft.core.Direction.values();
-        for (net.minecraft.core.Direction dir : dirs) {
+        for (Direction dir : Direction.values()) {
             BlockState adjacent = level.getBlockState(pos.relative(dir));
             // Block lava exposure entirely
             if (adjacent.getFluidState().is(net.minecraft.tags.FluidTags.LAVA)) {
                 return false;
             }
+            // Block water flooding — source blocks will rush in and flood the tunnel
+            if (adjacent.getFluidState().is(net.minecraft.tags.FluidTags.WATER)
+                    && adjacent.getFluidState().isSource()) {
+                return false;
+            }
         }
         return true;
+    }
+
+    /**
+     * Check if a block at the given position is a hazard the companion should avoid standing on/in.
+     * Covers magma blocks, fire, wither roses, sweet berry bushes, cobwebs, powder snow,
+     * soul sand (returns as slow but not deadly), campfires, and pointed dripstone.
+     *
+     * @return a HazardType describing the hazard, or NONE if safe.
+     */
+    public static HazardType getBlockHazard(Level level, BlockPos pos) {
+        BlockState state = level.getBlockState(pos);
+        Block block = state.getBlock();
+        if (block == Blocks.MAGMA_BLOCK)         return HazardType.MAGMA;
+        if (block == Blocks.FIRE || block == Blocks.SOUL_FIRE) return HazardType.FIRE;
+        if (block == Blocks.WITHER_ROSE)         return HazardType.WITHER_ROSE;
+        if (block == Blocks.SWEET_BERRY_BUSH)    return HazardType.BERRY_BUSH;
+        if (block == Blocks.COBWEB)              return HazardType.COBWEB;
+        if (block == Blocks.POWDER_SNOW)         return HazardType.POWDER_SNOW;
+        if (block == Blocks.CAMPFIRE || block == Blocks.SOUL_CAMPFIRE) return HazardType.FIRE;
+        if (block == Blocks.POINTED_DRIPSTONE)   return HazardType.DRIPSTONE;
+        if (block == Blocks.TNT)                 return HazardType.TNT;
+        if (block == Blocks.SPAWNER)             return HazardType.SPAWNER;
+        if (block == Blocks.CACTUS)              return HazardType.CACTUS;
+        return HazardType.NONE;
+    }
+
+    public enum HazardType {
+        NONE, MAGMA, FIRE, WITHER_ROSE, BERRY_BUSH, COBWEB,
+        POWDER_SNOW, DRIPSTONE, TNT, SPAWNER, CACTUS
+    }
+
+    /**
+     * Check if the floor at a tunnel position has magma, fire, or other damaging blocks.
+     * If so, seal it with cobblestone. Returns true if the floor was hazardous and sealed.
+     */
+    public static boolean sealHazardousFloor(CompanionEntity companion, BlockPos floorPos) {
+        Level level = companion.level();
+        BlockState floorState = level.getBlockState(floorPos);
+        Block floor = floorState.getBlock();
+
+        boolean hazardous = floorState.isAir()
+                || floorState.getFluidState().is(net.minecraft.tags.FluidTags.LAVA)
+                || floor == Blocks.MAGMA_BLOCK
+                || floor == Blocks.FIRE
+                || floor == Blocks.SOUL_FIRE
+                || floor == Blocks.CAMPFIRE
+                || floor == Blocks.SOUL_CAMPFIRE
+                || floor == Blocks.POINTED_DRIPSTONE
+                || floor == Blocks.CACTUS
+                || floor == Blocks.POWDER_SNOW
+                || floor == Blocks.WITHER_ROSE;
+
+        if (hazardous) {
+            placeBlock(companion, floorPos, Blocks.COBBLESTONE);
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Clear hazardous blocks in the tunnel space (feet + head). Breaks cobwebs, fire,
+     * berry bushes, wither roses, and other blocks that would harm or slow the companion.
+     */
+    public static void clearTunnelHazards(CompanionEntity companion, BlockPos feetPos) {
+        Level level = companion.level();
+        BlockPos headPos = feetPos.above();
+        for (BlockPos p : new BlockPos[]{feetPos, headPos}) {
+            HazardType h = getBlockHazard(level, p);
+            if (h != HazardType.NONE && h != HazardType.SPAWNER) {
+                // Break the hazardous block
+                breakBlock(companion, p);
+            }
+        }
+    }
+
+    // ================================================================
+    // Tool Durability Helpers
+    // ================================================================
+
+    /**
+     * Check if the companion's current mainhand tool is about to break.
+     * Returns true if durability is below the threshold.
+     *
+     * @param threshold Number of uses remaining before we consider it "low"
+     * @return true if tool is close to breaking
+     */
+    public static boolean isToolLowDurability(CompanionEntity companion, int threshold) {
+        ItemStack tool = companion.getMainHandItem();
+        if (tool.isEmpty() || !tool.isDamageableItem()) return false;
+        int remaining = tool.getMaxDamage() - tool.getDamageValue();
+        return remaining <= threshold;
+    }
+
+    /**
+     * Check if the companion has ANY usable pickaxe in inventory (not about to break).
+     * Returns false if all pickaxes are nearly broken or missing.
+     */
+    public static boolean hasUsablePickaxe(CompanionEntity companion, int minDurability) {
+        ItemStack mainHand = companion.getMainHandItem();
+        if (isPickaxe(mainHand) && getRemainingDurability(mainHand) > minDurability) return true;
+
+        var inv = companion.getCompanionInventory();
+        for (int i = 0; i < inv.getContainerSize(); i++) {
+            ItemStack stack = inv.getItem(i);
+            if (isPickaxe(stack) && getRemainingDurability(stack) > minDurability) return true;
+        }
+        return false;
+    }
+
+    private static boolean isPickaxe(ItemStack stack) {
+        return !stack.isEmpty() && stack.getItem() instanceof net.minecraft.world.item.PickaxeItem;
+    }
+
+    private static int getRemainingDurability(ItemStack stack) {
+        if (stack.isEmpty() || !stack.isDamageableItem()) return Integer.MAX_VALUE;
+        return stack.getMaxDamage() - stack.getDamageValue();
+    }
+
+    // ================================================================
+    // Emergency Dig-Out
+    // ================================================================
+
+    /**
+     * Emergency dig-out: break blocks immediately around the companion if they're
+     * trapped (surrounded on all sides). Clears a 1x2 space at the companion's
+     * position to prevent permanent entrapment from falling blocks.
+     *
+     * @return true if any blocks were broken
+     */
+    public static boolean emergencyDigOut(CompanionEntity companion) {
+        Level level = companion.level();
+        BlockPos feet = companion.blockPosition();
+        BlockPos head = feet.above();
+        boolean dugAnything = false;
+
+        // Clear feet and head space
+        for (BlockPos pos : new BlockPos[]{feet, head}) {
+            BlockState state = level.getBlockState(pos);
+            if (!state.isAir() && state.getBlock() != Blocks.BEDROCK) {
+                companion.equipBestToolForBlock(state);
+                breakBlock(companion, pos);
+                dugAnything = true;
+            }
+        }
+
+        // If still trapped, try to break one block in each horizontal direction
+        if (dugAnything) {
+            for (Direction dir : new Direction[]{Direction.NORTH, Direction.SOUTH, Direction.EAST, Direction.WEST}) {
+                BlockPos ahead = feet.relative(dir);
+                BlockPos aheadHead = ahead.above();
+                BlockState aState = level.getBlockState(ahead);
+                BlockState hState = level.getBlockState(aheadHead);
+                if (aState.isAir() && hState.isAir()) {
+                    // Found an escape route
+                    return true;
+                }
+            }
+            // No escape yet — dig one direction
+            BlockPos escape = feet.relative(Direction.UP, 0).relative(Direction.NORTH);
+            BlockPos escapeHead = escape.above();
+            BlockState es = level.getBlockState(escape);
+            BlockState eh = level.getBlockState(escapeHead);
+            if (!es.isAir() && es.getBlock() != Blocks.BEDROCK) {
+                companion.equipBestToolForBlock(es);
+                breakBlock(companion, escape);
+            }
+            if (!eh.isAir() && eh.getBlock() != Blocks.BEDROCK) {
+                companion.equipBestToolForBlock(eh);
+                breakBlock(companion, escapeHead);
+            }
+        }
+        return dugAnything;
+    }
+
+    // ================================================================
+    // Dimension Helpers
+    // ================================================================
+
+    /**
+     * Detect which dimension the companion is in.
+     */
+    public static DimensionType getDimension(CompanionEntity companion) {
+        ResourceKey<Level> dim = companion.level().dimension();
+        if (dim == Level.NETHER) return DimensionType.NETHER;
+        if (dim == Level.END) return DimensionType.END;
+        if (dim == Level.OVERWORLD) return DimensionType.OVERWORLD;
+        return DimensionType.MODDED; // Mining dimension, Twilight Forest, etc.
+    }
+
+    public enum DimensionType {
+        OVERWORLD, NETHER, END, MODDED
+    }
+
+    /**
+     * Check if the current dimension is the Nether (special hazards apply).
+     */
+    public static boolean isInNether(CompanionEntity companion) {
+        return companion.level().dimension() == Level.NETHER;
+    }
+
+    /**
+     * Check if the current dimension is the End.
+     */
+    public static boolean isInEnd(CompanionEntity companion) {
+        return companion.level().dimension() == Level.END;
     }
 
     /**
@@ -600,5 +810,483 @@ public class BlockHelper {
     public static boolean isFallingBlock(Level level, BlockPos pos) {
         Block block = level.getBlockState(pos).getBlock();
         return block instanceof net.minecraft.world.level.block.FallingBlock;
+    }
+
+    // ================================================================
+    // Auto-Craft Tool System
+    // ================================================================
+
+    /**
+     * Tool types that can be auto-crafted during tasks.
+     */
+    public enum ToolType {
+        PICKAXE, AXE, SHOVEL, HOE, SWORD
+    }
+
+    /**
+     * Try to auto-craft the best possible tool of the given type from inventory materials.
+     * Attempts tiers in order: diamond → iron → stone → wooden.
+     * Will also craft prerequisite sticks and planks from logs if needed.
+     * Also checks tagged STORAGE containers for materials.
+     *
+     * @param companion The companion entity
+     * @param toolType  The type of tool to craft
+     * @return true if a tool was successfully crafted
+     */
+    public static boolean tryAutoCraftTool(CompanionEntity companion, ToolType toolType) {
+        var inv = companion.getCompanionInventory();
+
+        // Pull materials from tagged storage if available
+        if (com.apocscode.mcai.logistics.ItemRoutingHelper.hasTaggedStorage(companion)) {
+            pullCraftingMaterials(companion);
+        }
+
+        // Try each tier from best to worst
+        if (tryCraftToolTier(inv, toolType, "diamond")) return true;
+        if (tryCraftToolTier(inv, toolType, "iron")) return true;
+        if (tryCraftToolTier(inv, toolType, "stone")) return true;
+        if (tryCraftToolTier(inv, toolType, "wood")) return true;
+
+        return false;
+    }
+
+    /**
+     * Try to craft a tool at a specific tier. Returns true if crafted.
+     * Recipes: 3 material + 2 sticks = 1 tool (pickaxe/axe/hoe)
+     *          1 material + 2 sticks = 1 shovel
+     *          2 material + 1 stick  = 1 sword
+     */
+    private static boolean tryCraftToolTier(net.minecraft.world.SimpleContainer inv,
+                                             ToolType toolType, String tier) {
+        net.minecraft.world.item.Item material = getMaterialForTier(tier);
+        net.minecraft.world.item.Item result = getResultItem(toolType, tier);
+        if (material == null || result == null) return false;
+
+        int materialNeeded = getMaterialCount(toolType);
+        int sticksNeeded = getStickCount(toolType);
+
+        // Check if we have the material
+        int materialCount = countInContainer(inv, material);
+        if (materialCount < materialNeeded) return false;
+
+        // Ensure we have sticks — craft from planks/logs if needed
+        int stickCount = countInContainer(inv, Items.STICK);
+        if (stickCount < sticksNeeded) {
+            craftSticksFromMaterials(inv, sticksNeeded - stickCount);
+            stickCount = countInContainer(inv, Items.STICK);
+        }
+        if (stickCount < sticksNeeded) return false;
+
+        // Craft the tool!
+        consumeFromContainer(inv, material, materialNeeded);
+        consumeFromContainer(inv, Items.STICK, sticksNeeded);
+        inv.addItem(new ItemStack(result, 1));
+
+        MCAi.LOGGER.info("Auto-crafted {} {} (consumed {}x {} + {}x stick)",
+                tier, toolType.name().toLowerCase(), materialNeeded,
+                material.getDescription().getString(), sticksNeeded);
+        return true;
+    }
+
+    private static net.minecraft.world.item.Item getMaterialForTier(String tier) {
+        return switch (tier) {
+            case "diamond" -> Items.DIAMOND;
+            case "iron" -> Items.IRON_INGOT;
+            case "stone" -> Items.COBBLESTONE;
+            case "wood" -> null; // Handled via planks tag
+            default -> null;
+        };
+    }
+
+    /**
+     * For wood tier, use any plank type as material.
+     */
+    private static boolean tryCraftWoodTool(net.minecraft.world.SimpleContainer inv,
+                                             ToolType toolType) {
+        int materialNeeded = getMaterialCount(toolType);
+        int planksAvailable = countPlanksInContainer(inv);
+        if (planksAvailable < materialNeeded) {
+            // Try converting logs to planks
+            convertLogsToPlanksBH(inv);
+            planksAvailable = countPlanksInContainer(inv);
+        }
+        if (planksAvailable < materialNeeded) return false;
+
+        int sticksNeeded = getStickCount(toolType);
+        int stickCount = countInContainer(inv, Items.STICK);
+        if (stickCount < sticksNeeded) {
+            craftSticksFromMaterials(inv, sticksNeeded - stickCount);
+            stickCount = countInContainer(inv, Items.STICK);
+        }
+        if (stickCount < sticksNeeded) return false;
+
+        // Consume planks
+        consumePlanksFromContainer(inv, materialNeeded);
+        consumeFromContainer(inv, Items.STICK, sticksNeeded);
+
+        net.minecraft.world.item.Item result = getResultItem(toolType, "wood");
+        if (result == null) return false;
+        inv.addItem(new ItemStack(result, 1));
+
+        MCAi.LOGGER.info("Auto-crafted wooden {} (consumed {}x planks + {}x stick)",
+                toolType.name().toLowerCase(), materialNeeded, sticksNeeded);
+        return true;
+    }
+
+    private static int getMaterialCount(ToolType type) {
+        return switch (type) {
+            case PICKAXE, AXE, HOE -> 3;
+            case SWORD -> 2;
+            case SHOVEL -> 1;
+        };
+    }
+
+    private static int getStickCount(ToolType type) {
+        return switch (type) {
+            case PICKAXE, AXE, SHOVEL, HOE -> 2;
+            case SWORD -> 1;
+        };
+    }
+
+    private static net.minecraft.world.item.Item getResultItem(ToolType toolType, String tier) {
+        return switch (tier + "_" + toolType.name().toLowerCase()) {
+            case "diamond_pickaxe" -> Items.DIAMOND_PICKAXE;
+            case "diamond_axe" -> Items.DIAMOND_AXE;
+            case "diamond_shovel" -> Items.DIAMOND_SHOVEL;
+            case "diamond_hoe" -> Items.DIAMOND_HOE;
+            case "diamond_sword" -> Items.DIAMOND_SWORD;
+            case "iron_pickaxe" -> Items.IRON_PICKAXE;
+            case "iron_axe" -> Items.IRON_AXE;
+            case "iron_shovel" -> Items.IRON_SHOVEL;
+            case "iron_hoe" -> Items.IRON_HOE;
+            case "iron_sword" -> Items.IRON_SWORD;
+            case "stone_pickaxe" -> Items.STONE_PICKAXE;
+            case "stone_axe" -> Items.STONE_AXE;
+            case "stone_shovel" -> Items.STONE_SHOVEL;
+            case "stone_hoe" -> Items.STONE_HOE;
+            case "stone_sword" -> Items.STONE_SWORD;
+            case "wood_pickaxe" -> Items.WOODEN_PICKAXE;
+            case "wood_axe" -> Items.WOODEN_AXE;
+            case "wood_shovel" -> Items.WOODEN_SHOVEL;
+            case "wood_hoe" -> Items.WOODEN_HOE;
+            case "wood_sword" -> Items.WOODEN_SWORD;
+            default -> null;
+        };
+    }
+
+    /**
+     * Craft sticks from planks, and planks from logs if needed.
+     * 2 planks → 4 sticks.
+     */
+    private static void craftSticksFromMaterials(net.minecraft.world.SimpleContainer inv, int sticksNeeded) {
+        // First try to get planks from logs if we don't have enough planks
+        int planksAvailable = countPlanksInContainer(inv);
+        if (planksAvailable < 2) {
+            convertLogsToPlanksBH(inv);
+        }
+
+        // Craft sticks: 2 planks → 4 sticks (repeat until we have enough)
+        int craftRounds = (sticksNeeded + 3) / 4; // ceil(needed / 4)
+        for (int round = 0; round < craftRounds; round++) {
+            if (countPlanksInContainer(inv) < 2) break;
+            consumePlanksFromContainer(inv, 2);
+            inv.addItem(new ItemStack(Items.STICK, 4));
+        }
+    }
+
+    /**
+     * Convert logs in inventory to planks. 1 log → 4 planks.
+     */
+    private static void convertLogsToPlanksBH(net.minecraft.world.SimpleContainer inv) {
+        for (int i = 0; i < inv.getContainerSize(); i++) {
+            ItemStack stack = inv.getItem(i);
+            if (!stack.isEmpty() && stack.is(net.minecraft.tags.ItemTags.LOGS)) {
+                stack.shrink(1);
+                if (stack.isEmpty()) inv.setItem(i, ItemStack.EMPTY);
+                inv.addItem(new ItemStack(Items.OAK_PLANKS, 4));
+                return; // One log at a time
+            }
+        }
+    }
+
+    private static int countInContainer(net.minecraft.world.SimpleContainer inv,
+                                         net.minecraft.world.item.Item item) {
+        int count = 0;
+        for (int i = 0; i < inv.getContainerSize(); i++) {
+            ItemStack stack = inv.getItem(i);
+            if (!stack.isEmpty() && stack.getItem() == item) count += stack.getCount();
+        }
+        return count;
+    }
+
+    private static int countPlanksInContainer(net.minecraft.world.SimpleContainer inv) {
+        int count = 0;
+        for (int i = 0; i < inv.getContainerSize(); i++) {
+            ItemStack stack = inv.getItem(i);
+            if (!stack.isEmpty() && stack.is(net.minecraft.tags.ItemTags.PLANKS))
+                count += stack.getCount();
+        }
+        return count;
+    }
+
+    private static void consumeFromContainer(net.minecraft.world.SimpleContainer inv,
+                                              net.minecraft.world.item.Item item, int amount) {
+        int remaining = amount;
+        for (int i = 0; i < inv.getContainerSize() && remaining > 0; i++) {
+            ItemStack stack = inv.getItem(i);
+            if (!stack.isEmpty() && stack.getItem() == item) {
+                int take = Math.min(remaining, stack.getCount());
+                stack.shrink(take);
+                if (stack.isEmpty()) inv.setItem(i, ItemStack.EMPTY);
+                remaining -= take;
+            }
+        }
+    }
+
+    private static void consumePlanksFromContainer(net.minecraft.world.SimpleContainer inv, int amount) {
+        int remaining = amount;
+        for (int i = 0; i < inv.getContainerSize() && remaining > 0; i++) {
+            ItemStack stack = inv.getItem(i);
+            if (!stack.isEmpty() && stack.is(net.minecraft.tags.ItemTags.PLANKS)) {
+                int take = Math.min(remaining, stack.getCount());
+                stack.shrink(take);
+                if (stack.isEmpty()) inv.setItem(i, ItemStack.EMPTY);
+                remaining -= take;
+            }
+        }
+    }
+
+    /**
+     * Pull common crafting materials from tagged STORAGE containers into companion inventory.
+     * Pulls iron ingots, diamonds, cobblestone, sticks, planks, and logs.
+     */
+    private static void pullCraftingMaterials(CompanionEntity companion) {
+        var storageBlocks = companion.getTaggedBlocks(TaggedBlock.Role.STORAGE);
+        var inv = companion.getCompanionInventory();
+
+        net.minecraft.world.item.Item[] wantedItems = {
+                Items.IRON_INGOT, Items.DIAMOND, Items.COBBLESTONE,
+                Items.STICK, Items.OAK_PLANKS, Items.SPRUCE_PLANKS,
+                Items.BIRCH_PLANKS, Items.DARK_OAK_PLANKS
+        };
+
+        for (var tb : storageBlocks) {
+            var be = companion.level().getBlockEntity(tb.pos());
+            if (be instanceof net.minecraft.world.Container container) {
+                for (int i = 0; i < container.getContainerSize(); i++) {
+                    ItemStack stack = container.getItem(i);
+                    if (stack.isEmpty()) continue;
+                    for (net.minecraft.world.item.Item wanted : wantedItems) {
+                        if (stack.getItem() == wanted) {
+                            // Pull up to 16 of each material
+                            int existing = countInContainer(inv, wanted);
+                            if (existing < 16) {
+                                int pull = Math.min(16 - existing, stack.getCount());
+                                ItemStack pulled = stack.split(pull);
+                                inv.addItem(pulled);
+                                if (stack.isEmpty()) container.setItem(i, ItemStack.EMPTY);
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Convenience: try to auto-craft a pickaxe specifically.
+     * Returns true if a pickaxe was crafted and is now in inventory.
+     */
+    public static boolean tryAutoCraftPickaxe(CompanionEntity companion) {
+        // Handle wood tier separately since it uses planks tag
+        var inv = companion.getCompanionInventory();
+
+        // Pull materials from storage first
+        if (com.apocscode.mcai.logistics.ItemRoutingHelper.hasTaggedStorage(companion)) {
+            pullCraftingMaterials(companion);
+        }
+
+        // Try best tier first
+        if (tryCraftToolTier(inv, ToolType.PICKAXE, "diamond")) return true;
+        if (tryCraftToolTier(inv, ToolType.PICKAXE, "iron")) return true;
+        if (tryCraftToolTier(inv, ToolType.PICKAXE, "stone")) return true;
+        if (tryCraftWoodTool(inv, ToolType.PICKAXE)) return true;
+
+        return false;
+    }
+
+    // ================================================================
+    // Auto-Craft Torches (shared across all mining tasks)
+    // ================================================================
+
+    /**
+     * Try to auto-craft torches from inventory materials.
+     * Chain: logs → planks → sticks, then coal/charcoal + sticks → torches.
+     * Also pulls materials from tagged STORAGE containers if available.
+     *
+     * @param companion The companion entity
+     * @param maxBatches Maximum craft batches (each = 1 coal + 1 stick → 4 torches). Use 8 for mining, 4 for hubs.
+     * @return Number of torches crafted (0 if no materials)
+     */
+    public static int tryAutoCraftTorches(CompanionEntity companion, int maxBatches) {
+        var inv = companion.getCompanionInventory();
+
+        // Pull torch materials from storage if available
+        if (com.apocscode.mcai.logistics.ItemRoutingHelper.hasTaggedStorage(companion)) {
+            pullTorchMaterials(companion);
+        }
+
+        // Count fuel: coal or charcoal
+        int coal = countItem(companion, Items.COAL) + countItem(companion, Items.CHARCOAL);
+        if (coal <= 0) return 0;
+
+        // Ensure we have sticks — craft from planks/logs if needed
+        int sticks = countItem(companion, Items.STICK);
+        if (sticks <= 0) {
+            // Try planks → sticks first
+            int planks = countPlanksInContainer(inv);
+            if (planks < 2) {
+                // Try logs → planks first
+                convertLogsToPlanksBH(inv);
+                planks = countPlanksInContainer(inv);
+            }
+            if (planks >= 2) {
+                int rounds = Math.min(planks / 2, 4); // Craft up to 16 sticks
+                for (int r = 0; r < rounds; r++) {
+                    consumePlanksFromContainer(inv, 2);
+                    inv.addItem(new ItemStack(Items.STICK, 4));
+                }
+                sticks = countItem(companion, Items.STICK);
+            }
+        }
+
+        if (sticks <= 0) return 0;
+
+        // Craft torches: 1 coal/charcoal + 1 stick → 4 torches
+        int batches = Math.min(coal, sticks);
+        batches = Math.min(batches, maxBatches);
+
+        // Prefer coal over charcoal
+        int coalCount = countItem(companion, Items.COAL);
+        int fromCoal = Math.min(batches, coalCount);
+        if (fromCoal > 0) removeItem(companion, Items.COAL, fromCoal);
+        int fromCharcoal = batches - fromCoal;
+        if (fromCharcoal > 0) removeItem(companion, Items.CHARCOAL, fromCharcoal);
+        removeItem(companion, Items.STICK, batches);
+
+        int torchesProduced = batches * 4;
+        inv.addItem(new ItemStack(Items.TORCH, torchesProduced));
+
+        MCAi.LOGGER.info("Auto-crafted {} torches ({} coal/charcoal + {} sticks)", 
+                torchesProduced, fromCoal + fromCharcoal, batches);
+        return torchesProduced;
+    }
+
+    /**
+     * Pull torch-crafting materials from tagged STORAGE containers.
+     */
+    private static void pullTorchMaterials(CompanionEntity companion) {
+        var storageBlocks = companion.getTaggedBlocks(TaggedBlock.Role.STORAGE);
+        var inv = companion.getCompanionInventory();
+
+        net.minecraft.world.item.Item[] wantedItems = {
+                Items.COAL, Items.CHARCOAL, Items.STICK,
+                Items.TORCH // May already have torches in storage
+        };
+
+        for (var tb : storageBlocks) {
+            var be = companion.level().getBlockEntity(tb.pos());
+            if (be instanceof Container container) {
+                for (int i = 0; i < container.getContainerSize(); i++) {
+                    ItemStack stack = container.getItem(i);
+                    if (stack.isEmpty()) continue;
+                    for (net.minecraft.world.item.Item wanted : wantedItems) {
+                        if (stack.getItem() == wanted) {
+                            int existing = countInContainer(inv, wanted);
+                            if (existing < 64) {
+                                int pull = Math.min(64 - existing, stack.getCount());
+                                ItemStack pulled = stack.split(pull);
+                                inv.addItem(pulled);
+                                if (stack.isEmpty()) container.setItem(i, ItemStack.EMPTY);
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ================================================================
+    // Health Check & Auto-Eat (shared across all mining tasks)
+    // ================================================================
+
+    /**
+     * Check if the companion is low on health and try to eat food from inventory.
+     * Should be called from mining task tick() methods to allow healing during tasks.
+     *
+     * @param companion The companion entity
+     * @param healthThreshold HP threshold (e.g. 0.5 for 50% health). Below this, try to eat.
+     * @return true if companion ate food, false if no food or health is fine
+     */
+    public static boolean tryEatIfLowHealth(CompanionEntity companion, float healthThreshold) {
+        float healthPercent = companion.getHealth() / companion.getMaxHealth();
+        if (healthPercent >= healthThreshold) return false;
+
+        // Try to eat from inventory
+        if (companion.tryEatFood()) {
+            MCAi.LOGGER.info("Mining health check: ate food at {}% HP", (int)(healthPercent * 100));
+            return true;
+        }
+
+        // No food in inventory — try pulling from storage
+        if (com.apocscode.mcai.logistics.ItemRoutingHelper.hasTaggedStorage(companion)) {
+            pullFoodFromStorage(companion);
+            if (companion.tryEatFood()) {
+                MCAi.LOGGER.info("Mining health check: ate food from storage at {}% HP", (int)(healthPercent * 100));
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Check if the companion has any food items in inventory.
+     */
+    public static boolean hasFood(CompanionEntity companion) {
+        var inv = companion.getCompanionInventory();
+        for (int i = 0; i < inv.getContainerSize(); i++) {
+            ItemStack stack = inv.getItem(i);
+            if (!stack.isEmpty() && stack.has(net.minecraft.core.component.DataComponents.FOOD)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Pull food items from tagged STORAGE containers into companion inventory.
+     */
+    private static void pullFoodFromStorage(CompanionEntity companion) {
+        var storageBlocks = companion.getTaggedBlocks(TaggedBlock.Role.STORAGE);
+        var inv = companion.getCompanionInventory();
+
+        for (var tb : storageBlocks) {
+            var be = companion.level().getBlockEntity(tb.pos());
+            if (be instanceof Container container) {
+                for (int i = 0; i < container.getContainerSize(); i++) {
+                    ItemStack stack = container.getItem(i);
+                    if (!stack.isEmpty() && stack.has(net.minecraft.core.component.DataComponents.FOOD)) {
+                        int pull = Math.min(16, stack.getCount());
+                        ItemStack pulled = stack.split(pull);
+                        inv.addItem(pulled);
+                        if (stack.isEmpty()) container.setItem(i, ItemStack.EMPTY);
+                        return; // One food type is enough
+                    }
+                }
+            }
+        }
     }
 }

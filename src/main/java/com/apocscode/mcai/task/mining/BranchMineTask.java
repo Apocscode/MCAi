@@ -87,6 +87,9 @@ public class BranchMineTask extends CompanionTask {
     private static final double INVENTORY_FULL_THRESHOLD = 0.80;
     private static final int MAX_ORE_DETOUR = 3; // Max blocks to detour for an ore
 
+    private boolean torchWarningGiven = false;
+    private boolean foodWarningGiven = false;
+
     private enum Phase {
         NAVIGATE_HUB,       // Return to hub center
         DIG_CORRIDOR,       // Extend the central corridor for the next branch pair
@@ -172,6 +175,16 @@ public class BranchMineTask extends CompanionTask {
 
     @Override
     protected void tick() {
+        // Health check — eat food if HP < 50%
+        if (phase != Phase.DEPOSIT_ITEMS && phase != Phase.NAVIGATE_HUB && phase != Phase.DONE) {
+            if (BlockHelper.tryEatIfLowHealth(companion, 0.5f)) {
+                say("Eating some food to heal up!");
+            } else if (!foodWarningGiven && companion.getHealth() / companion.getMaxHealth() < 0.3f) {
+                say("I'm getting low on health and don't have any food!");
+                foodWarningGiven = true;
+            }
+        }
+
         // Check inventory capacity before doing work
         if (phase != Phase.DEPOSIT_ITEMS && phase != Phase.NAVIGATE_HUB && phase != Phase.DONE) {
             if (BlockHelper.isInventoryNearlyFull(companion, INVENTORY_FULL_THRESHOLD)) {
@@ -180,7 +193,21 @@ public class BranchMineTask extends CompanionTask {
                 return;
             }
         }
-
+        // Tool durability check
+        if (phase != Phase.DEPOSIT_ITEMS && phase != Phase.NAVIGATE_HUB && phase != Phase.DONE) {
+            if (!BlockHelper.hasUsablePickaxe(companion, 0)) {
+                // Try auto-crafting a new pickaxe before giving up
+                if (BlockHelper.tryAutoCraftPickaxe(companion)) {
+                    say("Crafted a new pickaxe! Continuing mining.");
+                } else {
+                    say("I don't have a usable pickaxe and can't craft one! Need materials to continue.");
+                    mineState.addOresMined(oresMined);
+                    mineState.addBlocksBroken(blocksBroken);
+                    phase = Phase.DONE;
+                    return;
+                }
+            }
+        }
         switch (phase) {
             case NAVIGATE_HUB -> tickNavigateHub();
             case DIG_CORRIDOR -> tickDigCorridor();
@@ -374,12 +401,9 @@ public class BranchMineTask extends CompanionTask {
         // Handle falling blocks
         handleFallingBlocks(nextHead.above());
 
-        // Ensure solid floor
+        // Ensure safe floor (seals magma, fire, lava, air)
         BlockPos floorPos = nextFeet.below();
-        BlockState floorState = level.getBlockState(floorPos);
-        if (floorState.isAir() || floorState.getFluidState().is(net.minecraft.tags.FluidTags.LAVA)) {
-            BlockHelper.placeBlock(companion, floorPos, Blocks.COBBLESTONE);
-        }
+        BlockHelper.sealHazardousFloor(companion, floorPos);
 
         // Scan walls for ores
         scanTunnelWalls(nextFeet, branchDir);
@@ -392,7 +416,13 @@ public class BranchMineTask extends CompanionTask {
         if (blocksSinceLastTorch >= TORCH_INTERVAL) {
             // Try crafting torches if we have none but have materials
             if (BlockHelper.countItem(companion, Items.TORCH) <= 0) {
-                tryMidMineTorchCraft();
+                int crafted = BlockHelper.tryAutoCraftTorches(companion, 8);
+                if (crafted > 0) {
+                    torchWarningGiven = false;
+                } else if (!torchWarningGiven) {
+                    say("I'm out of torches and don't have materials to craft more!");
+                    torchWarningGiven = true;
+                }
             }
             BlockPos torchPos = currentEnd.above(); // Head height at previous position
             if (BlockHelper.placeTorch(companion, torchPos)) {
@@ -629,69 +659,4 @@ public class BranchMineTask extends CompanionTask {
     // Torch Crafting (mid-mine)
     // ================================================================
 
-    /**
-     * Attempt to craft torches mid-mining from coal/charcoal + sticks found while digging.
-     * If the companion has coal but no sticks, tries to craft sticks from planks.
-     * If no planks either, skips silently.
-     */
-    private void tryMidMineTorchCraft() {
-        var inv = companion.getCompanionInventory();
-
-        // Count fuel: coal or charcoal
-        int coal = BlockHelper.countItem(companion, Items.COAL)
-                 + BlockHelper.countItem(companion, Items.CHARCOAL);
-        if (coal <= 0) return;
-
-        // Count sticks
-        int sticks = BlockHelper.countItem(companion, Items.STICK);
-
-        // If no sticks, try to craft from planks (any plank type)
-        if (sticks <= 0) {
-            int planks = 0;
-            net.minecraft.world.item.Item plankItem = null;
-            for (int i = 0; i < inv.getContainerSize(); i++) {
-                var stack = inv.getItem(i);
-                if (!stack.isEmpty()) {
-                    String id = net.minecraft.core.registries.BuiltInRegistries.ITEM
-                            .getKey(stack.getItem()).getPath();
-                    if (id.endsWith("_planks")) {
-                        planks += stack.getCount();
-                        if (plankItem == null) plankItem = stack.getItem();
-                    }
-                }
-            }
-            if (planks >= 2 && plankItem != null) {
-                // Craft sticks: 2 planks -> 4 sticks
-                BlockHelper.removeItem(companion, plankItem, 2);
-                inv.addItem(new net.minecraft.world.item.ItemStack(Items.STICK, 4));
-                sticks = 4;
-                MCAi.LOGGER.debug("BranchMine: mid-mine crafted 4 sticks from planks");
-            }
-        }
-
-        if (sticks <= 0) return;
-
-        // Craft torches: 1 coal + 1 stick -> 4 torches
-        int batches = Math.min(coal, sticks);
-        batches = Math.min(batches, 8); // Cap at 32 torches per craft
-
-        // Remove materials — prefer coal over charcoal
-        int coalCount = BlockHelper.countItem(companion, Items.COAL);
-        int fromCoal = Math.min(batches, coalCount);
-        if (fromCoal > 0) {
-            BlockHelper.removeItem(companion, Items.COAL, fromCoal);
-        }
-        int fromCharcoal = batches - fromCoal;
-        if (fromCharcoal > 0) {
-            BlockHelper.removeItem(companion, Items.CHARCOAL, fromCharcoal);
-        }
-        BlockHelper.removeItem(companion, Items.STICK, batches);
-
-        // Add torches
-        int torchesProduced = batches * 4;
-        inv.addItem(new net.minecraft.world.item.ItemStack(Items.TORCH, torchesProduced));
-
-        MCAi.LOGGER.info("BranchMine: mid-mine crafted {} torches ({} coal + {} sticks)",
-                torchesProduced, fromCoal + fromCharcoal, batches);
-    }
 }

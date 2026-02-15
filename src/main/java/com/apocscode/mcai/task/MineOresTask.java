@@ -4,6 +4,7 @@ import com.apocscode.mcai.MCAi;
 import com.apocscode.mcai.entity.CompanionEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.FallingBlock;
 import net.minecraft.world.level.block.state.BlockState;
 
 import javax.annotation.Nullable;
@@ -34,6 +35,10 @@ public class MineOresTask extends CompanionTask {
     private static final int MAX_SCAN_ATTEMPTS = 3;
     private static final int STUCK_TIMEOUT_TICKS = 60; // 3 seconds per block
     private static final int MAX_CONSECUTIVE_SKIPS = 3;
+    private static final int TOOL_LOW_DURABILITY = 10;
+    private boolean toolWarningGiven = false;
+    private boolean foodWarningGiven = false;
+    private int emergencyDigAttempts = 0;
 
     /** Constructor for mining all ore types. */
     public MineOresTask(CompanionEntity companion, int radius, int maxOres) {
@@ -102,6 +107,29 @@ public class MineOresTask extends CompanionTask {
             return;
         }
 
+        // Health check — eat food if HP < 50%
+        if (BlockHelper.tryEatIfLowHealth(companion, 0.5f)) {
+            say("Eating some food to heal up!");
+        } else if (!foodWarningGiven && companion.getHealth() / companion.getMaxHealth() < 0.3f) {
+            say("I'm getting low on health and don't have any food!");
+            foodWarningGiven = true;
+        }
+
+        // Tool durability check
+        if (!toolWarningGiven && !BlockHelper.hasUsablePickaxe(companion, 0)) {
+            // Try auto-crafting a new pickaxe before giving up
+            if (BlockHelper.tryAutoCraftPickaxe(companion)) {
+                String oreLabel = targetOre != null ? targetOre.name + " ore" : "ores";
+                say("Crafted a new pickaxe! Continuing to mine " + oreLabel + ".");
+            } else {
+                String oreLabel = targetOre != null ? targetOre.name + " ore" : "ores";
+                say("I don't have a usable pickaxe and can't craft one! Mined " + oresMined + " " + oreLabel + " so far.");
+                toolWarningGiven = true;
+                complete();
+                return;
+            }
+        }
+
         if (targets.isEmpty()) {
             scanAttempts++;
             if (scanAttempts > MAX_SCAN_ATTEMPTS) {
@@ -168,6 +196,8 @@ public class MineOresTask extends CompanionTask {
             }
             companion.equipBestToolForBlock(targetState);
             BlockHelper.breakBlock(companion, currentTarget);
+            // Handle falling blocks (gravel/sand) above the mined ore
+            handleFallingBlocks(currentTarget.above());
             targets.poll();
             currentTarget = null;
             stuckTimer = 0;
@@ -177,6 +207,15 @@ public class MineOresTask extends CompanionTask {
             navigateTo(currentTarget);
             stuckTimer++;
             if (stuckTimer > STUCK_TIMEOUT_TICKS) {
+                // Try emergency dig-out before skipping
+                if (emergencyDigAttempts < 3) {
+                    boolean dug = BlockHelper.emergencyDigOut(companion);
+                    if (dug) {
+                        emergencyDigAttempts++;
+                        stuckTimer = 0;
+                        return;
+                    }
+                }
                 targets.poll();
                 currentTarget = null;
                 stuckTimer = 0;
@@ -191,6 +230,25 @@ public class MineOresTask extends CompanionTask {
                     }
                     return;
                 }
+            }
+        }
+    }
+
+    /**
+     * Handle gravity-affected blocks (gravel, sand, concrete powder) above a mined position.
+     * Prevents falling blocks from burying the companion after mining an ore.
+     */
+    private void handleFallingBlocks(BlockPos abovePos) {
+        Level level = companion.level();
+        int maxFalling = 10;
+        BlockPos checkPos = abovePos;
+        for (int i = 0; i < maxFalling; i++) {
+            if (level.getBlockState(checkPos).getBlock() instanceof FallingBlock) {
+                companion.equipBestToolForBlock(level.getBlockState(checkPos));
+                BlockHelper.breakBlock(companion, checkPos);
+                checkPos = checkPos.above();
+            } else {
+                break;
             }
         }
     }

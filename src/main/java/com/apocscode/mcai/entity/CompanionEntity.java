@@ -229,6 +229,10 @@ public class CompanionEntity extends PathfinderMob implements MenuProvider {
         this.setPathfindingMalus(net.minecraft.world.level.pathfinder.PathType.DANGER_OTHER, 8.0F);
         this.setPathfindingMalus(net.minecraft.world.level.pathfinder.PathType.WATER, 4.0F);  // Allow water crossings but discourage ocean paths
         this.setPathfindingMalus(net.minecraft.world.level.pathfinder.PathType.WATER_BORDER, 2.0F);
+        this.setPathfindingMalus(net.minecraft.world.level.pathfinder.PathType.POWDER_SNOW, -1.0F); // Never path into powder snow
+        this.setPathfindingMalus(net.minecraft.world.level.pathfinder.PathType.DANGER_POWDER_SNOW, 8.0F);
+        this.setPathfindingMalus(net.minecraft.world.level.pathfinder.PathType.COCOA, 0.0F); // Cocoa pods - passable
+        this.setPathfindingMalus(net.minecraft.world.level.pathfinder.PathType.LEAVES, 4.0F); // Discourage but allow leaf movement
 
         // === Door navigation — walk through doors like villagers ===
         this.setPathfindingMalus(net.minecraft.world.level.pathfinder.PathType.DOOR_OPEN, 0.0F);
