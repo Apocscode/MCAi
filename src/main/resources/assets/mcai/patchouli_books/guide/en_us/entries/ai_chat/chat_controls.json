@@ -1,0 +1,23 @@
+{
+    "name": "Chat Controls",
+    "icon": "minecraft:note_block",
+    "category": "mcai:ai_chat",
+    "sortnum": 4,
+    "pages": [
+        {
+            "type": "patchouli:text",
+            "title": "Mute & Unmute",
+            "text": "Your companion chats proactively when idle — commenting on surroundings, cracking jokes, or noting nearby events.$(br2)To silence this:$(br)$(thing)\"shut up\"$() / $(thing)\"be quiet\"$() / $(thing)\"mute\"$()$(br2)To re-enable:$(br)$(thing)\"talk again\"$() / $(thing)\"unmute\"$() / $(thing)\"you can talk\"$()$(br2)$(bold)Important:$() Muting only silences voluntary chatter. $(italic)Urgent messages$() (low health warnings, death notices, task completions) always come through."
+        },
+        {
+            "type": "patchouli:text",
+            "title": "Idle Chat",
+            "text": "When not busy and not muted, the companion will occasionally speak up — roughly once per 10 minutes of idle time.$(br2)This is controlled by the $(bold)enableProactiveChat$() config option in the MCAi settings.$(br2)Idle chat uses the AI to generate context-aware remarks about biome, time of day, weather, and nearby entities."
+        },
+        {
+            "type": "patchouli:text",
+            "title": "Bug Report Button",
+            "text": "In the companion's inventory screen, there is a $(bold)Bug Report$() button (GitHub icon).$(br2)Clicking it opens a pre-filled GitHub issue form in your browser, making it easy to report problems you encounter during gameplay.$(br2)This helps the developer track and fix issues quickly."
+        }
+    ]
+}

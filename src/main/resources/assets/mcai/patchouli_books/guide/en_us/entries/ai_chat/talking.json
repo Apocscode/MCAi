@@ -11,6 +11,11 @@
         },
         {
             "type": "patchouli:text",
+            "title": "Multi-Part Commands",
+            "text": "You can give complex, multi-step instructions in a single message:$(br2)$(li)$(thing)\"Mine some iron and then craft a pickaxe\"$(br)$(li)$(thing)\"Craft a chest and place it next to the furnace\"$(br)$(li)$(thing)\"Chop trees, make planks, then craft sticks\"$(br2)The AI decomposes these into separate tool calls and chains them automatically. Simple commands like $(thing)\"craft a bucket\"$() still run instantly via local parsing."
+        },
+        {
+            "type": "patchouli:text",
             "title": "AI Tools (34)",
             "text": "Your companion has $(bold)34 tools$() including:$(br2)$(li)Mine ores, strip mine, create permanent mines$(li)Craft items (full autonomous chain)$(li)Smelt at furnaces$(li)Build structures$(li)Farm, chop trees, gather blocks$(li)Fish, trade with villagers$(li)Kill mobs, guard areas$(li)Deliver items, interact with containers$(li)Search the web, bookmark locations$(li)Remember facts, perform emotes$(li)Execute game commands, scan surroundings"
         }

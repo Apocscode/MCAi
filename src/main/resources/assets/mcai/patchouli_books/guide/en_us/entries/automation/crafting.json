@@ -11,13 +11,18 @@
         },
         {
             "type": "patchouli:text",
-            "title": "Tool Prerequisites",
-            "text": "The crafting system auto-detects when tools are needed:$(br2)$(li)Need to mine stone? Crafts a wooden pickaxe first$(li)Need to mine iron? Crafts wooden \u2192 stone pickaxe first$(li)Need to mine diamond? Crafts the whole pickaxe chain$(br2)It checks both $(bold)MINE$() steps (ores) and $(bold)GATHER$() steps (cobblestone, stone) for tool requirements.$(br2)The companion also fetches materials from nearby $(#55FF55)STORAGE$() chests before gathering from the world."
+            "title": "Smart Material Hints",
+            "text": "When materials are missing, the companion gives specific advice:$(br2)$(li)$(bold)Diamonds, emeralds, lapis$() \u2192 $(thing)mine_ores$()$(li)$(bold)Iron, gold, copper$() \u2192 $(thing)mine_ores$() then smelt$(li)$(bold)Wood, sticks, planks$() \u2192 $(thing)chop_trees$()$(li)$(bold)Other blocks$() \u2192 $(thing)gather_blocks$()$(br2)The system also shows $(bold)difficulty warnings$() for dangerous ingredients \u2014 color-coded from $(#FFFF55)WARNING$() to $(#FF5555)IMPOSSIBLE$()."
+        },
+        {
+            "type": "patchouli:text",
+            "title": "Loop Safety",
+            "text": "The AI agent has built-in safety to prevent infinite retries:$(br2)$(li)$(bold)Recursion guard$() \u2014 blocks re-attempting the same craft within 60 seconds$(li)$(bold)Cycle detection$() \u2014 prevents diamond \u2194 diamond_block loops$(li)$(bold)Agent loop breaker$() \u2014 if the AI calls the same tool 3+ times with identical arguments, it stops and tells you what\u2019s missing$(br2)When crafting isn\u2019t possible, the companion will tell you exactly what materials you need."
         },
         {
             "type": "patchouli:text",
             "title": "Smelting",
-            "text": "The $(bold)smelt_items$() tool handles furnace automation:$(br2)$(li)Finds a nearby furnace (or auto-crafts + places one)$(li)Inserts items and fuel$(li)Waits for smelting to complete$(li)Collects the output$(li)Auto-gathers fuel (chops trees) if needed$(br2)Smelting is also built into the crafting chain \u2014 if a recipe needs ingots, the companion will smelt raw ore automatically.$(br2)Say $(thing)\"Smelt my raw iron\"$() or just $(thing)\"Make iron ingots\"$()."
+            "text": "The $(bold)smelt_items$() tool handles furnace automation:$(br2)$(li)Finds a nearby furnace (or auto-crafts + places one)$(li)Inserts items and fuel$(li)Waits for smelting to complete$(li)Collects the output$(li)Auto-gathers fuel (mines coal underground, or chops trees)$(li)Pulls fuel from tagged STORAGE chests$(br2)Smelting is also built into the crafting chain \u2014 if a recipe needs ingots, the companion will smelt raw ore automatically.$(br2)Say $(thing)\"Smelt my raw iron\"$() or just $(thing)\"Make iron ingots\"$()."
         }
     ]
 }

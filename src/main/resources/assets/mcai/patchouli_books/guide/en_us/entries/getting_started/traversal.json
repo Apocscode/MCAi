@@ -1,0 +1,23 @@
+{
+    "name": "Traversal & Navigation",
+    "icon": "minecraft:oak_door",
+    "category": "mcai:getting_started",
+    "sortnum": 2,
+    "pages": [
+        {
+            "type": "patchouli:text",
+            "title": "Movement Capabilities",
+            "text": "Your companion has enhanced traversal abilities beyond normal villagers:$(br2)$(bold)Step Height$() — Can step up 1-block ledges (slabs, stairs, single blocks) without jumping.$(br2)$(bold)Swimming$() — Navigates through water and never drowns (unlimited air supply). Avoids deep water unless necessary.$(br2)$(bold)Climbing$() — Can use ladders and vines to navigate vertically."
+        },
+        {
+            "type": "patchouli:text",
+            "title": "Doors & Gates",
+            "text": "$(bold)Wooden Doors$() — Opens them to pass through, then closes them behind (keeps mobs out).$(br2)$(bold)Iron Doors$() — Detects nearby buttons within 2 blocks and presses them to open iron doors.$(br2)$(bold)Fence Gates$() — Opens fence gates to pass through and closes them after.$(br2)$(bold)Trapdoors$() — Special void-safety check prevents walking over open trapdoors to avoid falling into dangerous drops."
+        },
+        {
+            "type": "patchouli:text",
+            "title": "Pathfinding Notes",
+            "text": "$(li)The companion uses A* pathfinding with water given a movement cost penalty (prefers land routes)$(li)Teleports to the player if distance exceeds 24 blocks in FOLLOW mode$(li)Modded doors (from any mod) are treated correctly through block-tag detection$(li)During mining tasks, the companion uses arrival gating — waits to physically reach each waypoint before proceeding$(br2)If the companion gets stuck, use $(thing)!come$() or $(thing)!here$() to teleport them to you."
+        }
+    ]
+}

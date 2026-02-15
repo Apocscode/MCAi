@@ -1,9 +1,9 @@
 {
     "name": "MCAi Companion Guide",
-    "landing_text": "Everything you need to know about your AI companion.$(br2)From spawning and chatting to mining, crafting, logistics, and combat — this guide covers all MCAi features.$(br2)$(bold)34 AI tools$(), level-up system, permanent mines, autonomous crafting, home area protection, and more.",
+    "landing_text": "Everything you need to know about your AI companion.$(br2)From spawning and chatting to mining, crafting, logistics, and combat \u2014 this guide covers all MCAi features.$(br2)$(bold)34 AI tools$(), level-up system, permanent mines, autonomous crafting, home area protection, traversal mechanics, multi-part command understanding, and more.",
     "model": "patchouli:book_brown",
     "book_texture": "patchouli:textures/gui/book_brown.png",
     "show_progress": false,
-    "version": 3,
+    "version": 4,
     "use_resource_pack": true
 }

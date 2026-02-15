@@ -12,7 +12,7 @@
         {
             "type": "patchouli:text",
             "title": "Switching Modes",
-            "text": "Use these methods to change modes:$(br2)$(li)Quick commands: $(thing)!follow$(), $(thing)!stay$(), $(thing)!auto$()$(li)Chat with the AI: \"Switch to follow mode\"$(li)Inventory screen buttons (Stay / Follow / Auto)$(li)The HUD overlay shows the current mode as a colored badge.$(br2)Guard mode is activated via the $(thing)guard_area$() AI tool."
+            "text": "Use these methods to change modes:$(br2)$(li)Quick commands: $(thing)!follow$(), $(thing)!stay$(), $(thing)!auto$()$(li)Chat with the AI: \"Switch to follow mode\"$(li)Inventory screen buttons (Stay / Follow / Auto)$(li)The HUD overlay shows the current mode as a colored badge.$(br2)Guard mode is activated via the $(thing)guard_area$() AI tool.$(br2)See also: $(l:mcai:ai_chat/chat_controls)Chat Controls$(/l) for muting, and $(l:mcai:getting_started/traversal)Traversal$(/l) for movement capabilities."
         }
     ]
 }
