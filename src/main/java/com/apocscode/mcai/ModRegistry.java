@@ -72,6 +72,9 @@ public class ModRegistry {
                                 output.accept(COMPANION_SPAWN_EGG.get());
                                 output.accept(SOUL_CRYSTAL.get());
                                 output.accept(LOGISTICS_WAND.get());
+                                // Patchouli guide book is added automatically by
+                                // Patchouli's processCreativeTabs event via the
+                                // "creative_tab" field in book.json
                             })
                             .build());
 

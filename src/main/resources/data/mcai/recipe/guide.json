@@ -1,0 +1,8 @@
+{
+    "type": "patchouli:shapeless_book_recipe",
+    "ingredients": [
+        { "item": "minecraft:book" },
+        { "item": "mcai:soul_crystal" }
+    ],
+    "book": "mcai:guide"
+}

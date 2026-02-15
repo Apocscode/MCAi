@@ -64,9 +64,19 @@ configurations {
     runtimeClasspath.extendsFrom localRuntime
 }
 
+repositories {
+    maven {
+        name = 'BlameJared'
+        url = 'https://maven.blamejared.com'
+    }
+}
+
 dependencies {
     // Gson is bundled with Minecraft, but we declare it for clarity
     // (used for Ollama JSON parsing)
+
+    // Patchouli (optional) — in-game guide book
+    compileOnly("vazkii.patchouli:Patchouli:1.21.1-92-NEOFORGE")
 }
 
 var generateModMetadata = tasks.register("generateModMetadata", ProcessResources) {
