@@ -7,17 +7,22 @@
         {
             "type": "patchouli:text",
             "title": "Permanent Mine",
-            "text": "The $(bold)create_mine$() tool builds a full mining operation:$(br2)$(bold)Phase 1: Staircase Shaft$(br)A walkable 2×1 staircase (no ladders needed) descends to the target Y-level. Torches placed every 8 blocks. Lava is sealed with cobblestone.$(br2)$(bold)Phase 2: Hub Room$(br)A 7×5×4 room is cleared and furnished with:$(br)$(li)2 chests for item storage$(li)1 furnace$(li)1 crafting table$(li)4 torches for lighting$(li)Cobblestone floor"
+            "text": "The $(bold)create_mine$() tool builds a full mining operation:$(br2)$(bold)Phase 1: Staircase Shaft$(br)A walkable 2×1 staircase (no ladders needed) descends to the target Y-level. Torches placed every 8 blocks, auto-crafted from coal+sticks if needed. Lava is sealed with cobblestone.$(br2)$(bold)Phase 2: Hub Room$(br)A 7×5×4 room is cleared and furnished with:$(br)$(li)2 chests for item storage$(li)1 furnace$(li)1 crafting table$(li)4 torches (auto-crafted if needed)$(li)Cobblestone floor"
         },
         {
             "type": "patchouli:text",
             "title": "Branch Mining",
-            "text": "$(bold)Phase 3: Branch Mining$(br)From the hub, a central corridor extends forward. Branch tunnels are dug perpendicular to both sides:$(br2)$(li)3-block spacing between branches (every block visible)$(li)Poke holes every 4 blocks for extra coverage$(li)Wall ore scanning and mining$(li)Torches every 8 blocks$(li)Auto-deposit at hub when inventory reaches 80%$(br2)$(bold)Parameters:$(br)$(thing)ore$() — target ore (determines Y-level)$(br)$(thing)branch_length$() — 8-40 blocks (default: 20)$(br)$(thing)branches_per_side$() — 1-8 pairs (default: 4)"
+            "text": "$(bold)Phase 3: Branch Mining$(br)From the hub, a central corridor extends forward. Branch tunnels are dug perpendicular to both sides:$(br2)$(li)3-block spacing between branches (every block visible)$(li)Poke holes every 4 blocks for extra coverage$(li)Wall ore scanning and mining$(li)Torches every 8 blocks (auto-crafted mid-mine)$(li)Auto-deposit at hub when inventory reaches 80%$(br2)$(bold)Parameters:$(br)$(thing)ore$() — target ore (determines Y-level)$(br)$(thing)branch_length$() — 8-40 blocks (default: 20)$(br)$(thing)branches_per_side$() — 1-8 pairs (default: 4)$(br)$(thing)new_mine$() — force a fresh mine (default: false)"
+        },
+        {
+            "type": "patchouli:text",
+            "title": "Mine Memory",
+            "text": "Mines are $(bold)remembered$() across sessions! When you create a mine, the entrance location is saved to the companion's memory.$(br2)$(bold)Automatic Resume$(br)If you say $(thing)\"mine diamonds\"$() again, the companion will return to the existing diamond mine and resume branch mining — no new shaft is dug.$(br2)$(bold)Force New Mine$(br)Say $(thing)\"create new diamond mine\"$() to start a completely fresh mine (the old location is overwritten).$(br2)$(bold)List Mines$(br)Ask $(thing)\"where are my mines?\"$() to see all remembered mine locations with coordinates and details."
         },
         {
             "type": "patchouli:text",
             "title": "Safety Features",
-            "text": "The mining system handles hazards automatically:$(br2)$(li)$(bold)Lava$() — Checks all adjacent faces before mining. Seals with cobblestone if found below.$(li)$(bold)Falling blocks$() — Mines gravel/sand columns up to 10 blocks.$(li)$(bold)Missing floor$() — Places cobblestone over gaps.$(li)$(bold)Inventory full$() — Returns to hub chests to deposit.$(li)$(bold)Stuck detection$() — Skips unreachable areas after timeout.$(br2)Say $(thing)\"Create a diamond mine\"$() and the companion handles everything!"
+            "text": "The mining system handles hazards automatically:$(br2)$(li)$(bold)Lava$() — Checks all adjacent faces before mining. Seals with cobblestone if found below.$(li)$(bold)Falling blocks$() — Mines gravel/sand columns up to 10 blocks.$(li)$(bold)Missing floor$() — Places cobblestone over gaps.$(li)$(bold)Inventory full$() — Returns to hub chests to deposit.$(li)$(bold)Out of torches$() — Auto-crafts from coal+sticks, or planks→sticks if needed.$(li)$(bold)Stuck detection$() — Skips unreachable areas after timeout."
         }
     ]
 }

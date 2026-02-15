@@ -39,9 +39,13 @@ The companion uses a cloud AI backend (Groq / OpenRouter) with Ollama as a local
 
 ### Mining
 - **Ore scanning** — finds specific ores in range
-- **Strip mining** — staircase descent to target Y-level, then tunnel with ore detection
-- **Permanent mines** — Create hub with branching tunnels, resumable across sessions
+- **Strip mining** — staircase descent to target Y-level, then tunnel with ore detection and wall torch fallback
+- **Permanent mines** — Create hub with branching tunnels, torch crafting mid-mine
+- **Mine memory** — mines are remembered across sessions; companion returns to existing mine instead of digging a new one (say "create new mine" to force fresh)
+- **Mine listing** — ask "where are my mines?" to see all saved mine locations
 - **Area mining** — clears a defined region
+- **Dig down** — walkable 2×1 staircase shaft (not a vertical drop) with torches, ore scanning, lava safety
+- **Universal torch crafting** — all mining tasks auto-craft torches from coal+sticks found while digging
 
 ### Logistics & Home Area
 - **Logistics Wand** — tag containers as Input/Output/Storage
@@ -91,9 +95,9 @@ The companion uses a cloud AI backend (Groq / OpenRouter) with Ollama as a local
 | **Soul Crystal** | 2 Diamond + 2 Gold + 1 Ender Pearl | Summon/dismiss companion, resummon after death |
 | **Logistics Wand** | 1 Ender Pearl + 1 Gold Nugget + 1 Iron | Tag containers, set home area, cycle modes with Shift+Scroll |
 
-## AI Tools (34)
+## AI Tools (35)
 
-The companion has 34 tools it can call autonomously based on conversation.
+The companion has 35 tools it can call autonomously based on conversation.
 Complex multi-part commands ("mine iron and then craft a pickaxe") are automatically decomposed by the AI into sequential tool calls.
 
 | Category | Tools |
@@ -102,7 +106,7 @@ Complex multi-part commands ("mine iron and then craft a pickaxe") are automatic
 | **Items** | `interact_container`, `find_and_fetch_item`, `transfer_items`, `deliver_items` |
 | **Crafting** | `craft_item`, `smelt_items` |
 | **Gathering** | `chop_trees`, `mine_ores`, `mine_area`, `gather_blocks`, `dig_down`, `farm_area`, `fishing` |
-| **Mining** | `strip_mine`, `create_mine` |
+| **Mining** | `strip_mine`, `create_mine`, `list_mines` |
 | **Combat** | `guard_area`, `kill_mob` |
 | **Building** | `build_structure`, `set_block` |
 | **Social** | `emote`, `rename_companion`, `villager_trade` |

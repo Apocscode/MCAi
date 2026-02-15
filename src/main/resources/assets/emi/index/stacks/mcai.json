@@ -1,0 +1,8 @@
+{
+    "added": [
+        {
+            "id": "patchouli:guide_book",
+            "nbt": "{\"patchouli:book\":\"mcai:guide\"}"
+        }
+    ]
+}

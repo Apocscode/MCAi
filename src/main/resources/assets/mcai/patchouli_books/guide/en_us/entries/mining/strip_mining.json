@@ -7,7 +7,7 @@
         {
             "type": "patchouli:text",
             "title": "Strip Mine Tool",
-            "text": "The strip mine tool digs a 1×2 tunnel at the optimal Y-level for your target ore.$(br2)$(bold)How it works:$(br)$(li)Descends to the best Y-level for the target ore$(li)Tunnels horizontally in the specified direction$(li)Scans walls, ceiling, and floor for ores$(li)Side-trips to mine any bonus ores found within 2 blocks$(li)Stops when target count is reached or tunnel length limit$(br2)Example: $(thing)\"Strip mine for iron, 48 blocks east\"$() → descends to Y=16 and tunnels 48 blocks east."
+            "text": "The strip mine tool digs a 1×2 tunnel at the optimal Y-level for your target ore.$(br2)$(bold)How it works:$(br)$(li)Descends to the best Y-level for the target ore$(li)Tunnels horizontally in the specified direction$(li)Scans walls, ceiling, and floor for ores$(li)Side-trips to mine any bonus ores found within 2 blocks$(li)Auto-crafts torches from coal+sticks mid-mine$(li)Places wall torches if floor torch fails$(li)Stops when target count is reached or tunnel length limit$(br2)Example: $(thing)\"Strip mine for iron, 48 blocks east\"$() → descends to Y=16 and tunnels 48 blocks east."
         },
         {
             "type": "patchouli:text",

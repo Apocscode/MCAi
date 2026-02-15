@@ -13,6 +13,11 @@
             "type": "patchouli:text",
             "title": "Memory Details",
             "text": "Memory operations:$(br2)$(li)$(bold)Remember$() — Store a fact (key → value)$(li)$(bold)Recall$() — Look up a specific memory$(li)$(bold)Forget$() — Delete a memory$(li)$(bold)List All$() — View all stored memories$(li)$(bold)Log Event$() — Record a timestamped event$(br2)Memories persist via NBT — they survive game restarts and deaths. The AI automatically decides when to store or recall information."
+        },
+        {
+            "type": "patchouli:text",
+            "title": "Automatic Memories",
+            "text": "Some features save memories automatically:$(br2)$(bold)Mine Locations$(br)When the companion creates a mine, the entrance coordinates, target Y-level, and direction are saved. Next time you say $(thing)\"mine diamonds\"$(), it returns to the existing mine instead of digging a new one.$(br2)Ask $(thing)\"where are my mines?\"$() to see all saved mine locations.$(br2)$(bold)Events$(br)Significant actions (mine creation, item delivery, etc.) are logged to the event history for context."
         }
     ]
 }
