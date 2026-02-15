@@ -114,18 +114,19 @@ Complex multi-part commands ("mine iron and then craft a pickaxe") are automatic
 
 ## AI Backend
 
-MCAi uses a fallback chain for AI requests:
+MCAi uses a three-tier fallback chain for AI requests:
 
-1. **Groq** (primary) — fast cloud inference, free tier
-2. **OpenRouter** (fallback) — secondary cloud provider
-3. **Ollama** (local fallback) — runs on your GPU, auto-starts/stops with the game
+1. **Primary Cloud** (default: Groq) — fast cloud inference, free tier
+2. **Fallback Cloud** (default: OpenRouter) — secondary provider, activates on rate limits
+3. **Ollama** (local) — runs on your GPU, auto-starts/stops with the game
+
+**Any OpenAI-compatible API works** — just change 3 config values (`cloudApiKey`, `cloudModel`, `cloudUrl`). This includes OpenAI (GPT-4o), Anthropic (Claude via OpenRouter), Together, Cerebras, SambaNova, and more. See the **[AI Guide](AI_GUIDE.md)** for detailed provider comparison, example configurations, free vs paid analysis, and troubleshooting.
 
 The agent loop includes safety mechanisms:
 - **Deduplication breaker** — detects 3+ identical tool calls and forces a stop
 - **[CANNOT_CRAFT] directive** — prevents infinite retry loops when materials are missing
 - **Async task marker** — queued tasks (mining, smelting) get a single status response
-
-Configure API keys in the mod config (`mcai-common.toml`).
+- **Tool iteration cap** — hard limit (default 10) prevents runaway agent loops
 
 ## Block Protection System
 
@@ -146,7 +147,7 @@ The companion gains XP from completing tasks and levels up:
 ## Configuration
 
 All settings are in `mcai-common.toml`:
-- AI provider API keys and model selection
+- AI provider API keys and model selection — see **[AI Guide](AI_GUIDE.md)** for setup examples
 - Companion behavior (follow distance, home range, logistics range)
 - Tool permissions
 - Ollama auto-start settings

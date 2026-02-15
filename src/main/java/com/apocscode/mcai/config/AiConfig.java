@@ -107,31 +107,60 @@ public class AiConfig {
 
         builder.pop(); // connection
 
-        builder.comment("Cloud AI settings — any OpenAI-compatible API (Groq, OpenRouter, Together, Cerebras, etc.)",
-                "Set an API key to use cloud AI instead of local Ollama",
-                "When cloudApiKey is set (not empty), cloud AI is used as primary backend",
-                "Recommended providers:",
+        builder.comment("Cloud AI settings — any OpenAI-compatible API works with MCAi.",
+                "",
+                "HOW TO SWITCH PROVIDERS:",
+                "  1. Get an API key from your chosen provider (see URLs below)",
+                "  2. Set cloudApiKey to your key",
+                "  3. Set cloudModel to your chosen model name",
+                "  4. Set cloudUrl to the provider's chat completions endpoint",
+                "  5. Restart the world — changes take effect on load",
+                "",
+                "QUICK START EXAMPLES:",
+                "  Free (Groq):    key from console.groq.com",
+                "                  model = meta-llama/llama-4-scout-17b-16e-instruct",
+                "                  url   = https://api.groq.com/openai/v1/chat/completions",
+                "",
+                "  Cheap (OpenAI): key from platform.openai.com (~$0.10/day)",
+                "                  model = gpt-4o-mini",
+                "                  url   = https://api.openai.com/v1/chat/completions",
+                "",
+                "  Premium (Claude via OpenRouter): key from openrouter.ai (~$1-2/day)",
+                "                  model = anthropic/claude-3.5-sonnet",
+                "                  url   = https://openrouter.ai/api/v1/chat/completions",
+                "",
+                "  Leave cloudApiKey empty to use local Ollama instead (no internet needed).",
+                "  See AI_GUIDE.md for full provider list, comparisons, and troubleshooting.",
+                "",
+                "Supported providers (all use the same OpenAI-compatible format):",
                 "  Groq:       https://console.groq.com  (free, fast, 500K TPD limit)",
                 "  OpenRouter: https://openrouter.ai      (free models available, many providers)",
+                "  OpenAI:     https://platform.openai.com (paid, best tool calling accuracy)",
                 "  Together:   https://together.ai        ($5 free credits, large models)",
                 "  Cerebras:   https://cerebras.ai        (free, very fast inference)",
                 "  SambaNova:  https://sambanova.ai       (free, generous limits)").push("cloud");
 
         CLOUD_API_KEY = builder
-                .comment("Cloud API key (leave empty to use local Ollama instead)")
+                .comment("Cloud API key — paste your key here. Leave empty to use local Ollama instead.",
+                        "Get a free key from console.groq.com, or a paid key from platform.openai.com")
                 .define("cloudApiKey", "");
 
         CLOUD_MODEL = builder
-                .comment("Model name — depends on provider. Examples:",
-                        "  Groq:       meta-llama/llama-4-scout-17b-16e-instruct",
-                        "  OpenRouter: meta-llama/llama-3.3-70b-instruct:free",
+                .comment("Model name — must match the provider you're using. Examples:",
+                        "  Groq:       meta-llama/llama-4-scout-17b-16e-instruct (free, good)",
+                        "  OpenAI:     gpt-4o-mini (cheap, excellent tool calling)",
+                        "  OpenAI:     gpt-4o (premium, best quality)",
+                        "  OpenRouter: anthropic/claude-3.5-sonnet (premium, great reasoning)",
+                        "  OpenRouter: meta-llama/llama-3.3-70b-instruct:free (free)",
                         "  Together:   meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo",
-                        "  Cerebras:   llama3.1-8b")
+                        "  Cerebras:   llama3.1-8b (free, very fast)")
                 .define("cloudModel", "meta-llama/llama-4-scout-17b-16e-instruct");
 
         CLOUD_URL = builder
-                .comment("Cloud API endpoint URL (OpenAI chat completions format). Examples:",
+                .comment("Cloud API endpoint URL — must use the OpenAI chat completions format.",
+                        "Change this when switching providers. Examples:",
                         "  Groq:       https://api.groq.com/openai/v1/chat/completions",
+                        "  OpenAI:     https://api.openai.com/v1/chat/completions",
                         "  OpenRouter: https://openrouter.ai/api/v1/chat/completions",
                         "  Together:   https://api.together.xyz/v1/chat/completions",
                         "  Cerebras:   https://api.cerebras.ai/v1/chat/completions",
