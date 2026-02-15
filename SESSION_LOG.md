@@ -669,5 +669,216 @@ git commit -m "description"
 
 ---
 
-*Last updated: 2026-02-14 — Session 14*
+## Session 15 — 2026-02-14 (Evening) — Patchouli Guide Book, Mining System, Mine Memory
+
+### Focus: In-game documentation, mining fixes, mine persistence
+
+### Commits
+- `ea74f25` — **Patchouli guide book v4**: multi-part commands page, chat controls page (mute/unmute, idle chat, bug report), traversal page (step height, doors, gates, trapdoors, water, pathfinding), updated crafting/strip mine/behavior pages
+- `543fc9b` — **Fix Patchouli guide book not appearing**: added `compileOnly` Patchouli dependency + BlameJared maven, `creative_tab` field in book.json, shapeless recipe (book + soul crystal = guide)
+- `8fef6c2` — **Fix mine torch placement**: 3-layer torch supply system — (1) CreateMineTool pre-fetches via `craft_item('torch')`, (2) CreateMineTask validate phase pulls from STORAGE and auto-crafts full chain (logs→planks→sticks+coal→torches), (3) DigShaftTask mid-mine crafts torches from found coal
+- `1880470` — **Fix mining system**: replaced dangerous vertical shaft in DigDownTool with walkable staircase (DigShaftTask), added `tryMidMineTorchCraft()` to BranchMineTask and CreateHubTask, fixed `placeTorch()` wall fallback in StripMineTask
+- `bc18634` — **Mine memory**: CreateMineTask saves mine entrance/targetY/direction/branch config to CompanionMemory. CreateMineTool checks memory before creating new mine — resumes existing mines, `new_mine` param to force fresh. New `ListMinesTool` for "where are my mines?"
+
+### Files Modified
+- `ai/tool/CreateMineTool.java` — mine memory check, resume existing, `new_mine` boolean param (+108 lines)
+- `ai/tool/ListMinesTool.java` — **NEW** — reads `mine_*` facts from memory, formats list (+78 lines)
+- `ai/tool/ToolRegistry.java` — registered ListMinesTool
+- `ai/tool/DigDownTool.java` — replaced MineBlocksTask with DigShaftTask staircase
+- `task/StripMineTask.java` — `placeBlock(Blocks.TORCH)` → `placeTorch()` for wall fallback
+- `task/mining/DigShaftTask.java` — added `tryMidMineTorchCraft()` (+83 lines)
+- `task/mining/BranchMineTask.java` — added `tryMidMineTorchCraft()` (+75 lines)
+- `task/mining/CreateHubTask.java` — added `tryMidMineTorchCraft()` before PLACE_TORCHES (+71 lines)
+- `task/mining/CreateMineTask.java` — mine memory save, torch pre-fetch validate phase (+277 lines)
+- Patchouli guide pages: 8 JSON files (chat_controls, traversal, talking, crafting, quick_commands, behavior_modes, strip_mining, mining_basics, create_mine, memory)
+- `build.gradle` — Patchouli compileOnly dependency
+
+### Key Decisions
+- Mine memory uses CompanionMemory facts (`mine_{ore}` keys with JSON values)
+- 3-layer torch supply ensures torches are available at every mining phase
+- Guide book recipe: book + soul crystal = guide (discoverable via EMI)
+
+---
+
+## Session 16 — 2026-02-14 (Late Evening) — AI Docs, Custom Textures, Hazard Audit
+
+### Focus: AI backend documentation, item textures, comprehensive mining hazard handling
+
+### Commits
+- `8bb0c27` — **Docs + guide book v5 + EMI index**: added EMI index for guide book, bumped book to v5 (35 tools, mine memory), updated README mining section, added Mine Memory/Universal Torch Crafting/Dig Down Patchouli pages
+- `b5c0fe0` — **AI backend guide**: new `AI_GUIDE.md` (265 lines) covering architecture, provider list (Groq/OpenRouter/Together/Cerebras/SambaNova/Ollama), free vs paid comparison, example configs, tuning, troubleshooting. Updated README and AiConfig.java with quick-start examples
+- `62f66eb` — **Custom tech-themed textures**: Soul Crystal (blue-glow tech crystal with circuit energy lines), Guide Book (dark metallic cover with blue circuit pattern), book GUI cyan theme. All items share cohesive tech/circuit aesthetic
+
+### Comprehensive Mining Hazard System (uncommitted, part of Session 17 changes)
+Added to `BlockHelper.java`:
+- `getBlockHazard()` — detects 11 hazard types: magma, fire, soul fire, wither rose, berry bush, cobweb, powder snow, dripstone, TNT, spawner, cactus, campfire
+- `HazardType` enum — NONE, MAGMA, FIRE, WITHER_ROSE, BERRY_BUSH, COBWEB, POWDER_SNOW, DRIPSTONE, TNT, SPAWNER, CACTUS
+- `sealHazardousFloor()` — replaces air/lava/magma/fire/dripstone/cactus/powder snow/wither rose floors with cobblestone
+- `clearTunnelHazards()` — breaks hazardous blocks in 1×2 tunnel space (feet + head)
+- `isSafeToMine()` — now checks water source blocks too (prevents tunnel flooding)
+- `emergencyDigOut()` — breaks blocks around trapped companion, finds escape route
+- Dimension helpers: `getDimension()`, `DimensionType` enum, `isInNether()`, `isInEnd()`
+- Tool durability: `isToolLowDurability()`, `hasUsablePickaxe()`, `isPickaxe()`, `getRemainingDurability()`
+
+Updated all mining tasks to use new hazard system:
+- `StripMineTask` — `sealHazardousFloor()` replaces inline air/lava checks, added `clearTunnelHazards()`, `tryToSealFluid()` for lava/water with cobblestone, `handleFallingBlocks()`, emergency dig-out on stuck, inventory full check with auto-deposit
+- `DigShaftTask` — `sealHazardousFloor()` replaces inline floor check
+- `BranchMineTask` — `sealHazardousFloor()` replaces inline floor check
+- `MineOresTask` — added `handleFallingBlocks()`, emergency dig-out on stuck
+- `MineBlocksTask` — added `handleFallingBlocks()`
+- `CompanionEntity` — added pathfinding maluses: powder snow (-1.0), danger powder snow (8.0), cocoa (0.0), leaves (4.0)
+
+### Files Modified
+- `AI_GUIDE.md` — **NEW** (265 lines)
+- `README.md` — updated AI backend section, tool count 34→35
+- `config/AiConfig.java` — expanded cloud section comments (+49 lines)
+- `task/BlockHelper.java` — hazard system, dimension helpers, tool helpers (+210 lines)
+- `task/StripMineTask.java` — hazard integration, fluid sealing, emergency dig, inventory check
+- `task/mining/DigShaftTask.java` — sealHazardousFloor()
+- `task/mining/BranchMineTask.java` — sealHazardousFloor()
+- `task/MineOresTask.java` — handleFallingBlocks(), emergency dig-out
+- `task/MineBlocksTask.java` — handleFallingBlocks()
+- `entity/CompanionEntity.java` — 4 new pathfinding maluses
+- 7 Patchouli guide JSON files
+- Item textures: soul_crystal.png, guide_book.png, logistics_wand.png
+- `assets/emi/index/stacks/mcai.json` — **NEW**
+
+---
+
+## Session 17 — 2026-01-20 — Auto-Craft Tools, Shared Torch Crafting, Health Check
+
+### Focus: Tool auto-crafting when pickaxe breaks, deduplicated torch crafting, in-task health checks
+
+### Part 1: Auto-Craft Replacement Tools
+
+**Problem:** Jim stopped mining when pickaxe broke ("My pickaxe is about to break!"). Tool durability threshold of 10 was too aggressive.
+
+**Fix:**
+- Changed tool break threshold from 10 to 0 (mine until actually broken)
+- Added `BlockHelper.tryAutoCraftTool()` — generic tool crafting system for Diamond→Iron→Stone→Wooden tiers
+- Added `tryAutoCraftPickaxe()` convenience wrapper
+- Pulls materials from tagged STORAGE containers automatically
+- Crafts prerequisite sticks/planks from logs if needed
+- Updated all 7 mining tasks: StripMine, MineBlocks, MineOres, DigShaft, BranchMine, CreateHub, CreateMine
+
+**New methods in BlockHelper:**
+- `ToolType` enum (PICKAXE, AXE, SHOVEL, HOE, SWORD)
+- `tryAutoCraftTool(companion, toolType)` — tries Diamond→Iron→Stone→Wood
+- `tryCraftToolTier()`, `tryCraftWoodTool()` — tier-specific crafting
+- `getMaterialForTier()`, `getResultItem()`, `getMaterialCount()`, `getStickCount()` — recipe lookups
+- `craftSticksFromMaterials()`, `convertLogsToPlanksBH()` — prerequisite crafting
+- `countInContainer()`, `countPlanksInContainer()`, `consumeFromContainer()`, `consumePlanksFromContainer()` — container helpers
+- `pullCraftingMaterials()` — pulls iron/diamond/cobble/sticks/planks from STORAGE (up to 16 each)
+
+### Part 2: Shared Torch Crafting (Deduplication)
+
+**Problem:** Torch crafting code was duplicated 5 times across tasks (StripMineTask, DigShaftTask, BranchMineTask, CreateHubTask, CreateMineTask) — each had its own private `tryMidMineTorchCraft()` method with identical logic.
+
+**Fix:**
+- Added `BlockHelper.tryAutoCraftTorches(companion, maxBatches)` — shared torch crafting
+- Full material chain: pull from STORAGE → logs→planks→sticks → coal/charcoal+sticks→torches
+- Returns number of torches crafted (0 if no materials)
+- Added `pullTorchMaterials()` — pulls coal/charcoal/sticks/torches from STORAGE (up to 64 each)
+- Added torch exhaustion warning: "I'm out of torches and don't have materials to craft more!"
+- Removed ~275 lines of duplicate code across 5 files
+
+### Part 3: Health Check + Auto-Eat During Mining
+
+**Problem:** Food-eating goals (priority 3-4) were blocked by mining task goal (priority 2). Jim couldn't eat while mining even when health dropped dangerously low.
+
+**Fix:**
+- Added `BlockHelper.tryEatIfLowHealth(companion, healthThreshold)` — checks HP%, tries `tryEatFood()`, falls back to pulling food from STORAGE
+- Added `BlockHelper.hasFood(companion)` — checks inventory for DataComponents.FOOD items
+- Added `BlockHelper.pullFoodFromStorage()` — pulls up to 16 food items from STORAGE
+- Added health check to all 7 mining tasks: warns at 30% HP ("I'm getting low on health and don't have any food!")
+- Each task has `foodWarningGiven` flag to prevent warning spam
+
+### Files Modified
+- `task/BlockHelper.java` — +482 lines (tool crafting, torch crafting, health check systems)
+- `task/StripMineTask.java` — removed ~90 lines private torch/inventory helpers, added health/tool/inventory/torch warnings
+- `task/mining/DigShaftTask.java` — removed ~67 lines private tryMidMineTorchCraft, added health/tool/torch checks
+- `task/mining/BranchMineTask.java` — removed ~64 lines private tryMidMineTorchCraft, added health/tool/torch checks
+- `task/mining/CreateHubTask.java` — removed ~54 lines private tryMidMineTorchCraft, uses shared method
+- `task/MineOresTask.java` — added health check, food warning, emergency dig-out, handleFallingBlocks
+- `task/MineBlocksTask.java` — added health check, food warning, handleFallingBlocks
+
+### Technical Notes
+- Fixed SLF4J format strings: `{:.0f}` (Python-style) → `{}` with `(int)` cast
+- Removed unused imports from StripMineTask: SimpleContainer, ItemStack, ItemTags
+- All changes built and deployed successfully
+
+---
+
+## Environment Reference
+
+### Build & Deploy
+```powershell
+cd F:\MCAi
+.\gradlew build -x test
+Copy-Item "build\libs\mcai-0.1.0.jar" "C:\Users\travf\curseforge\minecraft\Instances\All the Mods 10 - ATM10\mods\mcai-0.1.0.jar" -Force
+```
+
+### Git
+```powershell
+$env:Path = "C:\Program Files\Git\bin;" + $env:Path
+cd F:\MCAi
+git add -A
+git commit -m "description"
+```
+
+### Key Files
+| File | Purpose |
+|------|---------|
+| `src/.../MCAi.java` | Mod entry point, LOGGER, registry init |
+| `src/.../ai/AIService.java` | 3-tier AI routing, agent loop with dedup breaker, tool execution |
+| `src/.../ai/CommandParser.java` | Local command parser, 100+ patterns, multi-part detection, fuzzy match |
+| `src/.../ai/AiLogger.java` | Debug logger → `logs/mcai_debug.log`, categories, rotation at 10MB |
+| `src/.../ai/CompanionMemory.java` | Persistent key-value memory system (facts, events, mine locations) |
+| `src/.../ai/planner/RecipeResolver.java` | Recursive recipe resolution, tryManualRecipe, classifyRawMaterial |
+| `src/.../ai/planner/CraftingPlan.java` | Ordered crafting steps, difficulty analysis, mob/mine/gather/farm assessment |
+| `src/.../ai/tool/CraftItemTool.java` | Crafting orchestrator — resolve recipes, auto-fetch, BLOCKED report, gem hints |
+| `src/.../ai/tool/CreateMineTool.java` | Create mine: shaft→hub→branches, mine memory resume, force new |
+| `src/.../ai/tool/ListMinesTool.java` | List all remembered mine locations from memory |
+| `src/.../task/BlockHelper.java` | Block ops, hazard system, tool/torch auto-craft, health check, dimension helpers |
+| `src/.../task/StripMineTask.java` | Strip mine tunnel with ore scanning, fluid sealing, shared torch/tool/health |
+| `src/.../task/TaskManager.java` | Async task queue, continuations, deterministic execution |
+| `src/.../task/OreGuide.java` | Ore Y-level ranges and tool tier requirements for 1.21 distribution |
+| `src/.../task/mining/DigShaftTask.java` | 2×1 staircase shaft with torch/tool/health checks |
+| `src/.../task/mining/CreateHubTask.java` | 7×5×4 hub room with furniture placement |
+| `src/.../task/mining/BranchMineTask.java` | Systematic branch mining from hub with poke holes, auto-deposit |
+| `src/.../task/mining/CreateMineTask.java` | Orchestrator: shaft→hub→branches, mine memory persistence |
+| `src/.../task/mining/MineState.java` | Persistent mine state — shaft pos, hub, branch progress |
+| `src/.../command/DiagnoseCommand.java` | `/mcai diagnose` — tests all vanilla items for resolution |
+| `src/.../entity/CompanionEntity.java` | Jim entity, AI, inventory, equipment, idle chat, traversal, hazard safety |
+| `src/.../entity/goal/CompanionOpenIronDoorGoal.java` | Iron door navigation via buttons/levers |
+| `src/.../entity/goal/CompanionOpenFenceGateGoal.java` | Fence gate open/close with mob-safety delay |
+| `src/.../entity/goal/CompanionOpenTrapdoorGoal.java` | Wooden trapdoor handling with void-safety check |
+| `src/.../logistics/HomeBaseManager.java` | Auto-setup crafting infrastructure (table, furnace, cauldron) |
+| `src/.../logistics/ItemRoutingHelper.java` | Route items to tagged containers with priority ordering |
+| `src/.../network/ChatMessageHandler.java` | Server-side message routing: ! → CommandParser → AI |
+| `src/.../client/CompanionChatScreen.java` | Chat GUI, auto-focus, URL clicking, Component rendering |
+| `src/.../client/CompanionInventoryScreen.java` | Inventory GUI with Bug Report button |
+| `src/.../client/CompanionHudOverlay.java` | HUD overlay — name, health bar, behavior mode, task status |
+| `src/.../config/AiConfig.java` | Mod configuration (40+ settings, API keys, models, radii, etc.) |
+
+### Architecture
+- **Message Flow**: Player types in CompanionChatScreen → ChatMessagePacket → server ChatMessageHandler → multi-part? → AI : CommandParser → fallback AI
+- **AI Flow**: AIService → cloud API → tool calls → execute tools → dedup check → loop until text response or 3x identical call
+- **Task Flow**: Tool returns [ASYNC_TASK] → TaskManager queues → tick-based execution → [TASK_COMPLETE]/[TASK_FAILED] → continuation with plan parameter
+- **Fallback Chain**: Cloud primary (Groq) → Cloud fallback (OpenRouter) → Local Ollama (llama3.1)
+- **Recipe Resolution**: resolve() → resolveRecursive() → [raw material | tryManualRecipe | Phase 1-4 recipe lookup | fallback raw]
+- **Hazard Safety**: Pathfinding malus (lava/fire/damage/powder snow -1.0) + hazardCheck() every 10 ticks + `getBlockHazard()` (11 types) + `sealHazardousFloor()` + `clearTunnelHazards()` + `isSafeToMine()` (lava+water) + `emergencyDigOut()` on stuck
+- **Mining Safety**: Auto-craft pickaxe on break (4 tiers) + shared torch crafting with warning + in-task health check/auto-eat from inventory or STORAGE + inventory full auto-deposit + falling block handling + fluid sealing
+- **Crafting Chain**: craft_item → resolve → fetch from containers → autoResolve intermediates → autoCraftPlan → RecipeResolver tree → CraftingPlan → async tasks (chop/mine/smelt) → continuation → final craft
+
+### Diagnostic Results
+| Run | Resolved | Total | Rate | Unknowns |
+|-----|----------|-------|------|----------|
+| 1st | 985 | 1151 | 85.6% | 110 |
+| 2nd | 1094 | 1151 | 95.0% | 48 |
+| 3rd | Pending — need to run after shulker/netherite/carpet fixes | | ~97%+ expected | ~20 |
+
+---
+
+*Last updated: 2026-01-20 — Session 17*
 *Rule: Update this log with every JAR deployment.*
