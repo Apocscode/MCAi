@@ -473,5 +473,201 @@ Jim could only handle doors. No support for fence gates, trapdoors, water traver
 
 ---
 
-*Last updated: 2026-02-14 — Session 10*
+## Session 11 — 2026-02-14 (Night) — 12-Bug Audit Fix
+
+### Focus: Comprehensive code audit found 21 issues, fixed 12 significant ones
+
+### Commits
+- Multiple fixes rolled into session commits
+
+### Bugs Fixed
+
+1. **tryAutoCraft cycle detection** — diamond ↔ diamond_block infinite loop. Added `Set<String> visited` recursion guard to prevent re-entering the same item at any depth.
+
+2. **Goal priority conflicts** — `OpenDoorGoal`, `FenceGateGoal`, `TrapdoorGoal` all registered at priority 0, conflicting with `FloatGoal`. Staggered priorities: Float=0, Doors=1, FenceGates=2, Trapdoors=2.
+
+3. **isClientSide guards** — Multiple tool/task methods lacked server-side checks, could cause client desync. Added `level().isClientSide` guards to block operations.
+
+4. **Fence pathfinding** — `PathType.FENCE` was left at default -1 to avoid wall confusion, but this meant pathfinder completely avoided fence gates. Added note explaining goal-based approach.
+
+5. **Water malus rebalance** — WATER=0.0 was too aggressive (Jim walks through deep ocean). Added comment about potential future depth-based penalty.
+
+6. **WALK_OUT incremental movement** — StripMineTask walk-out used single 25-block navigateTo. Changed to incremental 5-block steps for reliability over long distances.
+
+7. **Modded trapdoor check** — `CompanionOpenTrapdoorGoal` only checked `Blocks.IRON_TRAPDOOR` exclusion. Changed to check `BlockSetType.canOpenByHand()` to catch all modded iron-type trapdoors.
+
+8. **recentCraftAttempts per-player scoping** — Global cooldown map could block Player B's craft if Player A recently tried the same item. Changed key to `playerUUID + ":" + targetId`.
+
+9. **Iron door button distance check** — `CompanionOpenIronDoorGoal` distance to button was uncapped. Added 3-block max radius check.
+
+10. **Config exception fallback** — Several `AiConfig.X.get()` calls could throw during early init. Added try-catch with sensible defaults.
+
+11-12. Additional minor fixes for logging, null safety, and edge cases.
+
+---
+
+## Session 12 — 2026-02-14 (Night) — Four New Features
+
+### Commits
+- `832fe9e` — GitHub issues button, proactive idle chat, conversation toggle, display name fix
+
+### Features Added
+
+#### 1. GitHub Issues Button
+- Added "⚠ Bug?" button to `CompanionInventoryScreen` (top-left corner)
+- Opens `https://github.com/Apocscode/MCAi/issues` in browser
+- Small 40x14 pixel button, positioned at `leftPos + 8, topPos + 6`
+
+#### 2. Proactive Idle Conversation
+- Jim now speaks up after being idle for ~10 minutes
+- New `IDLE_CHECK(12000)` category in `CompanionChat.java` with 10-minute cooldown
+- 10 random idle messages: boredom, suggestions, observations
+- `idleTicks` field in `CompanionEntity.tick()` — resets on any task/behavior/command
+- Controlled by `AiConfig.ENABLE_PROACTIVE_CHAT` (default: true)
+
+#### 3. Conversation On/Off Toggle
+- "shut up" / "be quiet" / "stop talking" / "mute" → mutes proactive chat
+- "talk again" / "unmute" / "start talking" → unmutes
+- Mute patterns checked BEFORE cancel pattern so "stop talking" doesn't cancel tasks
+- `muted` field in `CompanionChat` with `setMuted()`/`isMuted()` accessors
+- `say()` and `warn()` respect mute; `urgent()` always speaks
+
+#### 4. Display Name Fix (Initial)
+- Changed `en_us.json` entity name from "MCAi Companion" to "Companion"
+- Set `shouldShowName() = true`
+
+### Files Modified
+- `CompanionInventoryScreen.java` — Bug button
+- `CompanionChat.java` — IDLE_CHECK category, muted field
+- `CompanionEntity.java` — idleTicks, idle messages in tick()
+- `CommandParser.java` — MUTE_PATTERN, UNMUTE_PATTERN, handler logic
+- `AiConfig.java` — ENABLE_PROACTIVE_CHAT config
+
+---
+
+## Session 13 — 2026-02-14 (Late Night) — Log Check + Health Bar Name Fix
+
+### Commits
+- `9525fad` — Fix health bar display name: use synced getCustomName()
+
+### Live Test Observations
+- No MCAi crashes in logs — mod is stable
+- Both Groq (429 TPD limit) and OpenRouter (429 + 402 USD limit) rate-limited
+- AI agent loop burned 10 iterations retrying `craft_item("diamond_pickaxe")` with 0 diamonds
+- Ollama confirmed working: auto-detected at http://127.0.0.1:11434, version 0.15.6
+
+### Health Bar Name Fix
+**Problem:** Client-side mods (HealthBars, Jade) showed "MCAI" instead of "Jim" above the companion.
+
+**Root cause:** `companionName` field was only set server-side. `getName()` and `getDisplayName()` referenced this unsynced field. Client-side mods read from vanilla entity data.
+
+**Fix:**
+- `getName()` and `getDisplayName()` now read from `getCustomName()` (synced via vanilla `SynchedEntityData`), with `companionName` as fallback
+- `setCustomName(Component.literal(companionName))` called in constructor and `readAdditionalSaveData()`
+- Changed `companionName` field default from `"MCAi"` to `"Jim"`
+
+### Files Modified
+- `CompanionEntity.java` — getName(), getDisplayName(), constructor, readAdditionalSaveData()
+
+---
+
+## Session 14 — 2026-02-14 (Late Night) — Crafting Loop Fix + Multi-Part Commands
+
+### Commits
+- `ac4e883` — Fix diamond pickaxe crafting retry loop (3 fixes)
+- `1e3807c` — Multi-part command detection: route complex instructions to AI
+
+### Part 1: Diamond Pickaxe Retry Loop Fix
+
+**Problem:** AI agent called `craft_item("diamond_pickaxe")` 10 times with 0 diamonds, hitting max iterations. The recursion guard's "I already tried... You can tell me to try again" message made the AI keep retrying.
+
+**Three fixes applied:**
+
+1. **BLOCKED message overhaul** — `autoCraftPlan()` now returns full `buildMissingReport()` with materials list + `[CANNOT_CRAFT]` prefix + explicit "Do NOT call craft_item again" directive, instead of vague "try again in a couple minutes"
+
+2. **Diamond/gem mining hints** — New `isMinedGemOrMineral()` helper detects diamond, emerald, lapis, coal, redstone, quartz, amethyst, and raw ores. `buildMissingReport()` now suggests `mine_ores` for these instead of nonsensical `gather_blocks({"block":"diamond"})`
+
+3. **Agent loop deduplication** — `AIService.agentLoop()` tracks tool call signatures (`name|args`) across iterations. After 3 identical calls, injects system-level stop directive and does one final LLM call for a player-facing message. Safety net for ALL tools, not just crafting.
+
+### Part 2: Multi-Part Command Detection
+
+**Problem:** "craft a chest place in next to the other chest" was parsed as `craft_item({"item":"chest_place_in_next_to_the_other_chest"})` — CommandParser treated entire phrase as item name.
+
+**Fix — two-layer approach:**
+
+1. **Primary: Route to AI** — New `MULTI_PART_SIGNAL` pattern detects:
+   - Conjunctions joining actions ("and then mine", "plus craft")
+   - Spatial instructions ("place it next to", "put it in")
+   - Sequencing words ("first", "after that", "second")
+   - `isMultiPartCommand()` check runs early in `tryParse()`, returns false → AI decomposes into tool chain
+   - Excludes simple commands (greetings, stay, follow, cancel, mute)
+
+2. **Fallback: Clean item name** — `stripTrailingInstructions()` cuts trailing instruction phrases from CRAFT_PATTERN item names at the first verb/preposition signaling a separate action. "chest place in next to the other chest" → "chest"
+
+### Files Modified
+- `CraftItemTool.java` — BLOCKED message, isMinedGemOrMineral(), buildMissingReport() mine_ores hints
+- `AIService.java` — repeatedToolCalls map, loop breaker after 3 identical calls
+- `CommandParser.java` — MULTI_PART_SIGNAL, isMultiPartCommand(), stripTrailingInstructions()
+
+---
+
+## Environment Reference
+
+### Build & Deploy
+```powershell
+cd F:\MCAi
+.\gradlew build -x test
+Copy-Item "build\libs\mcai-0.1.0.jar" "C:\Users\travf\curseforge\minecraft\Instances\All the Mods 10 - ATM10\mods\mcai-0.1.0.jar" -Force
+```
+
+### Git
+```powershell
+$env:Path = "C:\Program Files\Git\bin;" + $env:Path
+cd F:\MCAi
+git add -A
+git commit -m "description"
+```
+
+### Key Files
+| File | Purpose |
+|------|---------|
+| `src/.../MCAi.java` | Mod entry point, LOGGER, registry init |
+| `src/.../ai/AIService.java` | 3-tier AI routing, agent loop with dedup breaker, tool execution |
+| `src/.../ai/CommandParser.java` | Local command parser, 40+ patterns, multi-part detection, fuzzy match |
+| `src/.../ai/AiLogger.java` | Debug logger → `logs/mcai_debug.log`, categories, rotation at 10MB |
+| `src/.../ai/planner/RecipeResolver.java` | Recursive recipe resolution, tryManualRecipe, classifyRawMaterial |
+| `src/.../ai/planner/CraftingPlan.java` | Ordered crafting steps, difficulty analysis, mob/mine/gather/farm assessment |
+| `src/.../ai/tool/CraftItemTool.java` | Crafting orchestrator — resolve recipes, auto-fetch, BLOCKED report, gem hints |
+| `src/.../task/StripMineTask.java` | Strip mine tunnel with arrival gating, ore scanning, torch crafting |
+| `src/.../task/TaskManager.java` | Async task queue, continuations, deterministic execution |
+| `src/.../command/DiagnoseCommand.java` | `/mcai diagnose` — tests all vanilla items for resolution |
+| `src/.../entity/CompanionEntity.java` | Jim entity, AI, inventory, equipment, idle chat, traversal, hazard safety |
+| `src/.../entity/goal/CompanionOpenIronDoorGoal.java` | Iron door navigation via buttons/levers |
+| `src/.../entity/goal/CompanionOpenFenceGateGoal.java` | Fence gate open/close with mob-safety delay |
+| `src/.../entity/goal/CompanionOpenTrapdoorGoal.java` | Wooden trapdoor handling with void-safety check |
+| `src/.../logistics/HomeBaseManager.java` | Auto-setup crafting infrastructure (table, furnace, cauldron) |
+| `src/.../network/ChatMessageHandler.java` | Server-side message routing: ! → CommandParser → AI |
+| `src/.../client/CompanionChatScreen.java` | Chat GUI, auto-focus, URL clicking, Component rendering |
+| `src/.../client/CompanionInventoryScreen.java` | Inventory GUI with Bug Report button |
+| `src/.../config/AiConfig.java` | Mod configuration (API keys, models, radii, proactive chat, etc.) |
+
+### Architecture
+- **Message Flow**: Player types in CompanionChatScreen → ChatMessagePacket → server ChatMessageHandler → multi-part? → AI : CommandParser → fallback AI
+- **AI Flow**: AIService → cloud API → tool calls → execute tools → dedup check → loop until text response or 3x identical call
+- **Task Flow**: Tool returns [ASYNC_TASK] → TaskManager queues → tick-based execution → [TASK_COMPLETE]/[TASK_FAILED] → continuation with plan parameter
+- **Fallback Chain**: Cloud primary (Scout 17B) → Cloud fallback (Llama 70B) → Local Ollama (llama3.1)
+- **Recipe Resolution**: resolve() → resolveRecursive() → [raw material | tryManualRecipe | Phase 1-4 recipe lookup | fallback raw]
+- **Hazard Safety**: Pathfinding malus (lava/fire/damage -1.0) + hazardCheck() every 10 ticks (void teleport, lava flee, suffocation break) + isSafeToMine() on all block breaks
+- **Crafting Chain**: craft_item → resolve → fetch from containers → autoResolve intermediates → autoCraftPlan → RecipeResolver tree → CraftingPlan → async tasks (chop/mine/smelt) → continuation → final craft
+
+### Diagnostic Results
+| Run | Resolved | Total | Rate | Unknowns |
+|-----|----------|-------|------|----------|
+| 1st | 985 | 1151 | 85.6% | 110 |
+| 2nd | 1094 | 1151 | 95.0% | 48 |
+| 3rd | Pending — need to run after shulker/netherite/carpet fixes | | ~97%+ expected | ~20 |
+
+---
+
+*Last updated: 2026-02-14 — Session 14*
 *Rule: Update this log with every JAR deployment.*

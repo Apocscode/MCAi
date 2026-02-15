@@ -934,16 +934,18 @@ public class CommandParser {
             respond(player, "Here's what I can do:\n" +
                     "§e⛏ Mining:§r mine [ore], strip mine [ore], dig down, create mine\n" +
                     "§e🔨 Crafting:§r craft/make [item], smelt [item], recipe for [item]\n" +
-                    "§e🪓 Gathering:§r chop trees, get wood, gather [block]\n" +
+                    "§e🪓 Gathering:§r chop trees, get wood, gather [block], find [item]\n" +
                     "§e🌾 Farming:§r farm, plant crops, harvest\n" +
                     "§e🎣 Fishing:§r go fishing, fish\n" +
                     "§e⚔ Combat:§r kill [mob], guard area, attack [mob]\n" +
                     "§e🏗 Building:§r build [structure]\n" +
-                    "§e📦 Logistics:§r deposit items, check inventory, deliver items, find [item]\n" +
-                    "§e🔍 Info:§r scan area, scan chests, task status, health, mods\n" +
+                    "§e📦 Logistics:§r deposit items, check inventory, deliver items, scan chests\n" +
+                    "§e🔍 Info:§r scan area, task status, health, mods, recipe for [item]\n" +
                     "§e🐕 Behavior:§r follow me, stay, come here, cancel\n" +
                     "§e📌 Utility:§r bookmark location, rename, equip gear, emote\n" +
-                    "§7Tip: Just talk naturally! 'Can you mine some iron?' or 'I need a pickaxe' work too.");
+                    "§e🔇 Chat:§r shut up / stop talking (mute), talk again (unmute)\n" +
+                    "§7Tip: Give complex instructions! 'Mine iron and craft a pickaxe' works.\n" +
+                    "§7Tip: Just talk naturally — 'I need a pickaxe' or 'can you get wood?' work too.");
             return true;
         }
 

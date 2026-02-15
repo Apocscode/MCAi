@@ -20,6 +20,10 @@ The companion uses a cloud AI backend (Groq / OpenRouter) with Ollama as a local
 - Persistent companion memory across sessions
 - Emote system with animations
 - Web search and webpage fetching for real-world info
+- **Proactive idle chat** — companion speaks up with suggestions after being idle
+- **Mute/unmute** — "shut up" or "stop talking" silences idle chat; "talk again" re-enables
+- **Multi-part command understanding** — "craft a chest and place it next to the furnace" routes to AI for decomposition into chained tool calls
+- **GitHub bug report button** in inventory screen
 
 ### Autonomous Crafting
 - Full dependency tree resolution — resolves recipes recursively
@@ -29,6 +33,9 @@ The companion uses a cloud AI backend (Groq / OpenRouter) with Ollama as a local
 - Auto-smelts ores with fuel management
 - Auto-places furnaces and crafting tables as needed
 - Fetches materials from nearby tagged storage chests
+- **Smart material hints** — diamonds/emeralds suggest mining, not gathering
+- **Agent loop safety** — detects repeated identical tool calls and stops retrying
+- **Crafting difficulty warnings** — color-coded alerts for impossible/dangerous ingredients
 
 ### Mining
 - **Ore scanning** — finds specific ores in range
@@ -48,6 +55,15 @@ The companion uses a cloud AI backend (Groq / OpenRouter) with Ollama as a local
 - Guard mode — patrols and defends an area
 - Hunt specific mob types
 - Death recovery — inventory preserved, resummon via Soul Crystal after 60s cooldown
+
+### Traversal & Navigation
+- **Step height 1.0** — walks up full blocks without jumping
+- **Door handling** — opens/closes wooden doors; presses buttons for iron doors
+- **Fence gates** — opens, passes through, closes behind (prevents mob entry)
+- **Trapdoors** — opens wooden trapdoors with void-safety check
+- **Water traversal** — swims freely, never drowns
+- **Ladders/vines/scaffolding** — climbs naturally
+- **Display name sync** — health bar mods show correct name (not "MCAi")
 
 ### Farming & Gathering
 - Farm areas with auto-replant
@@ -77,7 +93,8 @@ The companion uses a cloud AI backend (Groq / OpenRouter) with Ollama as a local
 
 ## AI Tools (34)
 
-The companion has 34 tools it can call autonomously based on conversation:
+The companion has 34 tools it can call autonomously based on conversation.
+Complex multi-part commands ("mine iron and then craft a pickaxe") are automatically decomposed by the AI into sequential tool calls.
 
 | Category | Tools |
 |----------|-------|
@@ -97,7 +114,12 @@ MCAi uses a fallback chain for AI requests:
 
 1. **Groq** (primary) — fast cloud inference, free tier
 2. **OpenRouter** (fallback) — secondary cloud provider
-3. **Ollama** (local fallback) — runs on your GPU, auto-starts/stops
+3. **Ollama** (local fallback) — runs on your GPU, auto-starts/stops with the game
+
+The agent loop includes safety mechanisms:
+- **Deduplication breaker** — detects 3+ identical tool calls and forces a stop
+- **[CANNOT_CRAFT] directive** — prevents infinite retry loops when materials are missing
+- **Async task marker** — queued tasks (mining, smelting) get a single status response
 
 Configure API keys in the mod config (`mcai-common.toml`).
 
