@@ -1289,4 +1289,77 @@ public class BlockHelper {
             }
         }
     }
+
+    // ================================================================
+    // Auto-Craft Hub Furniture
+    // ================================================================
+
+    /**
+     * Auto-craft hub furniture items if not already in inventory.
+     * Crafts: 2 chests (8 planks each), 1 furnace (8 cobblestone), 1 crafting table (4 planks).
+     * Total materials: 20 planks (5 logs) + 8 cobblestone.
+     * Pulls materials from tagged storage if available.
+     *
+     * @param companion The companion entity
+     */
+    public static void tryAutoCraftHubFurniture(CompanionEntity companion) {
+        var inv = companion.getCompanionInventory();
+
+        // Pull materials from tagged storage if available
+        if (com.apocscode.mcai.logistics.ItemRoutingHelper.hasTaggedStorage(companion)) {
+            pullCraftingMaterials(companion);
+        }
+
+        // Craft crafting table: 4 planks → 1 crafting table
+        if (countItem(companion, Items.CRAFTING_TABLE) < 1) {
+            ensurePlanks(inv, 4);
+            if (countPlanksInContainer(inv) >= 4) {
+                consumePlanksFromContainer(inv, 4);
+                inv.addItem(new ItemStack(Items.CRAFTING_TABLE, 1));
+                MCAi.LOGGER.info("Auto-crafted crafting table for hub");
+            } else {
+                MCAi.LOGGER.warn("Cannot craft crafting table: need 4 planks (have {})",
+                        countPlanksInContainer(inv));
+            }
+        }
+
+        // Craft furnace: 8 cobblestone → 1 furnace
+        if (countItem(companion, Items.FURNACE) < 1) {
+            int cobble = countInContainer(inv, Items.COBBLESTONE);
+            if (cobble >= 8) {
+                consumeFromContainer(inv, Items.COBBLESTONE, 8);
+                inv.addItem(new ItemStack(Items.FURNACE, 1));
+                MCAi.LOGGER.info("Auto-crafted furnace for hub");
+            } else {
+                MCAi.LOGGER.warn("Cannot craft furnace: need 8 cobblestone (have {})", cobble);
+            }
+        }
+
+        // Craft chests: 8 planks each → up to 2 chests
+        int chestsNeeded = 2 - countItem(companion, Items.CHEST);
+        for (int i = 0; i < chestsNeeded; i++) {
+            ensurePlanks(inv, 8);
+            if (countPlanksInContainer(inv) >= 8) {
+                consumePlanksFromContainer(inv, 8);
+                inv.addItem(new ItemStack(Items.CHEST, 1));
+                MCAi.LOGGER.info("Auto-crafted chest {}/{} for hub", i + 1, chestsNeeded);
+            } else {
+                MCAi.LOGGER.warn("Cannot craft chest: need 8 planks (have {})",
+                        countPlanksInContainer(inv));
+                break;
+            }
+        }
+    }
+
+    /**
+     * Ensure at least the specified number of planks exist in container,
+     * converting logs to planks as needed.
+     */
+    private static void ensurePlanks(net.minecraft.world.SimpleContainer inv, int needed) {
+        while (countPlanksInContainer(inv) < needed) {
+            int before = countPlanksInContainer(inv);
+            convertLogsToPlanksBH(inv);
+            if (countPlanksInContainer(inv) == before) break; // No more logs
+        }
+    }
 }

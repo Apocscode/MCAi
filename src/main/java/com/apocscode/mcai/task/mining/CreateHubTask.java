@@ -29,10 +29,10 @@ import net.minecraft.world.level.block.state.BlockState;
  * Layout (top-down, shaft enters from bottom):
  *
  *   +-------+
- *   | T   T |
- *   | C F   |     C = Chest, F = Furnace, W = Crafting Table
- *   |   +   |     T = Torch, + = center
- *   | C W   |
+ *   |C C F W|     C = Chest, F = Furnace, W = Crafting Table
+ *   |       |     T = Torch, + = center
+ *   |   +   |     All furniture on back wall, same Y level
+ *   |       |
  *   | T   T |
  *   +---v---+
  *       shaft entrance
@@ -261,31 +261,49 @@ public class CreateHubTask extends CompanionTask {
         Direction right = dir.getClockWise();
         MineState.MineLevel mineLevel = mineState.getActiveLevel();
 
-        // Place 2 chests on the left wall
-        BlockPos chest1Pos = hubCenter.relative(left, HUB_WIDTH / 2 - 1).relative(dir.getOpposite(), 1);
-        BlockPos chest2Pos = hubCenter.relative(left, HUB_WIDTH / 2 - 1).relative(dir, 1);
-        placeFurniture(chest1Pos, Blocks.CHEST, mineLevel);
-        placeFurniture(chest2Pos, Blocks.CHEST, mineLevel);
+        // Auto-craft furniture items from inventory materials
+        BlockHelper.tryAutoCraftHubFurniture(companion);
 
-        // Furnace on the left wall between chests
-        BlockPos furnacePos = hubCenter.relative(left, HUB_WIDTH / 2 - 1);
-        placeFurniture(furnacePos, Blocks.FURNACE, mineLevel);
+        // Place all furniture in a row along the back wall (same Y level, side by side)
+        // Back row = hubCenter + HUB_LENGTH/2 blocks in shaft direction (against far wall)
+        BlockPos backRow = hubCenter.relative(dir, HUB_LENGTH / 2);
 
-        // Crafting table on the right wall
-        BlockPos craftPos = hubCenter.relative(right, HUB_WIDTH / 2 - 1);
-        placeFurniture(craftPos, Blocks.CRAFTING_TABLE, mineLevel);
+        // Layout (left to right facing back wall): Chest, Chest, Furnace, Crafting Table
+        BlockPos chest1Pos  = backRow.relative(left, 1);
+        BlockPos chest2Pos  = backRow;                    // center — forms double chest with chest1
+        BlockPos furnacePos = backRow.relative(right, 1);
+        BlockPos craftPos   = backRow.relative(right, 2);
 
-        say("Placed hub furniture (chests, furnace, crafting table).");
+        int placed = 0;
+        if (placeFurniture(chest1Pos, Blocks.CHEST, mineLevel)) placed++;
+        else MCAi.LOGGER.warn("CreateHub: failed to place chest 1 at {}", chest1Pos);
+
+        if (placeFurniture(chest2Pos, Blocks.CHEST, mineLevel)) placed++;
+        else MCAi.LOGGER.warn("CreateHub: failed to place chest 2 at {}", chest2Pos);
+
+        if (placeFurniture(furnacePos, Blocks.FURNACE, mineLevel)) placed++;
+        else MCAi.LOGGER.warn("CreateHub: failed to place furnace at {}", furnacePos);
+
+        if (placeFurniture(craftPos, Blocks.CRAFTING_TABLE, mineLevel)) placed++;
+        else MCAi.LOGGER.warn("CreateHub: failed to place crafting table at {}", craftPos);
+
+        if (placed == 4) {
+            say("Placed hub furniture: 2 chests, furnace, and crafting table.");
+        } else {
+            say("Placed " + placed + "/4 hub furniture items (may need more materials).");
+        }
         phase = Phase.PLACE_TORCHES;
     }
 
-    private void placeFurniture(BlockPos pos, net.minecraft.world.level.block.Block block,
+    private boolean placeFurniture(BlockPos pos, net.minecraft.world.level.block.Block block,
                                  MineState.MineLevel mineLevel) {
         if (BlockHelper.placeBlock(companion, pos, block)) {
             if (mineLevel != null) {
                 mineLevel.getFurniturePositions().add(pos);
             }
+            return true;
         }
+        return false;
     }
 
     // ================================================================
