@@ -4,8 +4,11 @@ import com.apocscode.mcai.MCAi;
 import com.apocscode.mcai.entity.CompanionEntity;
 import com.apocscode.mcai.task.BlockHelper;
 import com.apocscode.mcai.task.OreGuide;
+import com.apocscode.mcai.task.mining.BranchMineTask;
 import com.apocscode.mcai.task.mining.CreateMineTask;
+import com.apocscode.mcai.task.mining.MineState;
 import com.google.gson.JsonObject;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.item.Items;
 
@@ -18,9 +21,10 @@ import net.minecraft.world.item.Items;
  *   2. Create a hub room with chests, furnace, crafting table, and torches
  *   3. Systematically branch mine from the hub with efficient spacing
  *
- * Use this when the player wants a long-term mining operation, a "real mine",
- * or needs large quantities of a specific ore. For quick surface mining or
- * short tunnels, use mine_ores or strip_mine instead.
+ * MEMORY: When a mine is created, its entrance position is saved to companion memory.
+ * On subsequent "create mine" requests for the same ore, the companion will navigate
+ * back to the existing mine and resume branch mining instead of digging a new shaft.
+ * Use new_mine=true to force creating a fresh mine.
  */
 public class CreateMineTool implements AiTool {
 
@@ -36,7 +40,10 @@ public class CreateMineTool implements AiTool {
                 "optimal Y-level for the target ore, creates a furnished hub room as a staging area, then " +
                 "mines branches with 3-block spacing and poke holes for maximum ore exposure. " +
                 "Use for long-term mining or when large quantities of ore are needed. " +
-                "The mine persists and can be resumed later.";
+                "The mine is remembered — if the companion already has a mine for the requested ore, " +
+                "it will return to the existing mine and continue mining. " +
+                "Set new_mine=true only if the player explicitly asks to build a NEW mine. " +
+                "Use list_mines to show where existing mines are located.";
     }
 
     @Override
@@ -78,6 +85,15 @@ public class CreateMineTool implements AiTool {
                 "Default: companion's current facing direction.");
         props.add("direction", directionParam);
 
+        // New mine (force fresh mine)
+        JsonObject newMine = new JsonObject();
+        newMine.addProperty("type", "boolean");
+        newMine.addProperty("description",
+                "Set to true to create a brand new mine even if one already exists for this ore. " +
+                "Default: false (returns to existing mine and resumes mining). " +
+                "Only set true when the player explicitly says 'new mine' or 'build a new one'.");
+        props.add("new_mine", newMine);
+
         schema.add("properties", props);
         return schema;
     }
@@ -94,6 +110,24 @@ public class CreateMineTool implements AiTool {
             if (oreName != null && targetOre == null) {
                 return "Unknown ore type: '" + oreName + "'. " +
                         "Try: coal, copper, iron, lapis, gold, redstone, diamond, emerald.";
+            }
+
+            boolean forceNew = args.has("new_mine") && args.get("new_mine").getAsBoolean();
+
+            // ================================================================
+            // Check companion memory for an existing mine
+            // ================================================================
+            if (!forceNew) {
+                String oreKey = targetOre != null ? targetOre.name.toLowerCase() : "general";
+                String memoryKey = "mine_" + oreKey;
+                String mineData = companion.getMemory().getFact(memoryKey);
+
+                if (mineData != null) {
+                    String[] parsed = CreateMineTask.parseMineMemory(mineData);
+                    if (parsed != null) {
+                        return resumeExistingMine(companion, targetOre, parsed, oreKey);
+                    }
+                }
             }
 
             // Determine target Y-level
@@ -204,6 +238,72 @@ public class CreateMineTool implements AiTool {
 
             return resp.toString();
         });
+    }
+
+    // ================================================================
+    // Resume existing mine from memory
+    // ================================================================
+
+    /**
+     * Resume mining at an existing mine that was saved to memory.
+     * Navigates to the mine entrance and starts branch mining from the hub.
+     */
+    private String resumeExistingMine(CompanionEntity companion, OreGuide.Ore targetOre,
+                                       String[] parsed, String oreKey) {
+        try {
+            int entranceX = Integer.parseInt(parsed[0]);
+            int entranceY = Integer.parseInt(parsed[1]);
+            int entranceZ = Integer.parseInt(parsed[2]);
+            int targetY = Integer.parseInt(parsed[3]);
+            String dirName = parsed[4];
+            int branchLength = Integer.parseInt(parsed[5]);
+            int branchesPerSide = Integer.parseInt(parsed[6]);
+
+            BlockPos entrance = new BlockPos(entranceX, entranceY, entranceZ);
+            Direction direction = Direction.byName(dirName);
+            if (direction == null) direction = Direction.NORTH;
+
+            // Create a MineState that reflects the existing mine
+            MineState mineState = new MineState(
+                    targetOre != null ? targetOre.name : null,
+                    targetY, entrance, direction
+            );
+            mineState.setBranchLength(branchLength);
+            mineState.setBranchesPerSide(branchesPerSide);
+
+            // Calculate the shaft bottom position (entrance + depth steps in direction)
+            int depth = entranceY - targetY;
+            // Shaft bottom is at target Y, offset by depth blocks in the shaft direction
+            BlockPos shaftBottom = entrance.relative(direction, depth).atY(targetY);
+            mineState.setShaftBottom(shaftBottom);
+
+            // Create a hub center (same as CreateHubTask would calculate)
+            Direction hubDir = direction;
+            BlockPos hubCenter = shaftBottom.relative(hubDir, 4); // HUB_LENGTH/2 + 1
+            mineState.addLevel(hubCenter.getY(), hubCenter);
+            var level = mineState.getActiveLevel();
+            if (level != null) level.setHubBuilt(true);
+
+            // Queue branch mining directly (skip shaft + hub since they already exist)
+            BranchMineTask branchTask = new BranchMineTask(companion, mineState, targetOre);
+            companion.getTaskManager().queueTask(branchTask);
+
+            companion.getMemory().addEvent("Resumed " + oreKey + " mine at (" +
+                    entranceX + ", " + entranceY + ", " + entranceZ + ")");
+
+            String oreLabel = targetOre != null ? targetOre.name + " " : "";
+            return "[ASYNC_TASK] Found existing " + oreLabel + "mine at (" +
+                    entranceX + ", " + entranceY + ", " + entranceZ + ") → Y=" + targetY + ". " +
+                    "Returning to resume branch mining from the hub. " +
+                    "The shaft and hub are already built — heading straight to mining. " +
+                    "Say 'create new mine' if you want a completely new mine instead. " +
+                    "This task runs over time — STOP calling tools and tell the player you're on it.";
+
+        } catch (NumberFormatException e) {
+            MCAi.LOGGER.warn("CreateMine: invalid mine memory format, creating new mine");
+            // Fall through — invalid data, will create new mine
+            return null; // This won't happen due to the flow, but let's be safe
+        }
     }
 
     // ================================================================

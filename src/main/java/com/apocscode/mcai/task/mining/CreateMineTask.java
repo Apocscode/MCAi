@@ -394,6 +394,9 @@ public class CreateMineTask extends CompanionTask {
 
         mineState.setPhase(MinePhase.DIGGING_SHAFT);
 
+        // Save mine to companion memory for later resumption
+        saveMineToMemory();
+
         say("Mine plan queued: dig shaft → build hub → branch mine. " +
                 "This will take a while — I'll report progress as I go!");
 
@@ -423,6 +426,51 @@ public class CreateMineTask extends CompanionTask {
     /** Get the mine state (exposed for the tool to provide feedback). */
     public MineState getMineState() {
         return mineState;
+    }
+
+    /**
+     * Save this mine's location and configuration to companion memory.
+     * Uses the memory key "mine_{ore}" (e.g. "mine_diamond", "mine_general").
+     * Value format: "x,y,z|targetY|direction|branchLength|branchesPerSide"
+     */
+    private void saveMineToMemory() {
+        String oreKey = targetOre != null ? targetOre.name.toLowerCase() : "general";
+        String memoryKey = "mine_" + oreKey;
+
+        BlockPos entrance = mineState.getEntrance();
+        String value = entrance.getX() + "," + entrance.getY() + "," + entrance.getZ()
+                + "|" + mineState.getTargetY()
+                + "|" + mineState.getShaftDirection().getName()
+                + "|" + mineState.getBranchLength()
+                + "|" + mineState.getBranchesPerSide();
+
+        companion.getMemory().setFact(memoryKey, value);
+        companion.getMemory().addEvent("Created " + oreKey + " mine at " + formatPos(entrance)
+                + " → Y=" + mineState.getTargetY());
+
+        MCAi.LOGGER.info("CreateMine: saved mine to memory as '{}' = '{}'", memoryKey, value);
+    }
+
+    /**
+     * Parse a mine memory value string back into its components.
+     * @return [entranceX, entranceY, entranceZ, targetY, directionName, branchLength, branchesPerSide]
+     *         or null if the format is invalid.
+     */
+    public static String[] parseMineMemory(String value) {
+        if (value == null || value.isEmpty()) return null;
+        String[] parts = value.split("\\|");
+        if (parts.length < 5) return null;
+
+        String[] coords = parts[0].split(",");
+        if (coords.length != 3) return null;
+
+        return new String[]{
+                coords[0], coords[1], coords[2],  // x, y, z
+                parts[1],                          // targetY
+                parts[2],                          // direction
+                parts[3],                          // branchLength
+                parts[4]                           // branchesPerSide
+        };
     }
 
     @Override

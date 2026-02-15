@@ -154,6 +154,7 @@ public class ToolRegistry {
         register(new EmoteTool());
         register(new DigDownTool());
         register(new CreateMineTool());
+        register(new ListMinesTool());
         MCAi.LOGGER.info("Registered {} AI tools: {}", tools.size(), tools.keySet());
     }
 
