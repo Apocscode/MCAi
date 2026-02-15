@@ -510,8 +510,8 @@ public class StripMineTask extends CompanionTask {
         }
 
         if (countItem(inv, Items.TORCH) > 0) {
-            // Place torch at feet level — the tunnel floor should be solid below
-            boolean placed = BlockHelper.placeBlock(companion, tunnelPos, Blocks.TORCH);
+            // Place torch — uses floor torch with wall torch fallback
+            boolean placed = BlockHelper.placeTorch(companion, tunnelPos);
             if (placed) {
                 MCAi.LOGGER.debug("Strip-mine: placed torch at {}", tunnelPos);
             }

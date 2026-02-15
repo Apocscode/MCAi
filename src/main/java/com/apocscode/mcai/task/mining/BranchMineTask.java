@@ -7,6 +7,7 @@ import com.apocscode.mcai.task.CompanionTask;
 import com.apocscode.mcai.task.OreGuide;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
@@ -389,6 +390,10 @@ public class BranchMineTask extends CompanionTask {
         // Torch placement
         blocksSinceLastTorch++;
         if (blocksSinceLastTorch >= TORCH_INTERVAL) {
+            // Try crafting torches if we have none but have materials
+            if (BlockHelper.countItem(companion, Items.TORCH) <= 0) {
+                tryMidMineTorchCraft();
+            }
             BlockPos torchPos = currentEnd.above(); // Head height at previous position
             if (BlockHelper.placeTorch(companion, torchPos)) {
                 blocksSinceLastTorch = 0;
@@ -618,5 +623,75 @@ public class BranchMineTask extends CompanionTask {
         oreQueue.clear();
         MCAi.LOGGER.info("BranchMine cleanup: {} branches, {} ores, {} blocks broken",
                 branchesCompleted, oresMined, blocksBroken);
+    }
+
+    // ================================================================
+    // Torch Crafting (mid-mine)
+    // ================================================================
+
+    /**
+     * Attempt to craft torches mid-mining from coal/charcoal + sticks found while digging.
+     * If the companion has coal but no sticks, tries to craft sticks from planks.
+     * If no planks either, skips silently.
+     */
+    private void tryMidMineTorchCraft() {
+        var inv = companion.getCompanionInventory();
+
+        // Count fuel: coal or charcoal
+        int coal = BlockHelper.countItem(companion, Items.COAL)
+                 + BlockHelper.countItem(companion, Items.CHARCOAL);
+        if (coal <= 0) return;
+
+        // Count sticks
+        int sticks = BlockHelper.countItem(companion, Items.STICK);
+
+        // If no sticks, try to craft from planks (any plank type)
+        if (sticks <= 0) {
+            int planks = 0;
+            net.minecraft.world.item.Item plankItem = null;
+            for (int i = 0; i < inv.getContainerSize(); i++) {
+                var stack = inv.getItem(i);
+                if (!stack.isEmpty()) {
+                    String id = net.minecraft.core.registries.BuiltInRegistries.ITEM
+                            .getKey(stack.getItem()).getPath();
+                    if (id.endsWith("_planks")) {
+                        planks += stack.getCount();
+                        if (plankItem == null) plankItem = stack.getItem();
+                    }
+                }
+            }
+            if (planks >= 2 && plankItem != null) {
+                // Craft sticks: 2 planks -> 4 sticks
+                BlockHelper.removeItem(companion, plankItem, 2);
+                inv.addItem(new net.minecraft.world.item.ItemStack(Items.STICK, 4));
+                sticks = 4;
+                MCAi.LOGGER.debug("BranchMine: mid-mine crafted 4 sticks from planks");
+            }
+        }
+
+        if (sticks <= 0) return;
+
+        // Craft torches: 1 coal + 1 stick -> 4 torches
+        int batches = Math.min(coal, sticks);
+        batches = Math.min(batches, 8); // Cap at 32 torches per craft
+
+        // Remove materials — prefer coal over charcoal
+        int coalCount = BlockHelper.countItem(companion, Items.COAL);
+        int fromCoal = Math.min(batches, coalCount);
+        if (fromCoal > 0) {
+            BlockHelper.removeItem(companion, Items.COAL, fromCoal);
+        }
+        int fromCharcoal = batches - fromCoal;
+        if (fromCharcoal > 0) {
+            BlockHelper.removeItem(companion, Items.CHARCOAL, fromCharcoal);
+        }
+        BlockHelper.removeItem(companion, Items.STICK, batches);
+
+        // Add torches
+        int torchesProduced = batches * 4;
+        inv.addItem(new net.minecraft.world.item.ItemStack(Items.TORCH, torchesProduced));
+
+        MCAi.LOGGER.info("BranchMine: mid-mine crafted {} torches ({} coal + {} sticks)",
+                torchesProduced, fromCoal + fromCharcoal, batches);
     }
 }

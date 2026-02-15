@@ -1,15 +1,21 @@
 package com.apocscode.mcai.ai.tool;
 
 import com.apocscode.mcai.entity.CompanionEntity;
-import com.apocscode.mcai.task.MineBlocksTask;
+import com.apocscode.mcai.task.mining.DigShaftTask;
+import com.apocscode.mcai.task.mining.MineState;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 
 /**
- * AI Tool: Dig straight down N blocks (vertical shaft).
- * Usage: "dig down 5" → dig_down(depth=5)
- * Creates a 1×depth×1 vertical shaft from the companion's current position.
+ * AI Tool: Dig down N blocks via a walkable staircase shaft.
+ * Usage: "dig down 10" → dig_down(depth=10)
+ * Creates a walkable 2×1 staircase (no ladders needed) with torch placement,
+ * ore scanning, lava safety, and mid-mine torch crafting.
+ *
+ * The companion faces their current horizontal direction and descends via
+ * alternating forward/down steps, placing torches every 8 blocks.
  */
 public class DigDownTool implements AiTool {
 
@@ -20,8 +26,9 @@ public class DigDownTool implements AiTool {
 
     @Override
     public String description() {
-        return "Dig straight down (vertical shaft) from the companion's current position. " +
-                "Specify depth (1-64 blocks). The companion mines a 1x1 column directly below.";
+        return "Dig down from the companion's current position via a walkable staircase shaft. " +
+                "Specify depth (1-64 blocks). The companion digs a 2x1 staircase with torches, " +
+                "ore scanning, and lava safety. No ladders needed — the staircase is fully walkable.";
     }
 
     @Override
@@ -33,13 +40,8 @@ public class DigDownTool implements AiTool {
 
         JsonObject depth = new JsonObject();
         depth.addProperty("type", "integer");
-        depth.addProperty("description", "How many blocks to dig down. Default: 5, max: 64");
+        depth.addProperty("description", "How many blocks to dig down (depth in Y-levels). Default: 5, max: 64");
         props.add("depth", depth);
-
-        JsonObject width = new JsonObject();
-        width.addProperty("type", "integer");
-        width.addProperty("description", "Width of the shaft (1=1x1, 2=2x2, 3=3x3). Default: 1, max: 3");
-        props.add("width", width);
 
         schema.add("properties", props);
 
@@ -59,40 +61,35 @@ public class DigDownTool implements AiTool {
             int depth = args.has("depth") ? args.get("depth").getAsInt() : 5;
             depth = Math.max(1, Math.min(depth, 64));
 
-            int width = args.has("width") ? args.get("width").getAsInt() : 1;
-            width = Math.max(1, Math.min(width, 3));
-
             BlockPos pos = companion.blockPosition();
-
-            // Shaft starts 1 block below the companion and goes down 'depth' blocks
-            int startY = pos.getY() - 1;
-            int endY = startY - depth + 1;
+            int startY = pos.getY();
+            int targetY = startY - depth;
 
             // Safety: clamp to world minimum (don't mine into void)
-            int worldMin = companion.level().getMinBuildHeight();
-            if (endY < worldMin) {
-                endY = worldMin;
-                depth = startY - endY + 1;
+            int worldMin = companion.level().getMinBuildHeight() + 1;
+            if (targetY < worldMin) {
+                targetY = worldMin;
+                depth = startY - targetY;
                 if (depth <= 0) return "Already at the bottom of the world. Can't dig further down.";
             }
 
-            BlockPos from, to;
-            if (width == 1) {
-                from = new BlockPos(pos.getX(), endY, pos.getZ());
-                to = new BlockPos(pos.getX(), startY, pos.getZ());
-            } else {
-                // Center the wider shaft on the companion
-                int offset = width / 2;
-                from = new BlockPos(pos.getX() - offset, endY, pos.getZ() - offset);
-                to = new BlockPos(pos.getX() - offset + width - 1, startY, pos.getZ() - offset + width - 1);
+            // Determine direction: use the companion's current facing direction
+            Direction facing = Direction.fromYRot(companion.getYRot());
+            // Ensure horizontal direction only
+            if (facing == Direction.UP || facing == Direction.DOWN) {
+                facing = Direction.NORTH;
             }
 
-            MineBlocksTask task = new MineBlocksTask(companion, from, to);
+            // Create a lightweight MineState for the staircase shaft
+            MineState mineState = new MineState(null, targetY, pos, facing);
+            mineState.setShaftBottom(pos); // Will be updated by DigShaftTask
+
+            DigShaftTask task = new DigShaftTask(companion, mineState, facing, targetY);
             companion.getTaskManager().queueTask(task);
 
-            String shaftDesc = width == 1 ? "1x1" : width + "x" + width;
-            return "[ASYNC_TASK] Digging " + shaftDesc + " shaft straight down " + depth + " blocks from Y=" +
-                    startY + " to Y=" + endY + ". " +
+            return "[ASYNC_TASK] Digging staircase shaft down " + depth + " blocks from Y=" +
+                    startY + " to Y=" + targetY + " heading " + facing.getName() + ". " +
+                    "Walkable stairs with torches, ore scanning, and lava safety. " +
                     "This task runs over time — STOP calling tools and tell the player you're on it.";
         });
     }
