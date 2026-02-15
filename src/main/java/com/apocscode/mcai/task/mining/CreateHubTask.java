@@ -144,6 +144,8 @@ public class CreateHubTask extends CompanionTask {
                 MineState.MineLevel level = mineState.getActiveLevel();
                 if (level != null) level.setHubBuilt(true);
                 mineState.addBlocksBroken(blocksCleared);
+                // Update mine memory with hub center position (v2 format)
+                updateMineMemoryWithHub();
                 complete();
             }
         }
@@ -333,4 +335,29 @@ public class CreateHubTask extends CompanionTask {
     // Torch Crafting
     // ================================================================
 
+    /**
+     * Update the mine memory with the hub center position so resume can use it.
+     * Reads the existing memory, appends hub center coords (v2 format).
+     */
+    private void updateMineMemoryWithHub() {
+        if (hubCenter == null) return;
+        String oreName = mineState.getTargetOre();
+        String oreKey = oreName != null ? oreName.toLowerCase() : "general";
+        String memoryKey = "mine_" + oreKey;
+
+        String existing = companion.getMemory().getFact(memoryKey);
+        if (existing == null || existing.isEmpty()) return;
+
+        // Check if hub center is already saved (v2 format has 6+ pipe-separated parts)
+        String[] parts = existing.split("\\|");
+        if (parts.length >= 6) {
+            MCAi.LOGGER.info("CreateHub: mine memory already has hub data, not overwriting");
+            return;
+        }
+
+        // Append hub center to existing memory
+        String updated = existing + "|" + hubCenter.getX() + "," + hubCenter.getY() + "," + hubCenter.getZ();
+        companion.getMemory().setFact(memoryKey, updated);
+        MCAi.LOGGER.info("CreateHub: updated mine memory with hubCenter={}", hubCenter);
+    }
 }

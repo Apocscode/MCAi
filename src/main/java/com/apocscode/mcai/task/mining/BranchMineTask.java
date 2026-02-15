@@ -134,6 +134,10 @@ public class BranchMineTask extends CompanionTask {
             branchesInitialized = true;
         }
 
+        MCAi.LOGGER.info("BranchMine: starting. hubCenter={}, companionPos={}, shaftDir={}, branches={}",
+                level.getHubCenter(), companion.blockPosition(), mineState.getShaftDirection(),
+                level.getBranches().size());
+
         String oreLabel = targetOre != null ? " for " + targetOre.name + " ore" : "";
         say("Starting branch mining" + oreLabel + ". " +
                 (mineState.getBranchesPerSide() * 2) + " branches planned, " +
@@ -245,7 +249,8 @@ public class BranchMineTask extends CompanionTask {
         navigateTo(hub);
         stuckTimer++;
         if (stuckTimer > STUCK_TIMEOUT) {
-            MCAi.LOGGER.warn("BranchMine: stuck navigating to hub, proceeding");
+            MCAi.LOGGER.warn("BranchMine: stuck navigating to hub {} (companion at {}), proceeding",
+                    hub, companion.blockPosition());
             stuckTimer = 0;
             phase = Phase.SELECT_BRANCH;
         }
@@ -324,7 +329,8 @@ public class BranchMineTask extends CompanionTask {
         navigateTo(start);
         stuckTimer++;
         if (stuckTimer > STUCK_TIMEOUT) {
-            MCAi.LOGGER.warn("BranchMine: stuck reaching branch start, skipping");
+            MCAi.LOGGER.warn("BranchMine: stuck reaching branch start {} (companion at {}), skipping",
+                    start, companion.blockPosition());
             activeBranch.setStatus(MineState.BranchStatus.BLOCKED);
             branchesCompleted++;
             stuckTimer = 0;

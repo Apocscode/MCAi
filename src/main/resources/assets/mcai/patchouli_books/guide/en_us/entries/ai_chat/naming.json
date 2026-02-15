@@ -1,0 +1,18 @@
+{
+    "name": "Naming Your Companion",
+    "icon": "minecraft:name_tag",
+    "category": "mcai:ai_chat",
+    "sortnum": 5,
+    "pages": [
+        {
+            "type": "patchouli:text",
+            "title": "Rename via Chat",
+            "text": "You can give your companion any name you like — just tell them in chat! The name appears above their head, in the chat window, and is saved permanently.$(br2)$(bold)Ways to rename:$(br)$(li)$(thing)\"Your name is Luna\"$(br)$(li)$(thing)\"I'll call you Max\"$(br)$(li)$(thing)\"Call yourself Shadow\"$(br)$(li)$(thing)\"Rename yourself to Buddy\"$(br)$(li)$(thing)\"Change your name to Rex\"$(br2)The companion will acknowledge their new name and start using it immediately. Names can be up to 32 characters long."
+        },
+        {
+            "type": "patchouli:text",
+            "title": "How It Works",
+            "text": "$(bold)Persistence:$() The name is saved in the companion's entity data (NBT). It survives:$(br)$(li)Server restarts and world reloads$(li)Chunk unloading/reloading$(li)Death and respawning via Soul Crystal$(br2)$(bold)Display:$() The custom name appears:$(br)$(li)Above the companion's head (nameplate)$(li)In the chat window header$(li)In all chat messages from the companion$(br2)$(bold)Default Name:$() When first summoned, the companion is named $(thing)Jim$(). You can change it to anything at any time — there are no restrictions or costs."
+        }
+    ]
+}

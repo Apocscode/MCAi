@@ -6,13 +6,18 @@
     "pages": [
         {
             "type": "patchouli:text",
-            "title": "Permanent Mine",
+            "title": "Resource-Based Mines",
+            "text": "Say $(thing)\"Create a [resource] mine\"$() to build a permanent mine optimized for any ore or resource. The Y-level is automatically chosen based on the resource's best spawn depth.$(br2)$(bold)Examples:$(br)$(li)$(thing)\"Create a redstone mine\"$() → Y=-59$(br)$(li)$(thing)\"Create an osmium mine\"$() → Y=16$(br)$(li)$(thing)\"Create a diamond mine\"$() → Y=-59$(br)$(li)$(thing)\"Create a tin mine\"$() → Y=20$(br)$(li)$(thing)\"Create a certus quartz mine\"$() → Y=16$(br2)Supports $(bold)27 resources$() — all vanilla ores, Nether resources, and modded ores from Mekanism, Thermal, Create, AE2, IE, and gem mods."
+        },
+        {
+            "type": "patchouli:text",
+            "title": "Mine Structure",
             "text": "The $(bold)create_mine$() tool builds a full mining operation:$(br2)$(bold)Phase 1: Staircase Shaft$(br)A walkable 2×1 staircase (no ladders needed) descends to the target Y-level. Torches placed every 8 blocks, auto-crafted from coal+sticks if needed. Lava is sealed with cobblestone.$(br2)$(bold)Phase 2: Hub Room$(br)A 7×5×4 room is cleared and furnished with:$(br)$(li)2 chests for item storage$(li)1 furnace$(li)1 crafting table$(li)4 torches (auto-crafted if needed)$(li)Cobblestone floor"
         },
         {
             "type": "patchouli:text",
             "title": "Branch Mining",
-            "text": "$(bold)Phase 3: Branch Mining$(br)From the hub, a central corridor extends forward. Branch tunnels are dug perpendicular to both sides:$(br2)$(li)3-block spacing between branches (every block visible)$(li)Poke holes every 4 blocks for extra coverage$(li)Wall ore scanning and mining$(li)Torches every 8 blocks (auto-crafted mid-mine)$(li)Auto-deposit at hub when inventory reaches 80%$(br2)$(bold)Parameters:$(br)$(thing)ore$() — target ore (determines Y-level)$(br)$(thing)branch_length$() — 8-40 blocks (default: 20)$(br)$(thing)branches_per_side$() — 1-8 pairs (default: 4)$(br)$(thing)new_mine$() — force a fresh mine (default: false)"
+            "text": "$(bold)Phase 3: Branch Mining$(br)From the hub, a central corridor extends forward. Branch tunnels are dug perpendicular to both sides:$(br2)$(li)3-block spacing between branches (every block visible)$(li)Poke holes every 4 blocks for extra coverage$(li)Wall ore scanning and mining$(li)Torches every 8 blocks (auto-crafted mid-mine)$(li)Auto-deposit at hub when inventory reaches 80%$(br2)$(bold)Parameters:$(br)$(thing)ore$() — target resource (determines Y-level)$(br)$(thing)branch_length$() — 8-40 blocks (default: 20)$(br)$(thing)branches_per_side$() — 1-8 pairs (default: 4)$(br)$(thing)new_mine$() — force a fresh mine (default: false)"
         },
         {
             "type": "patchouli:text",
@@ -22,7 +27,7 @@
         {
             "type": "patchouli:text",
             "title": "Safety Features",
-            "text": "The mining system handles hazards automatically:$(br2)$(li)$(bold)Lava$() — Checks all adjacent faces before mining. Seals with cobblestone if found below.$(li)$(bold)Falling blocks$() — Mines gravel/sand columns up to 10 blocks.$(li)$(bold)Missing floor$() — Places cobblestone over gaps.$(li)$(bold)Inventory full$() — Returns to hub chests to deposit.$(li)$(bold)Out of torches$() — Auto-crafts from coal+sticks, or planks→sticks if needed.$(li)$(bold)Stuck detection$() — Skips unreachable areas after timeout."
+            "text": "The mining system handles hazards automatically:$(br2)$(li)$(bold)Lava$() — Checks all adjacent faces before mining. Seals with cobblestone if found below.$(li)$(bold)Falling blocks$() — Mines gravel/sand columns up to 10 blocks.$(li)$(bold)Missing floor$() — Places cobblestone over gaps.$(li)$(bold)Inventory full$() — Returns to hub chests to deposit.$(li)$(bold)Out of torches$() — Auto-crafts from coal+sticks, or planks→sticks if needed.$(li)$(bold)Tool breaks$() — Auto-crafts replacement pickaxe (diamond→iron→stone→wood).$(li)$(bold)Low health$() — Auto-eats food from inventory.$(li)$(bold)Stuck detection$() — Skips unreachable areas after timeout."
         }
     ]
 }

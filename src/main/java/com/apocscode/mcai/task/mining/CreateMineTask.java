@@ -432,19 +432,28 @@ public class CreateMineTask extends CompanionTask {
      * Save this mine's location and configuration to companion memory.
      * Uses the memory key "mine_{ore}" (e.g. "mine_diamond", "mine_general").
      * Value format: "x,y,z|targetY|direction|branchLength|branchesPerSide"
+     * Extended format (v2): adds "|hubX,hubY,hubZ" when hub center is known.
      */
     private void saveMineToMemory() {
         String oreKey = targetOre != null ? targetOre.name.toLowerCase() : "general";
         String memoryKey = "mine_" + oreKey;
 
         BlockPos entrance = mineState.getEntrance();
-        String value = entrance.getX() + "," + entrance.getY() + "," + entrance.getZ()
-                + "|" + mineState.getTargetY()
-                + "|" + mineState.getShaftDirection().getName()
-                + "|" + mineState.getBranchLength()
-                + "|" + mineState.getBranchesPerSide();
+        StringBuilder value = new StringBuilder();
+        value.append(entrance.getX()).append(",").append(entrance.getY()).append(",").append(entrance.getZ())
+                .append("|").append(mineState.getTargetY())
+                .append("|").append(mineState.getShaftDirection().getName())
+                .append("|").append(mineState.getBranchLength())
+                .append("|").append(mineState.getBranchesPerSide());
 
-        companion.getMemory().setFact(memoryKey, value);
+        // Append hub center if known (v2 format)
+        MineState.MineLevel level = mineState.getActiveLevel();
+        if (level != null && level.getHubCenter() != null) {
+            BlockPos hub = level.getHubCenter();
+            value.append("|").append(hub.getX()).append(",").append(hub.getY()).append(",").append(hub.getZ());
+        }
+
+        companion.getMemory().setFact(memoryKey, value.toString());
         companion.getMemory().addEvent("Created " + oreKey + " mine at " + formatPos(entrance)
                 + " → Y=" + mineState.getTargetY());
 
@@ -453,8 +462,9 @@ public class CreateMineTask extends CompanionTask {
 
     /**
      * Parse a mine memory value string back into its components.
-     * @return [entranceX, entranceY, entranceZ, targetY, directionName, branchLength, branchesPerSide]
-     *         or null if the format is invalid.
+     * @return [entranceX, entranceY, entranceZ, targetY, directionName, branchLength, branchesPerSide,
+     *          hubX?, hubY?, hubZ?]
+     *         or null if the format is invalid. Hub position (indices 7-9) only present in v2 format.
      */
     public static String[] parseMineMemory(String value) {
         if (value == null || value.isEmpty()) return null;
@@ -463,6 +473,21 @@ public class CreateMineTask extends CompanionTask {
 
         String[] coords = parts[0].split(",");
         if (coords.length != 3) return null;
+
+        // Check for v2 format with hub center (parts.length >= 6)
+        if (parts.length >= 6) {
+            String[] hubCoords = parts[5].split(",");
+            if (hubCoords.length == 3) {
+                return new String[]{
+                        coords[0], coords[1], coords[2],  // x, y, z
+                        parts[1],                          // targetY
+                        parts[2],                          // direction
+                        parts[3],                          // branchLength
+                        parts[4],                          // branchesPerSide
+                        hubCoords[0], hubCoords[1], hubCoords[2]  // hubX, hubY, hubZ
+                };
+            }
+        }
 
         return new String[]{
                 coords[0], coords[1], coords[2],  // x, y, z

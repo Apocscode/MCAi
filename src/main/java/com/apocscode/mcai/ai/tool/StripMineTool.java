@@ -96,7 +96,7 @@ public class StripMineTool implements AiTool {
             String oreName = args.has("ore") ? args.get("ore").getAsString().trim() : null;
             OreGuide.Ore targetOre = oreName != null ? OreGuide.findByName(oreName) : null;
             if (oreName != null && targetOre == null) {
-                return "Unknown ore type: '" + oreName + "'. Try: coal, copper, iron, lapis, gold, redstone, diamond, emerald.";
+                return "Unknown ore type: '" + oreName + "'. Try: " + OreGuide.allOreNames() + ".";
             }
 
             // Parse tunnel length

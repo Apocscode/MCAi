@@ -23,6 +23,7 @@ The companion uses a cloud AI backend (Groq / OpenRouter) with Ollama as a local
 - **Proactive idle chat** — companion speaks up with suggestions after being idle
 - **Mute/unmute** — "shut up" or "stop talking" silences idle chat; "talk again" re-enables
 - **Multi-part command understanding** — "craft a chest and place it next to the furnace" routes to AI for decomposition into chained tool calls
+- **Companion naming** — say "your name is Luna" or "call yourself Max" to rename; name shows above head and in chat, persists across sessions
 - **GitHub bug report button** in inventory screen
 
 ### Autonomous Crafting
@@ -41,11 +42,15 @@ The companion uses a cloud AI backend (Groq / OpenRouter) with Ollama as a local
 - **Ore scanning** — finds specific ores in range
 - **Strip mining** — staircase descent to target Y-level, then tunnel with ore detection and wall torch fallback
 - **Permanent mines** — Create hub with branching tunnels, torch crafting mid-mine
+- **Resource-based mines** — Say "create a [resource] mine" (redstone, osmium, tin, etc.) — Y-level is automatically chosen based on the resource's optimal spawn depth
+- **27 supported resources** — All vanilla ores + Nether resources + modded ores (Mekanism, Thermal, Create, AE2, IE, gem mods)
 - **Mine memory** — mines are remembered across sessions; companion returns to existing mine instead of digging a new one (say "create new mine" to force fresh)
 - **Mine listing** — ask "where are my mines?" to see all saved mine locations
 - **Area mining** — clears a defined region
 - **Dig down** — walkable 2×1 staircase shaft (not a vertical drop) with torches, ore scanning, lava safety
 - **Universal torch crafting** — all mining tasks auto-craft torches from coal+sticks found while digging
+- **Auto-craft tools** — when a pickaxe breaks mid-mine, auto-crafts a replacement (diamond→iron→stone→wood)
+- **Auto-eat** — eats food from inventory when health drops below 50%
 
 ### Logistics & Home Area
 - **Logistics Wand** — tag containers as Input/Output/Storage

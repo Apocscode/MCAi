@@ -37,10 +37,12 @@ public class CreateMineTool implements AiTool {
     public String description() {
         return "Create a permanent mine with staircase shaft, hub room (chests, furnace, crafting table), " +
                 "and systematic branch mining. The companion builds a full mine operation: digs down to the " +
-                "optimal Y-level for the target ore, creates a furnished hub room as a staging area, then " +
+                "optimal Y-level for the target ore/resource, creates a furnished hub room as a staging area, then " +
                 "mines branches with 3-block spacing and poke holes for maximum ore exposure. " +
-                "Use for long-term mining or when large quantities of ore are needed. " +
-                "The mine is remembered — if the companion already has a mine for the requested ore, " +
+                "Supports all vanilla ores AND modded ores from ATM10 (Mekanism, Thermal, Create, AE2, etc.). " +
+                "Say 'create a [resource] mine' — e.g. 'create a redstone mine', 'create an osmium mine'. " +
+                "The Y-level is automatically chosen based on the resource's best spawn depth. " +
+                "The mine is remembered — if the companion already has a mine for the requested resource, " +
                 "it will return to the existing mine and continue mining. " +
                 "Set new_mine=true only if the player explicitly asks to build a NEW mine. " +
                 "Use list_mines to show where existing mines are located.";
@@ -57,7 +59,7 @@ public class CreateMineTool implements AiTool {
         JsonObject ore = new JsonObject();
         ore.addProperty("type", "string");
         ore.addProperty("description",
-                "Target ore to mine. Examples: 'iron', 'diamond', 'gold', 'coal'. " +
+                "Target ore/resource to mine. Examples: 'iron', 'diamond', 'redstone', 'osmium', 'tin', 'certus quartz'. " +
                 "Determines the Y-level for the mine. If omitted, mines at current Y.");
         props.add("ore", ore);
 
@@ -109,7 +111,7 @@ public class CreateMineTool implements AiTool {
             OreGuide.Ore targetOre = oreName != null ? OreGuide.findByName(oreName) : null;
             if (oreName != null && targetOre == null) {
                 return "Unknown ore type: '" + oreName + "'. " +
-                        "Try: coal, copper, iron, lapis, gold, redstone, diamond, emerald.";
+                        "Try: " + OreGuide.allOreNames() + ".";
             }
 
             boolean forceNew = args.has("new_mine") && args.get("new_mine").getAsBoolean();
@@ -271,18 +273,39 @@ public class CreateMineTool implements AiTool {
             mineState.setBranchLength(branchLength);
             mineState.setBranchesPerSide(branchesPerSide);
 
-            // Calculate the shaft bottom position (entrance + depth steps in direction)
+            // Calculate the shaft bottom position
+            // The staircase shaft moves 2 blocks forward per 1 Y-level descended
+            // (1 in DIG_FORWARD phase + 1 in DIG_DOWN phase)
             int depth = entranceY - targetY;
-            // Shaft bottom is at target Y, offset by depth blocks in the shaft direction
-            BlockPos shaftBottom = entrance.relative(direction, depth).atY(targetY);
+            int horizontalOffset = depth * 2;
+            BlockPos shaftBottom = entrance.relative(direction, horizontalOffset).atY(targetY);
             mineState.setShaftBottom(shaftBottom);
 
-            // Create a hub center (same as CreateHubTask would calculate)
-            Direction hubDir = direction;
-            BlockPos hubCenter = shaftBottom.relative(hubDir, 4); // HUB_LENGTH/2 + 1
+            // Use saved hub center if available (v2 format), otherwise calculate it
+            BlockPos hubCenter;
+            if (parsed.length >= 10) {
+                // v2 format: hub center was saved explicitly
+                int hubX = Integer.parseInt(parsed[7]);
+                int hubY = Integer.parseInt(parsed[8]);
+                int hubZ = Integer.parseInt(parsed[9]);
+                hubCenter = new BlockPos(hubX, hubY, hubZ);
+                MCAi.LOGGER.info("Resumemine: using saved hubCenter={}", hubCenter);
+            } else {
+                // v1 format: calculate hub center from shaft bottom
+                // HUB_LENGTH = 7, offset = HUB_LENGTH/2 + 1 = 4
+                hubCenter = shaftBottom.relative(direction, 4);
+                MCAi.LOGGER.info("Resumemine: calculated hubCenter={} (no saved hub)", hubCenter);
+            }
+
+            MCAi.LOGGER.info("Resumemine: entrance={}, depth={}, horizOffset={}, shaftBottom={}",
+                    entrance, depth, horizontalOffset, shaftBottom);
+
             mineState.addLevel(hubCenter.getY(), hubCenter);
             var level = mineState.getActiveLevel();
             if (level != null) level.setHubBuilt(true);
+
+            MCAi.LOGGER.info("Resumemine: hubCenter={}, branches={}x{}, branchLen={}",
+                    hubCenter, branchesPerSide, 2, branchLength);
 
             // Queue branch mining directly (skip shaft + hub since they already exist)
             BranchMineTask branchTask = new BranchMineTask(companion, mineState, targetOre);

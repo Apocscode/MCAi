@@ -11,8 +11,13 @@
         },
         {
             "type": "patchouli:text",
-            "title": "Ore Y-Levels (1.21)",
-            "text": "Optimal Y-levels for each ore:$(br2)$(li)$(bold)Coal$(): Y=96 (Any pick)$(li)$(bold)Copper$(): Y=48 (Any pick)$(li)$(bold)Iron$(): Y=16 (Stone pick+)$(li)$(bold)Lapis$(): Y=0 (Stone pick+)$(li)$(bold)Gold$(): Y=-16 (Iron pick+)$(li)$(bold)Redstone$(): Y=-59 (Iron pick+)$(li)$(bold)Diamond$(): Y=-59 (Iron pick+)$(li)$(bold)Emerald$(): Y=232 (Iron pick+, Mountains)$(br2)The companion automatically goes to the best Y-level and auto-crafts the required pickaxe tier."
+            "title": "Vanilla Ore Y-Levels",
+            "text": "Optimal Y-levels for vanilla ores:$(br2)$(li)$(bold)Coal$(): Y=96 (Any pick)$(li)$(bold)Copper$(): Y=48 (Any pick)$(li)$(bold)Iron$(): Y=16 (Stone pick+)$(li)$(bold)Lapis$(): Y=0 (Stone pick+)$(li)$(bold)Gold$(): Y=-16 (Iron pick+)$(li)$(bold)Redstone$(): Y=-59 (Iron pick+)$(li)$(bold)Diamond$(): Y=-59 (Iron pick+)$(li)$(bold)Emerald$(): Y=232 (Iron pick+, Mountains)$(br2)$(bold)Nether:$()$(li)$(bold)Nether Quartz$(): Y=15 (Any pick)$(li)$(bold)Nether Gold$(): Y=15 (Any pick)$(li)$(bold)Ancient Debris$(): Y=15 (Diamond pick)"
+        },
+        {
+            "type": "patchouli:text",
+            "title": "Modded Ore Y-Levels",
+            "text": "ATM10 modded ore Y-levels (auto-detected via tags):$(br2)$(bold)Mekanism:$(br)$(li)Osmium: Y=16 (Stone+)$(li)Tin: Y=20 (Stone+)$(li)Lead: Y=8 (Stone+)$(li)Uranium: Y=-20 (Iron+)$(li)Fluorite: Y=-10 (Iron+)$(br2)$(bold)Thermal:$(br)$(li)Silver: Y=-10 (Iron+)$(li)Nickel: Y=-10 (Iron+)$(li)Sulfur: Y=-20 (Stone+)$(li)Apatite: Y=80 (Any)$(br2)$(bold)Create:$() Zinc: Y=20 (Stone+)$(br)$(bold)AE2:$() Certus Quartz: Y=16 (Iron+)$(br)$(bold)IE:$() Aluminum: Y=20 (Stone+)$(br)$(bold)Gems:$() Ruby, Sapphire, Peridot: Y=-20 (Iron+)"
         },
         {
             "type": "patchouli:text",

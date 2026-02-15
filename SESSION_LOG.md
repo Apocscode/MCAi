@@ -842,7 +842,7 @@ git commit -m "description"
 | `src/.../task/BlockHelper.java` | Block ops, hazard system, tool/torch auto-craft, health check, dimension helpers |
 | `src/.../task/StripMineTask.java` | Strip mine tunnel with ore scanning, fluid sealing, shared torch/tool/health |
 | `src/.../task/TaskManager.java` | Async task queue, continuations, deterministic execution |
-| `src/.../task/OreGuide.java` | Ore Y-level ranges and tool tier requirements for 1.21 distribution |
+| `src/.../task/OreGuide.java` | Ore Y-level ranges, tool tiers, 27 resources (vanilla + Nether + modded via c:ores tags) |
 | `src/.../task/mining/DigShaftTask.java` | 2×1 staircase shaft with torch/tool/health checks |
 | `src/.../task/mining/CreateHubTask.java` | 7×5×4 hub room with furniture placement |
 | `src/.../task/mining/BranchMineTask.java` | Systematic branch mining from hub with poke holes, auto-deposit |
@@ -880,5 +880,62 @@ git commit -m "description"
 
 ---
 
-*Last updated: 2026-01-20 — Session 17*
+*Last updated: 2026-02-14 — Session 18*
 *Rule: Update this log with every JAR deployment.*
+
+---
+
+## Session 18 — Expanded Ore Guide, Mine Resume Fix, Naming Guide (2026-02-14)
+
+### Branch Mine Resume Fix
+- **Root cause**: Staircase shaft moves 2 blocks forward per 1 Y-level descended, but `resumeExistingMine()` used `depth * 1` — placed hub center and all branches in solid rock
+- **Fix**: Changed to `entrance.relative(direction, depth * 2)` in `CreateMineTool.resumeExistingMine()`
+- **Hub center persistence** (v2 memory format): `saveMineToMemory()` now appends `|hubX,hubY,hubZ`, `parseMineMemory()` reads it, `CreateHubTask` updates mine memory after hub is built
+- **Better logging**: Branch start/hub positions logged in stuck messages for easier debugging
+
+### Expanded OreGuide — 27 Resources
+Expanded `OreGuide.java` from 8 vanilla ores to 27 resources using NeoForge common tags (`c:ores/*`):
+
+| Category | Resources | Tags |
+|----------|-----------|------|
+| **Vanilla Overworld** (8) | Coal, Copper, Iron, Lapis, Gold, Redstone, Diamond, Emerald | `minecraft:*_ores` |
+| **Vanilla Nether** (3) | Nether Quartz, Nether Gold, Ancient Debris | `c:ores/quartz`, `c:ores/gold`, `c:ores/netherite_scrap` |
+| **Mekanism** (5) | Osmium, Tin, Lead, Uranium, Fluorite | `c:ores/osmium`, `tin`, `lead`, `uranium`, `fluorite` |
+| **Thermal Series** (4) | Silver, Nickel, Sulfur, Apatite | `c:ores/silver`, `nickel`, `sulfur`, `apatite` |
+| **Create** (1) | Zinc | `c:ores/zinc` |
+| **AE2** (1) | Certus Quartz | `c:ores/certus_quartz` |
+| **IE** (1) | Aluminum | `c:ores/aluminum` |
+| **Gems** (3) | Ruby, Sapphire, Peridot | `c:ores/ruby`, `sapphire`, `peridot` |
+| **Misc** (2) | Iridium, Platinum | `c:ores/iridium`, `platinum` |
+
+New features in OreGuide:
+- `commonOreTag()` helper for creating NeoForge common tags
+- `modded` and `nether` flags on each ore entry
+- `matchAlias()` for alternate names (netherite→ancient debris, quartz→nether quartz, etc.)
+- `vanillaOres()`, `moddedOres()`, `overworldOres()` filtered lists
+- `allOreNames()` for dynamic error messages
+- Expanded `findByName()` with `_dust`, `_gem`, `_crystal` stripping
+- `getMiningGuide()` organized by category (Vanilla / Nether / Modded)
+
+### Patchouli Guide Updates
+- **Mining Basics**: Split ore Y-levels into "Vanilla" and "Modded" pages with all 27 resources listed
+- **Create Mine**: New "Resource-Based Mines" first page explaining `"create a [resource] mine"` syntax with examples; added auto-craft tool and auto-eat to safety features
+- **Naming**: New entry `ai_chat/naming.json` explaining how to rename companion via chat, persistence, display
+
+### Error Message Updates
+- `CreateMineTool` and `StripMineTool` now use dynamic `OreGuide.allOreNames()` for "Unknown ore" error messages
+- Tool descriptions updated to mention modded ore support and resource-based mine examples
+
+### Files Changed
+| File | Change |
+|------|--------|
+| `task/OreGuide.java` | Expanded from 8→27 ores, NeoForge common tags, alias matching, filtered lists |
+| `ai/tool/CreateMineTool.java` | Mine resume fix (depth*2), v2 hub center memory, modded ore description, dynamic error msg |
+| `task/mining/CreateMineTask.java` | v2 memory format (hub center), backward-compatible parser |
+| `task/mining/CreateHubTask.java` | `updateMineMemoryWithHub()` saves hub center after construction |
+| `task/mining/BranchMineTask.java` | Position logging in stuck warnings for hub/branch navigation |
+| `ai/tool/StripMineTool.java` | Dynamic error message for unknown ores |
+| `patchouli: mining_basics.json` | Added modded ore Y-levels page, Nether resources |
+| `patchouli: create_mine.json` | Resource-based mines page, auto-craft/auto-eat in safety |
+| `patchouli: naming.json` | NEW — companion naming guide (2 pages) |
+| `README.md` | Updated mining section (resource mines, 27 resources, auto-craft, auto-eat), added naming feature |
