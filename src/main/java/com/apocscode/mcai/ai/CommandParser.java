@@ -832,6 +832,28 @@ public class CommandParser {
             "what(?:'s|s) installed",
             Pattern.CASE_INSENSITIVE);
 
+    // --- MULTI-PART COMMAND DETECTION ---
+    // Phrases that signal the user is giving multiple instructions in one message.
+    // These should be routed to AI for decomposition, not handled locally.
+    private static final Pattern MULTI_PART_SIGNAL = Pattern.compile(
+            "(?:" +
+            // Conjunctions joining two actions
+            "\\b(?:and|then|after that|afterwards|once done|when done|also|plus)\\s+" +
+                "(?:place|put|drop|set|move|store|deposit|deliver|give|hand|bring|" +
+                "go|walk|run|come|follow|mine|craft|make|build|chop|dig|smelt|kill|fetch|find)" +
+            "|" +
+            // Spatial/placement instructions after an item name
+            "\\b(?:place|put|set|drop|stick)\\s+(?:it|them|that|those|this)\\s+" +
+                "(?:in|on|at|near|next to|beside|by|inside|into|under|over|against|here|there)" +
+            "|" +
+            // Explicit sequencing
+            "\\b(?:first|second|1st|2nd|step \\d|after (?:you|that)|before (?:you|that))\\b" +
+            "|" +
+            // "then" at word boundary (catches "craft X then place it")
+            "\\bthen\\b" +
+            ")",
+            Pattern.CASE_INSENSITIVE);
+
     // --- CONVERSATIONAL QUESTIONS (web search fallback) ---
     // Detects informational questions that should trigger a web search rather
     // than being treated as action commands. Only checked AFTER all specific
@@ -871,6 +893,15 @@ public class CommandParser {
 
         // Strip common filler prefixes for matching (but keep original for display)
         String cleaned = stripFillerPrefixes(msg);
+
+        // ---- Multi-part command detection ----
+        // If the message contains signals of multiple instructions ("craft X and place it"),
+        // route to AI for decomposition. AI can chain tool calls properly.
+        // Simple commands ("come here", "stay", "cancel") are excluded — they're single-action.
+        if (isMultiPartCommand(msg)) {
+            MCAi.LOGGER.info("CommandParser: multi-part command detected, routing to AI: {}", msg);
+            return false; // Let AI handle decomposition into multiple tool calls
+        }
 
         // ---- Greetings / chitchat (respond immediately, no tool) ----
         if (GREETING_PATTERN.matcher(msg).matches()) {
@@ -1137,6 +1168,9 @@ public class CommandParser {
         Matcher craftMatcher = CRAFT_PATTERN.matcher(msg);
         if (craftMatcher.matches()) {
             String itemStr = craftMatcher.group(2).trim();
+            // Safety: strip trailing instruction phrases that bled into the item name
+            // e.g. "chest place in next to the other chest" → "chest"
+            itemStr = stripTrailingInstructions(itemStr);
             // Don't trigger craft for things that aren't items (e.g., "build a house")
             String item = resolveItem(itemStr);
             if (item == null) item = normalizeItemName(itemStr);
@@ -1403,6 +1437,47 @@ public class CommandParser {
 
         // No match — fall through to AI
         return false;
+    }
+
+    /**
+     * Detect multi-part commands that contain multiple instructions.
+     * These should be routed to AI for decomposition rather than handled locally.
+     * Excludes simple commands like greetings, stay, follow, cancel, mute.
+     */
+    private static boolean isMultiPartCommand(String msg) {
+        // Don't flag simple single-action commands even if they contain trigger words
+        if (GREETING_PATTERN.matcher(msg).matches()) return false;
+        if (THANKS_PATTERN.matcher(msg).matches()) return false;
+        if (CANCEL_PATTERN.matcher(msg).find()) return false;
+        if (STAY_PATTERN.matcher(msg).find()) return false;
+        if (FOLLOW_PATTERN.matcher(msg).find()) return false;
+        if (MUTE_PATTERN.matcher(msg).find()) return false;
+        if (UNMUTE_PATTERN.matcher(msg).find()) return false;
+        if (HELP_PATTERN.matcher(msg).matches()) return false;
+
+        return MULTI_PART_SIGNAL.matcher(msg).find();
+    }
+
+    /**
+     * Strip trailing instruction phrases from an item name string.
+     * Fallback safety for when multi-part detection doesn't catch something —
+     * prevents "chest place in next to the other chest" from becoming an item name.
+     * Cuts at the first verb/preposition that signals a separate instruction.
+     */
+    private static final Pattern TRAILING_INSTRUCTION_PATTERN = Pattern.compile(
+            "\\s+(?:and\\s+)?(?:place|put|set|drop|move|store|deposit|deliver|give|hand|" +
+            "stick|shove|throw|toss|leave|bring)\\s+(?:it|them|that|this|those)\\b.*$|" +
+            "\\s+(?:next to|beside|near|by|in|on|at|into|inside|under|over|against|here|there)\\s+.*$|" +
+            "\\s+(?:and|then|after that|afterwards|once done)\\s+.*$",
+            Pattern.CASE_INSENSITIVE);
+
+    private static String stripTrailingInstructions(String itemStr) {
+        String cleaned = TRAILING_INSTRUCTION_PATTERN.matcher(itemStr).replaceFirst("").trim();
+        if (cleaned.isEmpty()) return itemStr; // Don't strip everything
+        if (!cleaned.equals(itemStr)) {
+            MCAi.LOGGER.info("CommandParser: stripped trailing instructions: '{}' → '{}'", itemStr, cleaned);
+        }
+        return cleaned;
     }
 
     /**
