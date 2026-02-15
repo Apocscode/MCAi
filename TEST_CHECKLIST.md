@@ -181,6 +181,14 @@ Mark each test ✅ (pass), ❌ (fail), or ⏭️ (skipped) with notes.
 | 107 | Shaft: ore scanning while descending | | |
 | 108 | CreateHubTask: 7×5×4 room cleared | | |
 | 109 | Hub: chests, furnace, crafting table placed | | |
+| 109a | Hub: auto-crafts chests from planks in inventory | | |
+| 109b | Hub: auto-crafts furnace from 8 cobblestone | | |
+| 109c | Hub: auto-crafts crafting table from 4 planks | | |
+| 109d | Hub: converts logs to planks when planks insufficient | | |
+| 109e | Hub: furniture placed in back-wall row (same Y level) | | |
+| 109f | Hub: two adjacent chests form a double chest | | |
+| 109g | Hub: chat reports X/4 furniture items placed | | |
+| 109h | Hub: handles missing materials gracefully | | |
 | 110 | Hub: 4 torches placed on walls | | |
 | 111 | BranchMineTask: branches extend from corridor | | |
 | 112 | Branch: poke holes every 4 blocks for extra coverage | | |
@@ -325,9 +333,10 @@ Mark each test ✅ (pass), ❌ (fail), or ⏭️ (skipped) with notes.
 | 14. Other Tasks | 12 | | | |
 | 15. AI Tools | 12 | | | |
 | 16. Configuration & Infrastructure | 10 | | | |
-| **TOTAL** | **188** | | | |
+| **TOTAL** | **196** | | | |
 
 ---
 
 *Created: 2026-01-20 — Session 17*
-*Covers all features through Session 17*
+*Updated: 2026-02-15 — Session 19 (hub furniture tests)*
+*Covers all features through Session 19*

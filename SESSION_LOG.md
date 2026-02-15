@@ -878,10 +878,6 @@ git commit -m "description"
 | 2nd | 1094 | 1151 | 95.0% | 48 |
 | 3rd | Pending — need to run after shulker/netherite/carpet fixes | | ~97%+ expected | ~20 |
 
----
-
-*Last updated: 2026-02-14 — Session 18*
-*Rule: Update this log with every JAR deployment.*
 
 ---
 
@@ -939,3 +935,48 @@ New features in OreGuide:
 | `patchouli: create_mine.json` | Resource-based mines page, auto-craft/auto-eat in safety |
 | `patchouli: naming.json` | NEW — companion naming guide (2 pages) |
 | `README.md` | Updated mining section (resource mines, 27 resources, auto-craft, auto-eat), added naming feature |
+
+---
+
+## Session 19 — Hub Furniture Auto-Craft & Layout Fix (2026-02-15)
+
+**Commit**: `3b6c6dc` — "Fix hub furniture: auto-craft items + back-wall row layout"
+
+### Problem
+Hub furniture (chests, furnace, crafting table) was never actually placed. `BlockHelper.placeBlock()` requires the block item to exist in the companion's inventory, but nothing ever crafted these items — placement silently failed every time.
+
+### Fix: Auto-Craft Hub Furniture
+Added `BlockHelper.tryAutoCraftHubFurniture()` that auto-crafts all hub furniture from inventory materials before placement:
+
+| Item | Recipe | Materials |
+|------|--------|-----------|
+| Crafting Table | 4 planks → 1 | 4 planks |
+| Furnace | 8 cobblestone → 1 | 8 cobblestone |
+| 2 Chests | 8 planks each → 1 | 16 planks |
+| **Total** | | **20 planks + 8 cobblestone** |
+
+- `ensurePlanks()` helper converts logs → planks as needed
+- Pulls materials from tagged STORAGE containers if available
+- Logs warnings when materials are insufficient
+
+### Fix: Back-Wall Row Layout
+Rearranged furniture from scattered left/right walls to a single row along the back wall:
+- All 4 items at the same Y level, side by side
+- Layout (left to right): **Chest, Chest, Furnace, Crafting Table**
+- Two adjacent chests form a double chest
+
+### Logging & Feedback
+- Per-item success/failure logging with position info
+- Chat message reports how many items were placed: "Placed X/4 hub furniture items"
+
+### Files Changed
+| File | Change |
+|------|--------|
+| `task/BlockHelper.java` | Added `tryAutoCraftHubFurniture()`, `ensurePlanks()` (+73 lines) |
+| `task/mining/CreateHubTask.java` | New layout (back-wall row), auto-craft call, per-item logging |
+| `README.md` | Added hub auto-furnishing to mining section |
+| `patchouli: create_mine.json` | Updated Phase 2 Hub Room with auto-craft + layout details |
+| `TEST_CHECKLIST.md` | Added 8 hub furniture test cases (188→196 total) |
+| `SESSION_LOG.md` | Added Session 19 |
+
+*Last updated: 2026-02-15 — Session 19*

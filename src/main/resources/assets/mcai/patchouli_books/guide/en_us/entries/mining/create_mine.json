@@ -12,7 +12,7 @@
         {
             "type": "patchouli:text",
             "title": "Mine Structure",
-            "text": "The $(bold)create_mine$() tool builds a full mining operation:$(br2)$(bold)Phase 1: Staircase Shaft$(br)A walkable 2×1 staircase (no ladders needed) descends to the target Y-level. Torches placed every 8 blocks, auto-crafted from coal+sticks if needed. Lava is sealed with cobblestone.$(br2)$(bold)Phase 2: Hub Room$(br)A 7×5×4 room is cleared and furnished with:$(br)$(li)2 chests for item storage$(li)1 furnace$(li)1 crafting table$(li)4 torches (auto-crafted if needed)$(li)Cobblestone floor"
+            "text": "The $(bold)create_mine$() tool builds a full mining operation:$(br2)$(bold)Phase 1: Staircase Shaft$(br)A walkable 2×1 staircase (no ladders needed) descends to the target Y-level. Torches placed every 8 blocks, auto-crafted from coal+sticks if needed. Lava is sealed with cobblestone.$(br2)$(bold)Phase 2: Hub Room$(br)A 7×5×4 room is cleared and furnished. Furniture is $(bold)auto-crafted$() from inventory materials (20 planks + 8 cobblestone, logs converted automatically):$(br)$(li)2 chests (double chest) — placed side by side$(li)1 furnace$(li)1 crafting table$(li)All on the back wall at the same Y level$(li)4 torches + cobblestone floor"
         },
         {
             "type": "patchouli:text",

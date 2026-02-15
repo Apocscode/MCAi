@@ -42,6 +42,7 @@ The companion uses a cloud AI backend (Groq / OpenRouter) with Ollama as a local
 - **Ore scanning** — finds specific ores in range
 - **Strip mining** — staircase descent to target Y-level, then tunnel with ore detection and wall torch fallback
 - **Permanent mines** — Create hub with branching tunnels, torch crafting mid-mine
+- **Hub auto-furnishing** — hub room auto-crafts chests, furnace, and crafting table from inventory planks/cobblestone and places them in a back-wall row
 - **Resource-based mines** — Say "create a [resource] mine" (redstone, osmium, tin, etc.) — Y-level is automatically chosen based on the resource's optimal spawn depth
 - **27 supported resources** — All vanilla ores + Nether resources + modded ores (Mekanism, Thermal, Create, AE2, IE, gem mods)
 - **Mine memory** — mines are remembered across sessions; companion returns to existing mine instead of digging a new one (say "create new mine" to force fresh)
