@@ -979,4 +979,23 @@ Rearranged furniture from scattered left/right walls to a single row along the b
 | `TEST_CHECKLIST.md` | Added 8 hub furniture test cases (188→196 total) |
 | `SESSION_LOG.md` | Added Session 19 |
 
-*Last updated: 2026-02-15 — Session 19*
+---
+
+## Session 20 — 2026-02-16 — Cross-Project: CreateLogicLink Renderer & Texture Fix
+
+### Focus
+No MCAi code changes this session. All work was on the **CreateLogicLink** mod (F:\Controller\CreateLogicLink).
+
+### CreateLogicLink Changes
+- Created `LogicRemoteItemRenderer` — custom item renderer that provides CTC-style floating controller animation when the Logic Remote is active (right-click). Fixed root cause: Create's renderer checked its own handler state, not LogicLink's `RemoteClientHandler`.
+- Brightened contraption remote block top texture for better in-game visibility.
+- Extended `GenerateTextures.java`, regenerated textures, updated item model.
+- See `F:\Controller\CreateLogicLink\SESSION_LOG.md` Session 4 for full details.
+
+### CreateLogicLink Commits
+- `ad29b95` — Custom Logic Motor model with red edges and shaft stub
+- `03186ee` — Use top-down controller texture for contraption remote tray
+- `2e47ad5` — Improve contraption remote block/item textures and models
+- `11b9c11` — Add LogicRemoteItemRenderer for floating controller animation
+
+*Last updated: 2026-02-16 — Session 20*
